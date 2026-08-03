@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LayoutGrid, Plus, Search, WifiOff } from '@lucide/vue'
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
 import type { AssistantCard as Assistant } from '@/domain'
@@ -9,6 +9,7 @@ import PairDeviceDialog from '@/features/devices/PairDeviceDialog.vue'
 import PageHeader from '@/ui/patterns/PageHeader.vue'
 import PreviewScenarioToolbar from '@/ui/patterns/PreviewScenarioToolbar.vue'
 import VtButton from '@/ui/primitives/VtButton.vue'
+import VtCard from '@/ui/primitives/VtCard.vue'
 import VtEmptyState from '@/ui/primitives/VtEmptyState.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
 import VtInput from '@/ui/primitives/VtInput.vue'
@@ -26,16 +27,46 @@ const stale = ref(false)
 const createOpen = ref(false)
 const pairOpen = ref(false)
 const pairAssistantId = ref<string>()
+const loadState = ref<'loading' | 'ready' | 'empty' | 'error' | 'offline'>('loading')
+const loadError = ref('')
+const stateHeading = ref<HTMLElement | null>(null)
 let searchTimer: number | undefined
+let loadGeneration = 0
 
 async function loadAssistants() {
+  const generation = ++loadGeneration
   loading.value = true
-  const result = await gateway.listAssistants({ search: search.value })
-  if (result.ok) {
+  loadState.value = 'loading'
+  loadError.value = ''
+  try {
+    const result = await gateway.listAssistants({ search: search.value })
+    if (generation !== loadGeneration) return
+    if (!result.ok) {
+      stale.value = false
+      loadState.value = result.meta.offline ? 'offline' : 'error'
+      loadError.value = result.meta.offline
+        ? 'Đang ngoại tuyến; chưa thể đồng bộ danh sách trợ lý.'
+        : 'Không tải được danh sách trợ lý từ Manager API.'
+      await focusStateHeading()
+      return
+    }
     assistants.value = result.data.items
     stale.value = result.meta.freshness === 'stale' || result.meta.offline
+    loadState.value = assistants.value.length > 0 ? 'ready' : 'empty'
+  } catch {
+    if (generation !== loadGeneration) return
+    stale.value = false
+    loadState.value = 'offline'
+    loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+    await focusStateHeading()
+  } finally {
+    if (generation === loadGeneration) loading.value = false
   }
-  loading.value = false
+}
+
+async function focusStateHeading() {
+  await nextTick()
+  stateHeading.value?.focus()
 }
 
 function openPair(assistant?: Assistant) {
@@ -45,6 +76,7 @@ function openPair(assistant?: Assistant) {
 
 function onCreated(assistant: Assistant) {
   assistants.value = [...assistants.value, assistant]
+  loadState.value = 'ready'
 }
 
 watch(search, () => {
@@ -53,10 +85,16 @@ watch(search, () => {
 })
 
 onMounted(loadAssistants)
+onUnmounted(() => {
+  if (searchTimer) window.clearTimeout(searchTimer)
+})
 </script>
 
 <template>
-  <section>
+  <section
+    class="assistant-index"
+    :aria-busy="loading"
+  >
     <PreviewScenarioToolbar
       @change="loadAssistants"
       @reset="loadAssistants"
@@ -106,8 +144,10 @@ onMounted(loadAssistants)
     </div>
 
     <div
-      v-if="loading"
+      v-if="loadState === 'loading'"
       class="assistant-grid"
+      role="status"
+      aria-live="polite"
       aria-label="Đang tải trợ lý"
     >
       <div
@@ -131,8 +171,28 @@ onMounted(loadAssistants)
         </div><VtSkeleton height="73px" /><VtSkeleton height="36px" />
       </div>
     </div>
+    <VtCard
+      v-else-if="loadState === 'error' || loadState === 'offline'"
+      class="assistant-state assistant-state-error"
+      role="alert"
+    >
+      <h2
+        ref="stateHeading"
+        tabindex="-1"
+      >
+        {{ loadState === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được danh sách trợ lý' }}
+      </h2>
+      <p>{{ loadError }}</p>
+      <VtButton
+        variant="secondary"
+        :loading="loading"
+        @click="loadAssistants"
+      >
+        Thử lại
+      </VtButton>
+    </VtCard>
     <VtEmptyState
-      v-else-if="assistants.length === 0"
+      v-else-if="loadState === 'empty'"
       :icon="Search"
       :title="search ? 'Không tìm thấy trợ lý' : 'Chưa có trợ lý'"
       :description="search ? `Không có kết quả phù hợp với “${search}”.` : 'Tạo trợ lý đầu tiên để bắt đầu cấu hình.'"
@@ -177,11 +237,16 @@ onMounted(loadAssistants)
 </template>
 
 <style scoped>
+.assistant-index { display: grid; gap: 0; }
 .search-control { width: 244px; }
 .header-actions { display: flex; gap: 8px; }
 .offline-banner { display: flex; align-items: center; gap: 9px; margin-top: 12px; border: 1px solid #efd39e; border-radius: var(--vt-radius-section); background: var(--vt-warning-soft); color: var(--vt-warning); padding: 9px 11px; font-size: 11px; }
 .offline-banner strong { font-weight: 600; }
 .assistant-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; margin-top: 15px; }
+.assistant-state { display: grid; justify-items: center; gap: 4px; margin-top: 15px; color: var(--vt-text-muted); padding: 24px; text-align: center; }
+.assistant-state h2 { margin: 0; color: var(--vt-text); font-size: 14px; }
+.assistant-state p { max-width: 460px; margin: 3px auto 10px; font-size: 11px; line-height: 1.5; }
+.assistant-state h2:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--vt-focus); border-radius: 3px; }
 .assistant-skeleton { display: grid; gap: 12px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-card); background: var(--vt-surface); padding: 14px; }
 .skeleton-heading { display: flex; align-items: center; gap: 10px; }
 .skeleton-heading > div { display: grid; gap: 8px; }
