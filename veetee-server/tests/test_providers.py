@@ -158,6 +158,7 @@ def test_silero_vad_streams_recurrent_state_and_endpoints(monkeypatch):
         "modelPath": "fixture-silero.onnx",
         "sampleRate": 16_000,
         "windowSamples": 512,
+        "contextSamples": 64,
         "speechThreshold": 0.6,
         "releaseThreshold": 0.2,
         "minSpeechMs": 32,
@@ -168,7 +169,7 @@ def test_silero_vad_streams_recurrent_state_and_endpoints(monkeypatch):
     assert provider.accept(speech, 16_000) is True
     assert provider.accept(silence, 16_000) is True
     assert provider.endpoint() is True
-    assert calls[0]["input"].shape == (1, 512)
+    assert calls[0]["input"].shape == (1, 576)
     assert calls[0]["state"].shape == (2, 1, 128)
     assert int(calls[0]["sr"]) == 16_000
 

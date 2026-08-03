@@ -33,6 +33,7 @@
           "modelPath": { "type": "string", "minLength": 1 },
           "sampleRate": { "type": "integer", "enum": [16000] },
           "windowSamples": { "type": "integer", "minimum": 128, "maximum": 4096 },
+          "contextSamples": { "type": "integer", "minimum": 1, "maximum": 1024 },
           "speechThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
           "releaseThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
           "minSpeechMs": { "type": "integer", "minimum": 1 },
