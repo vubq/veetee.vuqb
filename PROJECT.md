@@ -7,6 +7,15 @@ thuẫn, yêu cầu mới nhất của chủ dự án và tài liệu source-of-
 
 ## 1. Trạng thái hiện tại
 
+### Ranh giới workspace
+
+Đây là checkout mới và độc lập tại `/home/vubq/Project/EmYeuKhoaHoc2/veetee`.
+Checkout cũ tại `/home/vubq/Project/EmYeuKhoaHoc/veetee` nằm ngoài phạm vi của
+dự án này: không sửa file, không flash firmware, không đổi secret/Wi-Fi/process
+hay dùng database/port của checkout cũ. Runtime và evidence của dự án này phải
+dùng namespace riêng (ví dụ database `veetee_vubq`, PostgreSQL loopback `55432`
+và các service port `18xxx`).
+
 - Bộ planning `docs/00` → `docs/11`, các ADR và roadmap vẫn là source of truth;
   chủ dự án đã explicit mở product code scope. M0/M1/M2 slices đang được triển
   khai theo note trong `docs/implementation-notes/`.

@@ -5,6 +5,15 @@ chạy service hoặc tạo component mới.
 
 ## 1. Trạng thái repository
 
+### Ranh giới repo bắt buộc
+
+Đang làm trong repo mới `/home/vubq/Project/EmYeuKhoaHoc2/veetee`. Repo cũ
+`/home/vubq/Project/EmYeuKhoaHoc/veetee` là dự án độc lập ngoài phạm vi; agent
+không được sửa, flash, restart, đổi cấu hình mạng/secret hoặc dùng database và
+port của repo đó. Mọi service, test artifact và evidence phải được định danh
+theo checkout mới; nếu phát hiện process/port thuộc repo cũ thì chỉ quan sát và
+bỏ qua.
+
 - Chủ dự án đã mở scope implementation. Repository hiện có M0/M1 vertical slices:
   `veetee-server/` direct WS/config pipeline, `veetee-firmware/` protocol/state
   scaffold, `veetee-manager-api/` Fastify control plane fixture và
