@@ -463,6 +463,7 @@ static void network_task(void *context) {
             .client_id = app->client_id,
             .profile = (vt_protocol_profile_t)CONFIG_VEETEE_PROTOCOL_PROFILE,
             .input_sample_rate = CONFIG_VEETEE_MIC_SAMPLE_RATE,
+            .output_sample_rate = CONFIG_VEETEE_SPK_SAMPLE_RATE,
             .frame_duration_ms = CONFIG_VEETEE_AUDIO_FRAME_DURATION_MS,
             .on_text = websocket_text_callback,
             .on_audio = websocket_audio_callback,

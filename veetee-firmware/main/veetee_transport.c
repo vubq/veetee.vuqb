@@ -13,6 +13,7 @@
 static void transport_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static int send_hello(vt_transport_t *transport);
 static int send_raw_text(vt_transport_t *transport, const char *text);
+static bool accept_server_hello(vt_transport_t *transport, const cJSON *message);
 
 static int profile_version_number(vt_protocol_profile_t profile) {
     return profile == VT_PROFILE_WS_V1_COMPAT ? 1 : profile == VT_PROFILE_WS_V2 ? 2 : profile == VT_PROFILE_WS_V3 ? 3 : 0;
@@ -21,7 +22,7 @@ static int profile_version_number(vt_protocol_profile_t profile) {
 int vt_transport_init(vt_transport_t *transport, const vt_transport_config_t *config) {
     if (transport == NULL || config == NULL || config->uri == NULL || config->device_id == NULL ||
         config->client_id == NULL || config->on_text == NULL || config->on_audio == NULL ||
-        config->input_sample_rate <= 0 || config->frame_duration_ms <= 0) return ESP_ERR_INVALID_ARG;
+        config->input_sample_rate <= 0 || config->output_sample_rate <= 0 || config->frame_duration_ms <= 0) return ESP_ERR_INVALID_ARG;
     memset(transport, 0, sizeof(*transport));
     transport->config = *config;
     transport->events = xEventGroupCreate();
@@ -158,6 +159,10 @@ static void transport_event_handler(void *arg, esp_event_base_t event_base, int3
     esp_websocket_event_data_t *data = (esp_websocket_event_data_t *)event_data;
     if (data->data_ptr == NULL || data->data_len <= 0 || data->payload_offset != 0 || data->data_len != data->payload_len || !data->fin) return;
     if (data->op_code == 0x2) {
+        if (!transport->ready) {
+            ESP_LOGW(TAG, "dropping server audio before hello ready");
+            return;
+        }
         transport->config.on_audio((const uint8_t *)data->data_ptr, (size_t)data->data_len, transport->config.context);
         return;
     }
@@ -165,14 +170,41 @@ static void transport_event_handler(void *arg, esp_event_base_t event_base, int3
     cJSON *message = cJSON_ParseWithLength(data->data_ptr, (size_t)data->data_len);
     if (message == NULL) return;
     cJSON *type = cJSON_GetObjectItemCaseSensitive(message, "type");
+    bool deliver = true;
     if (cJSON_IsString(type) && strcmp(type->valuestring, "hello") == 0) {
-        cJSON *session = cJSON_GetObjectItemCaseSensitive(message, "session_id");
-        if (cJSON_IsString(session) && session->valuestring != NULL) {
+        if (accept_server_hello(transport, message)) {
+            cJSON *session = cJSON_GetObjectItemCaseSensitive(message, "session_id");
             (void)snprintf(transport->session_id, sizeof(transport->session_id), "%s", session->valuestring);
             transport->ready = true;
             xEventGroupSetBits(transport->events, VT_TRANSPORT_READY_BIT);
+        } else {
+            ESP_LOGW(TAG, "server hello rejected; closing profile=%d", profile_version_number(transport->config.profile));
+            if (transport->client != NULL) (void)esp_websocket_client_close(transport->client, pdMS_TO_TICKS(500));
+            deliver = false;
         }
     }
-    transport->config.on_text(message, transport->config.context);
+    if (deliver) transport->config.on_text(message, transport->config.context);
     cJSON_Delete(message);
+}
+
+static bool accept_server_hello(vt_transport_t *transport, const cJSON *message) {
+    if (transport == NULL || message == NULL) return false;
+    cJSON *version = cJSON_GetObjectItemCaseSensitive(message, "version");
+    cJSON *transport_name = cJSON_GetObjectItemCaseSensitive(message, "transport");
+    cJSON *audio = cJSON_GetObjectItemCaseSensitive(message, "audio_params");
+    cJSON *session = cJSON_GetObjectItemCaseSensitive(message, "session_id");
+    if (!cJSON_IsNumber(version) || version->valuedouble != (double)version->valueint ||
+        version->valueint != profile_version_number(transport->config.profile) ||
+        !cJSON_IsString(transport_name) || strcmp(transport_name->valuestring, "websocket") != 0 ||
+        !cJSON_IsObject(audio) || !cJSON_IsString(session) || session->valuestring == NULL ||
+        session->valuestring[0] == '\0' || strlen(session->valuestring) >= sizeof(transport->session_id)) return false;
+
+    cJSON *format = cJSON_GetObjectItemCaseSensitive(audio, "format");
+    cJSON *sample_rate = cJSON_GetObjectItemCaseSensitive(audio, "sample_rate");
+    cJSON *channels = cJSON_GetObjectItemCaseSensitive(audio, "channels");
+    cJSON *frame_duration = cJSON_GetObjectItemCaseSensitive(audio, "frame_duration");
+    return cJSON_IsString(format) && strcmp(format->valuestring, "opus") == 0 &&
+           cJSON_IsNumber(sample_rate) && sample_rate->valuedouble == (double)sample_rate->valueint && sample_rate->valueint == transport->config.output_sample_rate &&
+           cJSON_IsNumber(channels) && channels->valuedouble == (double)channels->valueint && channels->valueint == 1 &&
+           cJSON_IsNumber(frame_duration) && frame_duration->valuedouble == (double)frame_duration->valueint && frame_duration->valueint == transport->config.frame_duration_ms;
 }
