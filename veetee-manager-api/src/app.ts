@@ -21,13 +21,13 @@ const roleBodySchema = {
   properties: {
     locale: { type: 'string', minLength: 2, maxLength: 35 },
     basePrompt: { type: 'string', minLength: 1, maxLength: 16000 },
-    personality: { type: 'object' },
-    speech: { type: 'object' },
+    personality: { type: 'object', additionalProperties: true },
+    speech: { type: 'object', additionalProperties: true },
     progress: { type: 'object', maxProperties: 32 },
     segmentation: { type: 'object', maxProperties: 32 },
     bargeIn: { type: 'object', maxProperties: 32 },
     toolPolicy: { type: 'object', maxProperties: 32 },
-    tools: { type: 'array', maxItems: 128, items: { type: 'object' } },
+    tools: { type: 'array', maxItems: 128, items: { type: 'object', additionalProperties: true } },
     memoryEnabled: { type: 'boolean' },
   },
 } as const
@@ -36,7 +36,7 @@ const providerBodySchema = {
   properties: {
     installationId: { type: 'string', minLength: 1 },
     name: { type: 'string', minLength: 1, maxLength: 80 },
-    config: { type: 'object' },
+    config: { type: 'object', additionalProperties: true },
     secretRefs: { type: 'array', items: { type: 'string', minLength: 1 } },
   },
 } as const
@@ -228,7 +228,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       return reply.code(201).header('ETag', value.etag).send(value)
     } catch (error) { return sendProblem(reply, error) }
   })
-  app.patch<{ Params: { id: string }; Body: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] } }>('/api/v1/provider-configs/:id', { schema: { body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, config: { type: 'object' }, secretRefs: { type: 'array', items: { type: 'string' } } } } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] } }>('/api/v1/provider-configs/:id', { schema: { body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, config: { type: 'object', additionalProperties: {} }, secretRefs: { type: 'array', items: { type: 'string' } } } } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
     try { const value = await store.updateProviderConfig(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }

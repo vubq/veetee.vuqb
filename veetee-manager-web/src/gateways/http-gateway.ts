@@ -23,6 +23,14 @@ import type {
   ValidationProblem,
 } from '@/domain'
 import type { GatewayDependencies, ManagerGateway, PreviewControlGateway } from './manager-gateway'
+import type {
+  CreateAssistantRequest,
+  MemoryEnabledRequest,
+  ProviderConfigPatchRequest,
+  ProviderConfigRequest,
+  ProviderSelectionRequest,
+  RoleConfigRequest,
+} from '@/api/contract'
 
 type HttpResponse = { response: Response; body: unknown }
 
@@ -53,7 +61,8 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   }
 
   async createAssistant(input: CreateAssistantInput): Promise<GatewayResult<Versioned<AssistantCard>, never>> {
-    const result = await this.request('/api/v1/assistants', { method: 'POST', body: JSON.stringify({ name: input.name }) })
+    const payload: CreateAssistantRequest = { name: input.name }
+    const result = await this.request('/api/v1/assistants', { method: 'POST', body: JSON.stringify(payload) })
     if (!result.response.ok) return this.failure(result)
     const value = result.body as Record<string, unknown>
     const card = assistantCard(value)
@@ -67,7 +76,8 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   }
 
   async saveRoleConfig(assistantId: string, draft: RoleConfigDraft, expectedEtag: string): Promise<GatewayResult<Versioned<RoleConfig>, never>> {
-    const result = await this.request(`/api/v1/assistants/${assistantId}/role-config`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify({ locale: draft.locale, basePrompt: draft.basePrompt, personality: { id: draft.personalityId, name: draft.personalityName }, speech: draft.speech }) })
+    const payload: RoleConfigRequest = { locale: draft.locale, basePrompt: draft.basePrompt, personality: { id: draft.personalityId, name: draft.personalityName }, speech: { ...draft.speech } }
+    const result = await this.request(`/api/v1/assistants/${assistantId}/role-config`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(payload) })
     if (!result.response.ok) return this.failure(result)
     return this.success({ value: roleConfig(assistantId, result.body as Record<string, unknown>), revision: 1, etag: result.response.headers.get('etag') ?? expectedEtag })
   }
@@ -92,13 +102,15 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   }
 
   async createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {
-    const result = await this.request('/api/v1/provider-configs', { method: 'POST', body: JSON.stringify(input) })
+    const payload: ProviderConfigRequest = input
+    const result = await this.request('/api/v1/provider-configs', { method: 'POST', body: JSON.stringify(payload) })
     if (!result.response.ok) return this.failure(result)
     return this.success(result.body as ProviderConfigRecord)
   }
 
   async updateProviderConfig(id: string, input: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] }, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, RevisionConflictProblem<ProviderConfigRecord, unknown> | ValidationProblem>> {
-    const result = await this.request(`/api/v1/provider-configs/${id}`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(input) })
+    const payload: ProviderConfigPatchRequest = input
+    const result = await this.request(`/api/v1/provider-configs/${id}`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(payload) })
     if (!result.response.ok) return this.failure(result)
     return this.success(result.body as ProviderConfigRecord)
   }
@@ -120,13 +132,15 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   }
 
   async updateProviderSelection(assistantId: string, input: UpdateProviderSelectionInput, expectedEtag: string): Promise<GatewayResult<Versioned<ModelMemoryWorkspace>, never>> {
-    const result = await this.request(`/api/v1/assistants/${assistantId}/model-memory/provider`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(input) })
+    const payload: ProviderSelectionRequest = input
+    const result = await this.request(`/api/v1/assistants/${assistantId}/model-memory/provider`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(payload) })
     if (!result.response.ok) return this.failure(result)
     return this.success({ value: result.body as ModelMemoryWorkspace, revision: 1, etag: result.response.headers.get('etag') ?? expectedEtag })
   }
 
   async setMemoryEnabled(assistantId: string, enabled: boolean, expectedEtag: string): Promise<GatewayResult<Versioned<ModelMemoryWorkspace>, never>> {
-    const result = await this.request(`/api/v1/assistants/${assistantId}/model-memory/memory`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify({ enabled }) })
+    const payload: MemoryEnabledRequest = { enabled }
+    const result = await this.request(`/api/v1/assistants/${assistantId}/model-memory/memory`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(payload) })
     if (!result.response.ok) return this.failure(result)
     return this.success({ value: result.body as ModelMemoryWorkspace, revision: 1, etag: result.response.headers.get('etag') ?? expectedEtag })
   }

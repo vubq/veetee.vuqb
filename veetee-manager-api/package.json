@@ -12,6 +12,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
     "db:migrate": "tsx src/migrate.ts",
+    "openapi:export": "tsx src/openapi-export.ts",
+    "openapi:check": "tsx src/openapi-check.ts",
     "test": "tsx --test src/**/*.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
@@ -19,7 +21,7 @@
     "@fastify/cookie": "11.0.2",
     "@fastify/cors": "11.1.0",
     "@fastify/sensible": "6.0.3",
-    "@fastify/swagger": "^9.8.1",
+    "@fastify/swagger": "9.8.1",
     "@sinclair/typebox": "0.34.41",
     "argon2": "0.45.1",
     "drizzle-orm": "^0.45.2",
