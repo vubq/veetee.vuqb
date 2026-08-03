@@ -79,9 +79,12 @@ class VoiceApplication:
             profile = profile_from_version(int(version_header))
         except (ValueError, ProtocolError):
             return web.Response(status=400, text="invalid Protocol-Version")
+        client_id = request.headers.get("Client-Id") or request.headers.get("client-id")
+        if profile != "ws-v1-compat" and (not client_id or len(client_id) > 128):
+            return web.Response(status=400, text="invalid Client-Id")
         ws = web.WebSocketResponse(max_msg_size=self.config.max_ws_message_bytes, heartbeat=30)
         await ws.prepare(request)
-        session = VoiceSession(self, ws, device_id=device_id, profile=profile)
+        session = VoiceSession(self, ws, device_id=device_id, client_id=client_id or "", profile=profile)
         self._sessions.add(session)
         self.metrics["connections"] += 1
         self.metrics["active_connections"] += 1
@@ -94,10 +97,11 @@ class VoiceApplication:
 
 
 class VoiceSession:
-    def __init__(self, app: VoiceApplication, ws: web.WebSocketResponse, *, device_id: str, profile: str) -> None:
+    def __init__(self, app: VoiceApplication, ws: web.WebSocketResponse, *, device_id: str, client_id: str, profile: str) -> None:
         self.app = app
         self.ws = ws
         self.device_id = device_id
+        self.client_id = client_id
         self.profile = profile  # typed after header validation
         self.session_id = secrets.token_urlsafe(18)
         self.client_hello: dict[str, Any] | None = None

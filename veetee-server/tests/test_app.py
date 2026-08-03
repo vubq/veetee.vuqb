@@ -27,7 +27,7 @@ async def test_websocket_v3_handshake_and_turn(monkeypatch):
     try:
         ws = await client.ws_connect(
             "/veetee/v1/",
-            headers={"Device-Id": "device-test", "Protocol-Version": "3"},
+            headers={"Device-Id": "device-test", "Client-Id": "client-test", "Protocol-Version": "3"},
         )
         await ws.send_json(
             {
@@ -145,7 +145,7 @@ async def test_auto_endpoint_ingests_last_frame_and_ignores_late_audio(monkeypat
     try:
         ws = await client.ws_connect(
             "/veetee/v1/",
-            headers={"Device-Id": "auto-endpoint-test", "Protocol-Version": "3"},
+            headers={"Device-Id": "auto-endpoint-test", "Client-Id": "client-auto", "Protocol-Version": "3"},
         )
         await ws.send_json(
             {
@@ -210,7 +210,7 @@ async def test_realtime_barge_in_cancels_old_turn_before_new_audio(monkeypatch):
     try:
         ws = await client.ws_connect(
             "/veetee/v1/",
-            headers={"Device-Id": "barge-test", "Protocol-Version": "3"},
+            headers={"Device-Id": "barge-test", "Client-Id": "client-barge", "Protocol-Version": "3"},
         )
         await ws.send_json(
             {
@@ -276,7 +276,7 @@ async def test_compatibility_profile_handshake_and_turn(monkeypatch, version):
         profile = {1: "ws-v1-compat", 2: "ws-v2"}[version]
         ws = await client.ws_connect(
             "/veetee/v1/",
-            headers={"Device-Id": f"compat-{version}", "Protocol-Version": str(version)},
+            headers={"Device-Id": f"compat-{version}", "Client-Id": f"client-compat-{version}", "Protocol-Version": str(version)},
         )
         await ws.send_json(
             {
@@ -335,7 +335,7 @@ async def test_malformed_handshake_closes_with_protocol_error(monkeypatch, mutat
     try:
         ws = await client.ws_connect(
             "/veetee/v1/",
-            headers={"Device-Id": "malformed-handshake", "Protocol-Version": "3"},
+            headers={"Device-Id": "malformed-handshake", "Client-Id": "client-malformed", "Protocol-Version": "3"},
         )
         hello = {
             "type": "hello",
@@ -348,6 +348,30 @@ async def test_malformed_handshake_closes_with_protocol_error(monkeypatch, mutat
         await ws.receive(timeout=2)
         assert ws.close_code == 1002
         assert service.metrics["protocol_errors"] == 1
+    finally:
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_v3_upgrade_requires_client_id(monkeypatch):
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        response = await client.get(
+            "/veetee/v1/",
+            headers={"Device-Id": "missing-client", "Protocol-Version": "3"},
+        )
+        assert response.status == 400
+        assert await response.text() == "invalid Client-Id"
     finally:
         await client.close()
         await runtime.stop()
