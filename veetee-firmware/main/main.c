@@ -148,6 +148,10 @@ typedef struct {
     uint8_t bytes[VT_MAX_OPUS_PAYLOAD_BYTES];
 } vt_playback_packet_t;
 
+typedef enum {
+    VT_WAKE_COMMAND_ARM = 1,
+} vt_wake_command_t;
+
 typedef struct {
     vt_audio_t audio;
     vt_display_t display;
@@ -155,14 +159,14 @@ typedef struct {
     vt_device_state_machine_t state;
     vt_wake_t wake;
     QueueHandle_t playback_queue;
+    QueueHandle_t wake_event_queue;
+    QueueHandle_t wake_command_queue;
     SemaphoreHandle_t state_lock;
     EventGroupHandle_t wifi_events;
     volatile bool capture_active;
-    volatile bool wake_pending;
     volatile bool stop_requested;
     volatile bool wifi_stop_requested;
     bool wake_auto_capture;
-    char wake_phrase[64];
     char device_id[32];
     char client_id[96];
 } vt_app_t;
@@ -187,6 +191,14 @@ static vt_device_state_t state_read(vt_app_t *app);
 static int send_control(vt_app_t *app, const char *type, const char *state, const char *reason);
 static int send_listen_start(vt_app_t *app, bool auto_mode);
 static int device_identity(vt_app_t *app);
+
+static void request_wake_arm(vt_app_t *app) {
+    if (app == NULL || app->wake_command_queue == NULL) return;
+    vt_wake_command_t command = VT_WAKE_COMMAND_ARM;
+    /* Re-arm is idempotent; a full queue means another arm request is already
+       pending and must not block a transport callback or network task. */
+    (void)xQueueSend(app->wake_command_queue, &command, 0);
+}
 
 static bool state_apply(vt_app_t *app, vt_device_event_t event) {
     if (app == NULL || app->state_lock == NULL) return false;
@@ -282,8 +294,8 @@ static void websocket_text_callback(const cJSON *message, void *context) {
             if (app->wake_auto_capture) {
                 app->capture_active = false;
                 app->wake_auto_capture = false;
-                (void)vt_wake_arm(&app->wake);
-                ESP_LOGI(TAG, "wake capture complete; detector re-armed");
+                request_wake_arm(app);
+                ESP_LOGI(TAG, "wake capture complete; detector re-arm requested");
             }
             (void)state_apply(app, VT_EVENT_TTS_STOP);
         }
@@ -292,7 +304,7 @@ static void websocket_text_callback(const cJSON *message, void *context) {
     if (strcmp(type->valuestring, "alert") == 0) {
         app->capture_active = false;
         app->wake_auto_capture = false;
-        (void)vt_wake_arm(&app->wake);
+        request_wake_arm(app);
         (void)xQueueReset(app->playback_queue);
         (void)state_apply(app, VT_EVENT_ABORT);
         cJSON *code = cJSON_GetObjectItemCaseSensitive(message, "code");
@@ -334,6 +346,15 @@ static void capture_task(void *context) {
     int16_t samples[CONFIG_VEETEE_MIC_SAMPLE_RATE * CONFIG_VEETEE_AUDIO_FRAME_DURATION_MS / 1000];
     uint8_t opus[VT_MAX_OPUS_PAYLOAD_BYTES];
     while (!app->stop_requested) {
+        vt_wake_command_t command = 0;
+        while (app->wake_command_queue != NULL && xQueueReceive(app->wake_command_queue, &command, 0) == pdTRUE) {
+            if (command == VT_WAKE_COMMAND_ARM && vt_wake_is_ready(&app->wake)) {
+                int arm_result = vt_wake_arm(&app->wake);
+                if (arm_result != VT_WAKE_OK) {
+                    ESP_LOGW(TAG, "wake re-arm failed result=%d", arm_result);
+                }
+            }
+        }
         if (!vt_wake_is_ready(&app->wake) && (!app->capture_active || !vt_transport_is_ready(&app->transport))) {
             vTaskDelay(pdMS_TO_TICKS(20));
             continue;
@@ -341,16 +362,20 @@ static void capture_task(void *context) {
         size_t sample_count = 0;
         if (vt_audio_read_pcm(&app->audio, samples, sizeof(samples) / sizeof(samples[0]), &sample_count) != ESP_OK) continue;
 
-        if (vt_wake_is_ready(&app->wake)) {
+        /* The detector owns idle and playback audio. During an active capture
+           turn, do not let the same wake phrase interrupt its own utterance. */
+        if (vt_wake_is_ready(&app->wake) && !app->capture_active) {
             vt_wake_event_t wake_event = {0};
             int wake_result = vt_wake_feed(&app->wake, samples, sample_count, &wake_event);
             if (wake_result != VT_WAKE_OK) {
                 ESP_LOGW(TAG, "wake feed failed result=%d", wake_result);
-            } else if (wake_event.detected && !app->wake_pending) {
-                app->wake_pending = true;
-                (void)snprintf(app->wake_phrase, sizeof(app->wake_phrase), "%s", wake_event.phrase);
-                ESP_LOGI(TAG, "wake detected model=%s phrase=%s index=%u",
-                         vt_wake_model_name(&app->wake), app->wake_phrase, wake_event.word_index);
+            } else if (wake_event.detected) {
+                if (app->wake_event_queue == NULL || xQueueSend(app->wake_event_queue, &wake_event, 0) != pdTRUE) {
+                    ESP_LOGW(TAG, "wake event queue full; dropping detection");
+                } else {
+                    ESP_LOGI(TAG, "wake detected model=%s phrase=%s index=%u",
+                             vt_wake_model_name(&app->wake), wake_event.phrase, wake_event.word_index);
+                }
             }
         }
 
@@ -377,8 +402,8 @@ static void ptt_task(void *context) {
              CONFIG_VEETEE_PTT_GPIO, CONFIG_VEETEE_PTT_ACTIVE_LEVEL,
              gpio_get_level(CONFIG_VEETEE_PTT_GPIO));
     while (!app->stop_requested) {
-        if (app->wake_pending) {
-            app->wake_pending = false;
+        vt_wake_event_t wake_event = {0};
+        if (app->wake_event_queue != NULL && xQueueReceive(app->wake_event_queue, &wake_event, 0) == pdTRUE) {
             pending_start = true;
             pending_auto = true;
             vt_device_state_t current = state_read(app);
@@ -483,7 +508,7 @@ static void network_task(void *context) {
         }
         app->capture_active = false;
         app->wake_auto_capture = false;
-        (void)vt_wake_arm(&app->wake);
+        request_wake_arm(app);
         (void)vt_transport_stop(&app->transport);
         (void)state_apply(app, VT_EVENT_DISCONNECT);
         if (!app->stop_requested) vTaskDelay(pdMS_TO_TICKS(VT_WS_RETRY_DELAY_MS));
@@ -572,7 +597,10 @@ void app_main(void) {
     app->state.state = VT_DEVICE_IDLE;
     app->state_lock = xSemaphoreCreateMutex();
     app->playback_queue = xQueueCreate(12, sizeof(vt_playback_packet_t));
-    if (app->state_lock == NULL || app->playback_queue == NULL || device_identity(app) != ESP_OK) {
+    app->wake_event_queue = xQueueCreate(4, sizeof(vt_wake_event_t));
+    app->wake_command_queue = xQueueCreate(4, sizeof(vt_wake_command_t));
+    if (app->state_lock == NULL || app->playback_queue == NULL || app->wake_event_queue == NULL ||
+        app->wake_command_queue == NULL || device_identity(app) != ESP_OK) {
         ESP_LOGE(TAG, "firmware bootstrap allocation failed");
         return;
     }
