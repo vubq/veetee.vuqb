@@ -56,6 +56,97 @@ export interface PairingChallenge {
   expiresAt: string
 }
 
+export type ConversationStatus = 'active' | 'completed' | 'aborted' | 'error'
+export type TurnState = 'completed' | 'aborted' | 'error'
+
+export interface RetentionPolicy {
+  ownerId: string
+  captureTranscript: boolean
+  transcriptDays: number | null
+  captureAudio: boolean
+  audioDays: number | null
+  effectiveAt: string
+  revision: number
+  etag: string
+}
+
+export interface TranscriptSegment {
+  speaker: 'user' | 'assistant' | 'system'
+  text: string
+  locale: string
+  confidence: number | null
+  startedAtMs: number | null
+  endedAtMs: number | null
+  isFinal: boolean
+}
+
+export interface ToolCallRecord {
+  toolName: string
+  source: 'llm' | 'system'
+  status: 'completed' | 'error' | 'cancelled'
+  startedAt: string
+  endedAt: string | null
+  latencyMs: number | null
+  input: Record<string, unknown>
+  output: Record<string, unknown> | null
+  errorCode: string | null
+}
+
+export interface ConversationTurn {
+  id: string
+  conversationId: string
+  turnId: string
+  sequence: number
+  state: TurnState
+  startedAt: string
+  endedAt: string
+  finishReason: string
+  timings: Record<string, number>
+  transcript: TranscriptSegment[]
+  toolCalls: ToolCallRecord[]
+}
+
+export interface ConversationSummary {
+  id: string
+  assistantId: string
+  deviceKey: string | null
+  startedAt: string
+  endedAt: string | null
+  locale: string
+  configRevision: number
+  status: ConversationStatus
+  turnCount: number
+  lastTurnAt: string | null
+  aggregateTimings: Record<string, number>
+  retentionUntil: string | null
+}
+
+export interface ConversationDetail {
+  summary: ConversationSummary
+  turns: ConversationTurn[]
+  retention: RetentionPolicy
+}
+
+export interface ConversationTurnInput {
+  conversationId: string
+  assistantId: string
+  deviceKey?: string
+  locale: string
+  configRevision: number
+  conversationStartedAt: string
+  conversationEndedAt?: string
+  conversationStatus?: ConversationStatus
+  turnId: string
+  sequence: number
+  state: TurnState
+  startedAt: string
+  endedAt: string
+  finishReason: string
+  timings: Record<string, number>
+  transcript: TranscriptSegment[]
+  toolCalls: ToolCallRecord[]
+}
+
 interface DeviceRecord extends Device {
   identityHash: string
   clientIdHash: string
@@ -166,6 +257,11 @@ export interface Store {
   listDevices(ownerId: string, assistantId: string): Promise<Device[]>
   createPairingChallenge(value: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string }): Promise<PairingChallenge>
   pairDevice(ownerId: string, value: { assistantId: string; verificationCode: string; displayName?: string }): Promise<Device>
+  getRetentionPolicy(ownerId: string): Promise<RetentionPolicy>
+  updateRetentionPolicy(ownerId: string, value: Pick<RetentionPolicy, 'captureTranscript' | 'transcriptDays' | 'captureAudio' | 'audioDays'>, ifMatch: string): Promise<RetentionPolicy>
+  ingestConversationTurn(value: ConversationTurnInput): Promise<ConversationDetail>
+  listConversations(ownerId: string, assistantId: string, limit: number): Promise<ConversationSummary[]>
+  getConversation(ownerId: string, id: string): Promise<ConversationDetail | undefined>
 }
 
 export class InMemoryStore implements Store {
@@ -177,6 +273,8 @@ export class InMemoryStore implements Store {
   private readonly secretReferences = new Map<string, SecretReference>()
   private readonly devices = new Map<string, DeviceRecord>()
   private readonly pairingChallenges = new Map<string, { id: string; deviceId: string; codeHash: string; expiresAt: string; attempts: number; state: 'pending' | 'used' }>()
+  private readonly retentionPolicies = new Map<string, RetentionPolicy>()
+  private readonly conversations = new Map<string, { ownerId: string; summary: ConversationSummary; turns: ConversationTurn[] }>()
   private publication: RuntimePublication | undefined
 
   constructor(installations: ProviderInstallation[], initial?: RuntimeSnapshot) {
@@ -448,6 +546,103 @@ export class InMemoryStore implements Store {
     return publicDevice(device)
   }
 
+  async getRetentionPolicy(ownerId: string): Promise<RetentionPolicy> {
+    return structuredClone(this.retentionPolicies.get(ownerId) ?? defaultRetentionPolicy(ownerId))
+  }
+
+  async updateRetentionPolicy(ownerId: string, value: Pick<RetentionPolicy, 'captureTranscript' | 'transcriptDays' | 'captureAudio' | 'audioDays'>, ifMatch: string): Promise<RetentionPolicy> {
+    const current = this.retentionPolicies.get(ownerId) ?? defaultRetentionPolicy(ownerId)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Retention policy changed', 409)
+    validateRetentionPolicy(value)
+    const next: RetentionPolicy = {
+      ...current,
+      ...value,
+      effectiveAt: new Date().toISOString(),
+      revision: current.revision + 1,
+      etag: etag({ ...value, revision: current.revision + 1 }),
+    }
+    this.retentionPolicies.set(ownerId, next)
+    return structuredClone(next)
+  }
+
+  async ingestConversationTurn(value: ConversationTurnInput): Promise<ConversationDetail> {
+    const assistant = this.assistants.get(value.assistantId)
+    if (!assistant) throw problem('NOT_FOUND', 'Assistant not found', 404)
+    const policy = await this.getRetentionPolicy(assistant.ownerId)
+    validateConversationTurn(value)
+    const existing = this.conversations.get(value.conversationId)
+    if (existing && existing.ownerId !== assistant.ownerId) throw problem('NOT_FOUND', 'Conversation not found', 404)
+    if (existing?.turns.some((turn) => turn.turnId === value.turnId)) return this.conversationDetail(existing, policy)
+    const transcript = policy.captureTranscript ? structuredClone(value.transcript) : []
+    const turn: ConversationTurn = {
+      id: value.turnId,
+      conversationId: value.conversationId,
+      turnId: value.turnId,
+      sequence: value.sequence,
+      state: value.state,
+      startedAt: value.startedAt,
+      endedAt: value.endedAt,
+      finishReason: value.finishReason,
+      timings: structuredClone(value.timings),
+      transcript,
+      toolCalls: structuredClone(value.toolCalls),
+    }
+    const status = value.conversationStatus ?? (value.state === 'completed' ? 'completed' : value.state === 'aborted' ? 'aborted' : 'error')
+    const retentionUntil = policy.captureTranscript && policy.transcriptDays !== null && status !== 'active'
+      ? new Date(Date.parse(value.conversationEndedAt ?? value.endedAt) + policy.transcriptDays * 86_400_000).toISOString()
+      : null
+    const summary: ConversationSummary = existing?.summary ?? {
+      id: value.conversationId,
+      assistantId: value.assistantId,
+      deviceKey: value.deviceKey ?? null,
+      startedAt: value.conversationStartedAt,
+      endedAt: value.conversationEndedAt ?? null,
+      locale: value.locale,
+      configRevision: value.configRevision,
+      status,
+      turnCount: 0,
+      lastTurnAt: null,
+      aggregateTimings: {},
+      retentionUntil,
+    }
+    summary.turnCount += 1
+    summary.lastTurnAt = value.endedAt
+    summary.endedAt = value.conversationEndedAt ?? summary.endedAt
+    summary.status = status
+    summary.retentionUntil = retentionUntil ?? summary.retentionUntil
+    summary.aggregateTimings = { ...summary.aggregateTimings, ...value.timings }
+    const record = existing ?? { ownerId: assistant.ownerId, summary, turns: [] }
+    if (!existing) this.conversations.set(value.conversationId, record)
+    record.summary = summary
+    record.turns.push(turn)
+    return this.conversationDetail(record, policy)
+  }
+
+  async listConversations(ownerId: string, assistantId: string, limit: number): Promise<ConversationSummary[]> {
+    this.purgeExpired()
+    return [...this.conversations.values()]
+      .filter((item) => item.ownerId === ownerId && item.summary.assistantId === assistantId)
+      .sort((left, right) => Date.parse(right.summary.startedAt) - Date.parse(left.summary.startedAt))
+      .slice(0, limit)
+      .map((item) => structuredClone(item.summary))
+  }
+
+  async getConversation(ownerId: string, id: string): Promise<ConversationDetail | undefined> {
+    this.purgeExpired()
+    const record = this.conversations.get(id)
+    if (!record || record.ownerId !== ownerId) return undefined
+    return this.conversationDetail(record, await this.getRetentionPolicy(ownerId))
+  }
+
+  private conversationDetail(record: { ownerId: string; summary: ConversationSummary; turns: ConversationTurn[] }, policy: RetentionPolicy): ConversationDetail {
+    return { summary: structuredClone(record.summary), turns: structuredClone(record.turns).sort((left, right) => left.sequence - right.sequence), retention: structuredClone(policy) }
+  }
+
+  private purgeExpired(): void {
+    const now = Date.now()
+    for (const [id, record] of this.conversations) if (record.summary.retentionUntil && Date.parse(record.summary.retentionUntil) <= now) this.conversations.delete(id)
+  }
+
   private kind(id: string): ProviderKind | undefined { return this.installations.find((item) => item.id === id)?.kind }
 
   private modelMemory(current: Assistant): ModelMemoryView {
@@ -490,6 +685,24 @@ export function problem(code: string, message: string, statusCode: number): Erro
 
 export function hashPairingCode(value: string): string {
   return createHash('sha256').update(value).digest('hex')
+}
+
+export function defaultRetentionPolicy(ownerId: string): RetentionPolicy {
+  const value = { ownerId, captureTranscript: true, transcriptDays: 30, captureAudio: false, audioDays: null, revision: 1 }
+  return { ...value, effectiveAt: new Date(0).toISOString(), etag: ownerId === 'local-owner' ? '"baseline-transcript-30d-audio-off"' : etag(value) }
+}
+
+function validateRetentionPolicy(value: Pick<RetentionPolicy, 'captureTranscript' | 'transcriptDays' | 'captureAudio' | 'audioDays'>): void {
+  if (value.captureAudio || value.audioDays !== null) throw problem('AUDIO_RETENTION_UNSUPPORTED', 'Audio recording is not enabled in this baseline', 422)
+  if (value.captureTranscript && (!Number.isInteger(value.transcriptDays) || (value.transcriptDays ?? 0) < 1 || (value.transcriptDays ?? 0) > 3650)) throw problem('RETENTION_INVALID', 'transcriptDays must be between 1 and 3650', 422)
+  if (!value.captureTranscript && value.transcriptDays !== null) throw problem('RETENTION_INVALID', 'transcriptDays must be null when transcript capture is disabled', 422)
+}
+
+function validateConversationTurn(value: ConversationTurnInput): void {
+  if (!/^[0-9a-f-]{36}$/i.test(value.conversationId)) throw problem('HISTORY_INVALID', 'conversationId must be a UUID', 422)
+  if (!value.assistantId || !value.turnId || !value.locale || !Number.isInteger(value.configRevision) || value.configRevision < 1 || !Number.isInteger(value.sequence) || value.sequence < 1) throw problem('HISTORY_INVALID', 'conversation turn identity is invalid', 422)
+  if (!Number.isFinite(Date.parse(value.startedAt)) || !Number.isFinite(Date.parse(value.endedAt))) throw problem('HISTORY_INVALID', 'conversation turn timestamps are invalid', 422)
+  if (value.transcript.length > 128 || value.toolCalls.length > 64) throw problem('HISTORY_LIMIT_EXCEEDED', 'conversation event is too large', 413)
 }
 
 function publicDevice(value: DeviceRecord): Device {

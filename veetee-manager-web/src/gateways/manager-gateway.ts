@@ -4,6 +4,8 @@ import type {
   CreateAssistantInput,
   DemoResetSummary,
   DeviceCard,
+  ConversationDetail,
+  ConversationSummary,
   GatewayResult,
   ModelMemoryWorkspace,
   NameConflictProblem,
@@ -26,6 +28,7 @@ import type {
   VoiceProfile,
   ProviderConfigRecord,
   ProviderInstallationView,
+  RetentionPolicy,
 } from '@/domain'
 
 export type CreateAssistantProblem =
@@ -123,10 +126,17 @@ export interface DeviceGateway {
   ): Promise<GatewayResult<DeviceCard, PairDeviceProblem>>
 }
 
+export interface HistoryGateway {
+  getRetentionPolicy(): Promise<GatewayResult<RetentionPolicy, never>>
+  listConversations(assistantId: string, limit?: number): Promise<GatewayResult<Page<ConversationSummary>, NotFoundProblem>>
+  getConversation(id: string): Promise<GatewayResult<ConversationDetail, NotFoundProblem>>
+}
+
 export interface ManagerGateway
   extends AssistantGateway,
     ProviderGateway,
-    DeviceGateway {}
+    DeviceGateway,
+    HistoryGateway {}
 
 export interface PreviewControlGateway {
   getScenario(): PreviewScenarioId

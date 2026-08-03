@@ -57,6 +57,13 @@ test('pair device kiểm tra lỗi rồi hoàn thành', async ({ page }) => {
   await expect(page.getByText('3 thiết bị').first()).toBeVisible()
 })
 
+test('history surface hiển thị retention notice và empty state', async ({ page }) => {
+  await page.goto(`/assistants/${assistantId}/history`)
+  await expect(page.getByText('Retention đang áp dụng')).toBeVisible()
+  await expect(page.getByText('30 ngày transcript')).toBeVisible()
+  await expect(page.getByText('Chưa có hội thoại', { exact: true })).toBeVisible()
+})
+
 test('provider unavailable không fallback và conflict giữ draft', async ({ page }) => {
   await page.goto(`/assistants/${assistantId}/config/model-memory`)
   const scenario = page.getByRole('combobox', { name: 'Tình huống mô phỏng' })
@@ -91,6 +98,7 @@ test('@a11y core surfaces không có serious hoặc critical violation', async (
     `/assistants/${assistantId}/config/role`,
     `/assistants/${assistantId}/config/model-memory`,
     `/assistants/${assistantId}/devices`,
+    `/assistants/${assistantId}/history`,
     '/_preview/components',
   ]) {
     await page.goto(path)

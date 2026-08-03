@@ -160,3 +160,37 @@ test('PostgreSQL keeps secret references that occur in immutable provider histor
     await rm(directory, { recursive: true, force: true })
   }
 })
+
+test('PostgreSQL persists conversation turns and retention policy across restart', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8017, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_LOG_LEVEL: 'silent',
+  }
+  const conversationId = `22222222-2222-4222-8222-${String(Date.now()).slice(-12)}`
+  const app = await buildApp({ env })
+  await app.ready()
+  let assistantId = ''
+  try {
+    const assistants = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    assistantId = assistants.json().items[0]?.id
+    assert.match(assistantId, /^[0-9a-f-]{36}$/i)
+    const event = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: {
+      conversationId, assistantId, locale: 'vi-VN', configRevision: 1, conversationStartedAt: '2026-08-04T01:00:00.000Z', conversationEndedAt: '2026-08-04T01:00:03.000Z', conversationStatus: 'completed', turnId: `pg-turn-${Date.now()}`, sequence: 1, state: 'completed', startedAt: '2026-08-04T01:00:01.000Z', endedAt: '2026-08-04T01:00:03.000Z', finishReason: 'complete', timings: { last_ttfa_ms: 900 }, transcript: [{ speaker: 'user', text: 'Xin chào', locale: 'vi-VN', confidence: 1, startedAtMs: 0, endedAtMs: 400, isFinal: true }], toolCalls: [],
+    } })
+    assert.equal(event.statusCode, 202)
+  } finally { await app.close() }
+
+  const restarted = await buildApp({ env })
+  await restarted.ready()
+  try {
+    const list = await restarted.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/conversations` })
+    assert.equal(list.statusCode, 200)
+    assert.ok(list.json().items.some((item: { id: string; turnCount: number }) => item.id === conversationId && item.turnCount === 1))
+    const detail = await restarted.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}` })
+    assert.equal(detail.statusCode, 200)
+    assert.equal(detail.json().retention.transcriptDays, 30)
+    assert.equal(detail.json().turns[0].transcript[0].text, 'Xin chào')
+  } finally { await restarted.close() }
+})

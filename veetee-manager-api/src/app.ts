@@ -8,7 +8,7 @@ import swagger from '@fastify/swagger'
 import argon2 from 'argon2'
 import { readEnvironment, type Environment } from './config.js'
 import { EncryptedFileSecretStore, type SecretValueStore } from './secret-store.js'
-import { InMemoryStore, loadInitialSnapshot, parseCatalog, type ProviderKind, type Store } from './store.js'
+import { InMemoryStore, loadInitialSnapshot, parseCatalog, type ConversationTurnInput, type ProviderKind, type Store } from './store.js'
 import { LoginThrottle, normalizeLoginIdentity } from './auth-throttle.js'
 
 type OwnerRequest = FastifyRequest & { ownerId?: string; sessionToken?: string; csrfToken?: string; sessionExpiresAt?: string }
@@ -144,6 +144,36 @@ const pairingChallengeResponseSchema = {
   type: 'object', additionalProperties: false, required: ['id', 'deviceId', 'verificationCode', 'expiresAt'],
   properties: { id: { type: 'string' }, deviceId: { type: 'string' }, verificationCode: { type: 'string' }, expiresAt: { type: 'string' } },
 } as const
+const retentionPolicyResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['ownerId', 'captureTranscript', 'transcriptDays', 'captureAudio', 'audioDays', 'effectiveAt', 'revision', 'etag'],
+  properties: { ownerId: { type: 'string' }, captureTranscript: { type: 'boolean' }, transcriptDays: { type: ['integer', 'null'] }, captureAudio: { type: 'boolean' }, audioDays: { type: ['integer', 'null'] }, effectiveAt: { type: 'string' }, revision: { type: 'integer' }, etag: { type: 'string' } },
+} as const
+const transcriptSegmentSchema = {
+  type: 'object', additionalProperties: false, required: ['speaker', 'text', 'locale', 'confidence', 'startedAtMs', 'endedAtMs', 'isFinal'],
+  properties: { speaker: { type: 'string', enum: ['user', 'assistant', 'system'] }, text: { type: 'string', maxLength: 16000 }, locale: { type: 'string' }, confidence: { type: ['number', 'null'] }, startedAtMs: { type: ['integer', 'null'] }, endedAtMs: { type: ['integer', 'null'] }, isFinal: { type: 'boolean' } },
+} as const
+const toolCallSchema = {
+  type: 'object', additionalProperties: false, required: ['toolName', 'source', 'status', 'startedAt', 'endedAt', 'latencyMs', 'input', 'output', 'errorCode'],
+  properties: { toolName: { type: 'string', maxLength: 240 }, source: { type: 'string', enum: ['llm', 'system'] }, status: { type: 'string', enum: ['completed', 'error', 'cancelled'] }, startedAt: { type: 'string' }, endedAt: { type: ['string', 'null'] }, latencyMs: { type: ['number', 'null'] }, input: { type: 'object', additionalProperties: true }, output: { type: ['object', 'null'], additionalProperties: true }, errorCode: { type: ['string', 'null'] } },
+} as const
+const conversationSummarySchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'assistantId', 'deviceKey', 'startedAt', 'endedAt', 'locale', 'configRevision', 'status', 'turnCount', 'lastTurnAt', 'aggregateTimings', 'retentionUntil'],
+  properties: { id: { type: 'string' }, assistantId: { type: 'string' }, deviceKey: { type: ['string', 'null'] }, startedAt: { type: 'string' }, endedAt: { type: ['string', 'null'] }, locale: { type: 'string' }, configRevision: { type: 'integer' }, status: { type: 'string', enum: ['active', 'completed', 'aborted', 'error'] }, turnCount: { type: 'integer' }, lastTurnAt: { type: ['string', 'null'] }, aggregateTimings: { type: 'object', additionalProperties: { type: 'number' } }, retentionUntil: { type: ['string', 'null'] } },
+} as const
+const conversationTurnResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'conversationId', 'turnId', 'sequence', 'state', 'startedAt', 'endedAt', 'finishReason', 'timings', 'transcript', 'toolCalls'],
+  properties: { id: { type: 'string' }, conversationId: { type: 'string' }, turnId: { type: 'string' }, sequence: { type: 'integer' }, state: { type: 'string', enum: ['completed', 'aborted', 'error'] }, startedAt: { type: 'string' }, endedAt: { type: 'string' }, finishReason: { type: 'string' }, timings: { type: 'object', additionalProperties: { type: 'number' } }, transcript: { type: 'array', items: transcriptSegmentSchema }, toolCalls: { type: 'array', items: toolCallSchema } },
+} as const
+const conversationDetailResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['summary', 'turns', 'retention'],
+  properties: { summary: conversationSummarySchema, turns: { type: 'array', items: conversationTurnResponseSchema }, retention: retentionPolicyResponseSchema },
+} as const
+const conversationTurnBodySchema = {
+  type: 'object', additionalProperties: false, required: ['conversationId', 'assistantId', 'locale', 'configRevision', 'conversationStartedAt', 'turnId', 'sequence', 'state', 'startedAt', 'endedAt', 'finishReason', 'timings', 'transcript', 'toolCalls'],
+  properties: {
+    conversationId: { type: 'string', format: 'uuid' }, assistantId: { type: 'string', minLength: 1, maxLength: 128 }, deviceKey: { type: 'string', maxLength: 128 }, locale: { type: 'string', minLength: 2, maxLength: 35 }, configRevision: { type: 'integer', minimum: 1 }, conversationStartedAt: { type: 'string' }, conversationEndedAt: { type: 'string' }, conversationStatus: { type: 'string', enum: ['active', 'completed', 'aborted', 'error'] }, turnId: { type: 'string', minLength: 1, maxLength: 128 }, sequence: { type: 'integer', minimum: 1 }, state: { type: 'string', enum: ['completed', 'aborted', 'error'] }, startedAt: { type: 'string' }, endedAt: { type: 'string' }, finishReason: { type: 'string', maxLength: 120 }, timings: { type: 'object', additionalProperties: { type: 'number' }, maxProperties: 32 }, transcript: { type: 'array', maxItems: 128, items: transcriptSegmentSchema }, toolCalls: { type: 'array', maxItems: 64, items: toolCallSchema },
+  },
+} as const
 const listResponse = (item: Record<string, unknown>, withTotal = false) => ({
   type: 'object', additionalProperties: false, required: withTotal ? ['items', 'total'] : ['items'],
   properties: { items: { type: 'array', items: item }, ...(withTotal ? { total: { type: 'integer' } } : {}) },
@@ -188,6 +218,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
         { name: 'providers', description: 'Provider catalog and configuration' },
         { name: 'assistants', description: 'Assistant draft and publication configuration' },
         { name: 'devices', description: 'Device pairing and assistant bindings' },
+        { name: 'history', description: 'Conversation history and retention' },
         { name: 'runtime', description: 'Machine-only published snapshot access' },
         { name: 'health', description: 'Process readiness probes' },
       ],
@@ -419,10 +450,49 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     } catch (error) { return sendProblem(reply, error) }
   })
 
+  app.get('/api/v1/retention-policy', { schema: { response: { 200: retentionPolicyResponseSchema } } }, async (request, reply) => {
+    const value = await store.getRetentionPolicy(owner(request))
+    return reply.header('ETag', value.etag).send(value)
+  })
+  app.patch<{ Body: { captureTranscript: boolean; transcriptDays: number | null; captureAudio: boolean; audioDays: number | null } }>('/api/v1/retention-policy', { schema: {
+    body: { type: 'object', additionalProperties: false, required: ['captureTranscript', 'transcriptDays', 'captureAudio', 'audioDays'], properties: { captureTranscript: { type: 'boolean' }, transcriptDays: { type: ['integer', 'null'], minimum: 1, maximum: 3650 }, captureAudio: { type: 'boolean' }, audioDays: { type: ['integer', 'null'] } } },
+    response: { 200: retentionPolicyResponseSchema },
+  } }, async (request, reply) => {
+    const ifMatch = request.headers['if-match']
+    if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
+    try {
+      const value = await store.updateRetentionPolicy(owner(request), request.body, ifMatch)
+      return reply.header('ETag', value.etag).send(value)
+    } catch (error) { return sendProblem(reply, error) }
+  })
+  app.get<{ Params: { id: string }; Querystring: { limit?: number } }>('/api/v1/assistants/:id/conversations', { schema: {
+    querystring: { type: 'object', additionalProperties: false, properties: { limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 } } },
+    response: { 200: listResponse(conversationSummarySchema, true) },
+  } }, async (request, reply) => {
+    if (!(await store.getAssistant(owner(request), request.params.id))) return reply.code(404).send({ code: 'NOT_FOUND' })
+    const items = await store.listConversations(owner(request), request.params.id, request.query.limit ?? 20)
+    return { items, total: items.length }
+  })
+  app.get<{ Params: { id: string } }>('/api/v1/conversations/:id', { schema: { response: { 200: conversationDetailResponseSchema } } }, async (request, reply) => {
+    const value = await store.getConversation(owner(request), request.params.id)
+    if (!value) return reply.code(404).send({ code: 'NOT_FOUND' })
+    return value
+  })
+
   app.post<{ Body: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string } }>('/internal/v1/devices/pairing-challenges', { schema: { body: pairingChallengeBodySchema, response: { 201: pairingChallengeResponseSchema } } }, async (request, reply) => {
     if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
     const challenge = await store.createPairingChallenge(request.body)
     return reply.code(201).send(challenge)
+  })
+  app.post<{ Body: ConversationTurnInput }>('/internal/v1/conversations/turns', { schema: {
+    body: conversationTurnBodySchema,
+    response: { 202: { type: 'object', additionalProperties: false, required: ['accepted', 'conversationId', 'turnId', 'status'], properties: { accepted: { type: 'boolean' }, conversationId: { type: 'string' }, turnId: { type: 'string' }, status: { type: 'string', enum: ['active', 'completed', 'aborted', 'error'] } } } },
+  } }, async (request, reply) => {
+    if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    try {
+      const detail = await store.ingestConversationTurn(request.body)
+      return reply.code(202).send({ accepted: true, conversationId: detail.summary.id, turnId: request.body.turnId, status: detail.summary.status })
+    } catch (error) { return sendProblem(reply, error) }
   })
   app.get<{ Querystring: { assistantId?: string } }>('/internal/v1/runtime-config', { schema: {
     querystring: { type: 'object', additionalProperties: false, properties: { assistantId: { type: 'string', minLength: 1, maxLength: 120 } } },
@@ -517,6 +587,7 @@ function tagFor(url: string): string {
   if (segment === 'provider-configs' || segment === 'provider-installations' || segment === 'secret-references' || segment === 'voices') return 'providers'
   if (segment === 'assistants') return 'assistants'
   if (segment === 'devices') return 'devices'
+  if (segment === 'conversations' || segment === 'retention-policy') return 'history'
   return 'health'
 }
 

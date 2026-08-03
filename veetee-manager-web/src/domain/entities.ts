@@ -164,6 +164,77 @@ export interface DeviceCard {
   lastConversationAt: IsoDateTime | null
 }
 
+export type ConversationStatus = 'active' | 'completed' | 'aborted' | 'error'
+export type ConversationTurnState = 'completed' | 'aborted' | 'error'
+
+export interface RetentionPolicy {
+  ownerId: string
+  captureTranscript: boolean
+  transcriptDays: number | null
+  captureAudio: boolean
+  audioDays: number | null
+  effectiveAt: IsoDateTime
+  revision: number
+  etag: ETag
+}
+
+export interface TranscriptSegment {
+  speaker: 'user' | 'assistant' | 'system'
+  text: string
+  locale: string
+  confidence: number | null
+  startedAtMs: number | null
+  endedAtMs: number | null
+  isFinal: boolean
+}
+
+export interface ToolCallRecord {
+  toolName: string
+  source: 'llm' | 'system'
+  status: 'completed' | 'error' | 'cancelled'
+  startedAt: IsoDateTime
+  endedAt: IsoDateTime | null
+  latencyMs: number | null
+  input: Record<string, unknown>
+  output: Record<string, unknown> | null
+  errorCode: string | null
+}
+
+export interface ConversationSummary {
+  id: string
+  assistantId: string
+  deviceKey: string | null
+  startedAt: IsoDateTime
+  endedAt: IsoDateTime | null
+  locale: string
+  configRevision: number
+  status: ConversationStatus
+  turnCount: number
+  lastTurnAt: IsoDateTime | null
+  aggregateTimings: Record<string, number>
+  retentionUntil: IsoDateTime | null
+}
+
+export interface ConversationTurn {
+  id: string
+  conversationId: string
+  turnId: string
+  sequence: number
+  state: ConversationTurnState
+  startedAt: IsoDateTime
+  endedAt: IsoDateTime
+  finishReason: string
+  timings: Record<string, number>
+  transcript: TranscriptSegment[]
+  toolCalls: ToolCallRecord[]
+}
+
+export interface ConversationDetail {
+  summary: ConversationSummary
+  turns: ConversationTurn[]
+  retention: RetentionPolicy
+}
+
 export interface PairDeviceInput {
   assistantId: string
   verificationCode: string

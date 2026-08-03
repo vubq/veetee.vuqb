@@ -5211,6 +5211,1115 @@
         }
       }
     },
+    "/api/v1/retention-policy": {
+      "get": {
+        "operationId": "getApiV1RetentionPolicy",
+        "summary": "GET /api/v1/retention-policy",
+        "tags": [
+          "history"
+        ],
+        "security": [
+          {
+            "veeteeSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "ownerId",
+                    "captureTranscript",
+                    "transcriptDays",
+                    "captureAudio",
+                    "audioDays",
+                    "effectiveAt",
+                    "revision",
+                    "etag"
+                  ],
+                  "properties": {
+                    "ownerId": {
+                      "type": "string"
+                    },
+                    "captureTranscript": {
+                      "type": "boolean"
+                    },
+                    "transcriptDays": {
+                      "type": [
+                        "null",
+                        "integer"
+                      ]
+                    },
+                    "captureAudio": {
+                      "type": "boolean"
+                    },
+                    "audioDays": {
+                      "type": [
+                        "null",
+                        "integer"
+                      ]
+                    },
+                    "effectiveAt": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "etag": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patchApiV1RetentionPolicy",
+        "summary": "PATCH /api/v1/retention-policy",
+        "tags": [
+          "history"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "captureTranscript",
+                  "transcriptDays",
+                  "captureAudio",
+                  "audioDays"
+                ],
+                "properties": {
+                  "captureTranscript": {
+                    "type": "boolean"
+                  },
+                  "transcriptDays": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "maximum": 3650
+                  },
+                  "captureAudio": {
+                    "type": "boolean"
+                  },
+                  "audioDays": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "veeteeSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "ownerId",
+                    "captureTranscript",
+                    "transcriptDays",
+                    "captureAudio",
+                    "audioDays",
+                    "effectiveAt",
+                    "revision",
+                    "etag"
+                  ],
+                  "properties": {
+                    "ownerId": {
+                      "type": "string"
+                    },
+                    "captureTranscript": {
+                      "type": "boolean"
+                    },
+                    "transcriptDays": {
+                      "type": [
+                        "null",
+                        "integer"
+                      ]
+                    },
+                    "captureAudio": {
+                      "type": "boolean"
+                    },
+                    "audioDays": {
+                      "type": [
+                        "null",
+                        "integer"
+                      ]
+                    },
+                    "effectiveAt": {
+                      "type": "string"
+                    },
+                    "revision": {
+                      "type": "integer"
+                    },
+                    "etag": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/assistants/{id}/conversations": {
+      "get": {
+        "operationId": "getApiV1AssistantsByIdConversations",
+        "summary": "GET /api/v1/assistants/:id/conversations",
+        "tags": [
+          "assistants"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "veeteeSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "items",
+                    "total"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "assistantId",
+                          "deviceKey",
+                          "startedAt",
+                          "endedAt",
+                          "locale",
+                          "configRevision",
+                          "status",
+                          "turnCount",
+                          "lastTurnAt",
+                          "aggregateTimings",
+                          "retentionUntil"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "assistantId": {
+                            "type": "string"
+                          },
+                          "deviceKey": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": "string"
+                          },
+                          "endedAt": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "locale": {
+                            "type": "string"
+                          },
+                          "configRevision": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "completed",
+                              "aborted",
+                              "error"
+                            ]
+                          },
+                          "turnCount": {
+                            "type": "integer"
+                          },
+                          "lastTurnAt": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "aggregateTimings": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "number"
+                            }
+                          },
+                          "retentionUntil": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/conversations/{id}": {
+      "get": {
+        "operationId": "getApiV1ConversationsById",
+        "summary": "GET /api/v1/conversations/:id",
+        "tags": [
+          "history"
+        ],
+        "security": [
+          {
+            "veeteeSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "summary",
+                    "turns",
+                    "retention"
+                  ],
+                  "properties": {
+                    "summary": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "assistantId",
+                        "deviceKey",
+                        "startedAt",
+                        "endedAt",
+                        "locale",
+                        "configRevision",
+                        "status",
+                        "turnCount",
+                        "lastTurnAt",
+                        "aggregateTimings",
+                        "retentionUntil"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "assistantId": {
+                          "type": "string"
+                        },
+                        "deviceKey": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        },
+                        "endedAt": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "locale": {
+                          "type": "string"
+                        },
+                        "configRevision": {
+                          "type": "integer"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "completed",
+                            "aborted",
+                            "error"
+                          ]
+                        },
+                        "turnCount": {
+                          "type": "integer"
+                        },
+                        "lastTurnAt": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "aggregateTimings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "number"
+                          }
+                        },
+                        "retentionUntil": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        }
+                      }
+                    },
+                    "turns": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "conversationId",
+                          "turnId",
+                          "sequence",
+                          "state",
+                          "startedAt",
+                          "endedAt",
+                          "finishReason",
+                          "timings",
+                          "transcript",
+                          "toolCalls"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "conversationId": {
+                            "type": "string"
+                          },
+                          "turnId": {
+                            "type": "string"
+                          },
+                          "sequence": {
+                            "type": "integer"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "completed",
+                              "aborted",
+                              "error"
+                            ]
+                          },
+                          "startedAt": {
+                            "type": "string"
+                          },
+                          "endedAt": {
+                            "type": "string"
+                          },
+                          "finishReason": {
+                            "type": "string"
+                          },
+                          "timings": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "number"
+                            }
+                          },
+                          "transcript": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "speaker",
+                                "text",
+                                "locale",
+                                "confidence",
+                                "startedAtMs",
+                                "endedAtMs",
+                                "isFinal"
+                              ],
+                              "properties": {
+                                "speaker": {
+                                  "type": "string",
+                                  "enum": [
+                                    "user",
+                                    "assistant",
+                                    "system"
+                                  ]
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "maxLength": 16000
+                                },
+                                "locale": {
+                                  "type": "string"
+                                },
+                                "confidence": {
+                                  "type": [
+                                    "null",
+                                    "number"
+                                  ]
+                                },
+                                "startedAtMs": {
+                                  "type": [
+                                    "null",
+                                    "integer"
+                                  ]
+                                },
+                                "endedAtMs": {
+                                  "type": [
+                                    "null",
+                                    "integer"
+                                  ]
+                                },
+                                "isFinal": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          },
+                          "toolCalls": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "toolName",
+                                "source",
+                                "status",
+                                "startedAt",
+                                "endedAt",
+                                "latencyMs",
+                                "input",
+                                "output",
+                                "errorCode"
+                              ],
+                              "properties": {
+                                "toolName": {
+                                  "type": "string",
+                                  "maxLength": 240
+                                },
+                                "source": {
+                                  "type": "string",
+                                  "enum": [
+                                    "llm",
+                                    "system"
+                                  ]
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "completed",
+                                    "error",
+                                    "cancelled"
+                                  ]
+                                },
+                                "startedAt": {
+                                  "type": "string"
+                                },
+                                "endedAt": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "latencyMs": {
+                                  "type": [
+                                    "null",
+                                    "number"
+                                  ]
+                                },
+                                "input": {
+                                  "type": "object",
+                                  "additionalProperties": true
+                                },
+                                "output": {
+                                  "type": [
+                                    "null",
+                                    "object"
+                                  ],
+                                  "additionalProperties": true
+                                },
+                                "errorCode": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "retention": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "ownerId",
+                        "captureTranscript",
+                        "transcriptDays",
+                        "captureAudio",
+                        "audioDays",
+                        "effectiveAt",
+                        "revision",
+                        "etag"
+                      ],
+                      "properties": {
+                        "ownerId": {
+                          "type": "string"
+                        },
+                        "captureTranscript": {
+                          "type": "boolean"
+                        },
+                        "transcriptDays": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        },
+                        "captureAudio": {
+                          "type": "boolean"
+                        },
+                        "audioDays": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        },
+                        "effectiveAt": {
+                          "type": "string"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "etag": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/devices/pairing-challenges": {
       "post": {
         "operationId": "postInternalV1DevicesPairingChallenges",
@@ -5294,6 +6403,398 @@
                     },
                     "expiresAt": {
                       "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/conversations/turns": {
+      "post": {
+        "operationId": "postInternalV1ConversationsTurns",
+        "summary": "POST /internal/v1/conversations/turns",
+        "tags": [
+          "runtime"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "conversationId",
+                  "assistantId",
+                  "locale",
+                  "configRevision",
+                  "conversationStartedAt",
+                  "turnId",
+                  "sequence",
+                  "state",
+                  "startedAt",
+                  "endedAt",
+                  "finishReason",
+                  "timings",
+                  "transcript",
+                  "toolCalls"
+                ],
+                "properties": {
+                  "conversationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "assistantId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "deviceKey": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "locale": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 35
+                  },
+                  "configRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "conversationStartedAt": {
+                    "type": "string"
+                  },
+                  "conversationEndedAt": {
+                    "type": "string"
+                  },
+                  "conversationStatus": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "completed",
+                      "aborted",
+                      "error"
+                    ]
+                  },
+                  "turnId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "sequence": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "completed",
+                      "aborted",
+                      "error"
+                    ]
+                  },
+                  "startedAt": {
+                    "type": "string"
+                  },
+                  "endedAt": {
+                    "type": "string"
+                  },
+                  "finishReason": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "timings": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "number"
+                    },
+                    "maxProperties": 32
+                  },
+                  "transcript": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "speaker",
+                        "text",
+                        "locale",
+                        "confidence",
+                        "startedAtMs",
+                        "endedAtMs",
+                        "isFinal"
+                      ],
+                      "properties": {
+                        "speaker": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant",
+                            "system"
+                          ]
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 16000
+                        },
+                        "locale": {
+                          "type": "string"
+                        },
+                        "confidence": {
+                          "type": [
+                            "null",
+                            "number"
+                          ]
+                        },
+                        "startedAtMs": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        },
+                        "endedAtMs": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ]
+                        },
+                        "isFinal": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  },
+                  "toolCalls": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "toolName",
+                        "source",
+                        "status",
+                        "startedAt",
+                        "endedAt",
+                        "latencyMs",
+                        "input",
+                        "output",
+                        "errorCode"
+                      ],
+                      "properties": {
+                        "toolName": {
+                          "type": "string",
+                          "maxLength": 240
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "llm",
+                            "system"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "completed",
+                            "error",
+                            "cancelled"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        },
+                        "endedAt": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "latencyMs": {
+                          "type": [
+                            "null",
+                            "number"
+                          ]
+                        },
+                        "input": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "output": {
+                          "type": [
+                            "null",
+                            "object"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "errorCode": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "machineBearer": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "accepted",
+                    "conversationId",
+                    "turnId",
+                    "status"
+                  ],
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean"
+                    },
+                    "conversationId": {
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "completed",
+                        "aborted",
+                        "error"
+                      ]
                     }
                   }
                 }
@@ -5640,6 +7141,10 @@
     {
       "name": "devices",
       "description": "Device pairing and assistant bindings"
+    },
+    {
+      "name": "history",
+      "description": "Conversation history and retention"
     },
     {
       "name": "runtime",

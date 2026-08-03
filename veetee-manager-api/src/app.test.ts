@@ -127,6 +127,47 @@ test('device pairing challenge is single-use and binds a device to an assistant'
   }
 })
 
+test('conversation history ingest is idempotent and respects transcript retention policy', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistants = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    const assistantId = assistants.json().items[0].id as string
+    const policy = await app.inject({ method: 'GET', url: '/api/v1/retention-policy' })
+    assert.equal(policy.statusCode, 200)
+    assert.equal(policy.json().captureTranscript, true)
+    assert.equal(policy.json().transcriptDays, 30)
+    assert.equal(policy.json().captureAudio, false)
+
+    const payload = {
+      conversationId: '11111111-1111-4111-8111-111111111111', assistantId, deviceKey: 'device-test', locale: 'vi-VN', configRevision: 7,
+      conversationStartedAt: '2026-08-04T01:00:00.000Z', conversationEndedAt: '2026-08-04T01:00:05.000Z', conversationStatus: 'completed',
+      turnId: 'turn-1', sequence: 1, state: 'completed', startedAt: '2026-08-04T01:00:01.000Z', endedAt: '2026-08-04T01:00:05.000Z', finishReason: 'complete',
+      timings: { last_ttfa_ms: 840 }, transcript: [{ speaker: 'user', text: 'Xin chào', locale: 'vi-VN', confidence: 0.98, startedAtMs: 0, endedAtMs: 900, isFinal: true }, { speaker: 'assistant', text: 'Chào bạn', locale: 'vi-VN', confidence: null, startedAtMs: 0, endedAtMs: 900, isFinal: true }], toolCalls: [],
+    }
+    const ingested = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload })
+    assert.equal(ingested.statusCode, 202)
+    const duplicate = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload })
+    assert.equal(duplicate.statusCode, 202)
+
+    const list = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/conversations` })
+    assert.equal(list.statusCode, 200)
+    assert.equal(list.json().total, 1)
+    assert.equal(list.json().items[0].turnCount, 1)
+    const detail = await app.inject({ method: 'GET', url: '/api/v1/conversations/11111111-1111-4111-8111-111111111111' })
+    assert.equal(detail.statusCode, 200)
+    assert.equal(detail.json().turns.length, 1)
+    assert.equal(detail.json().turns[0].transcript[0].text, 'Xin chào')
+
+    const invalidAudio = await app.inject({ method: 'PATCH', url: '/api/v1/retention-policy', headers: { 'if-match': policy.headers.etag }, payload: { captureTranscript: true, transcriptDays: 30, captureAudio: true, audioDays: 1 } })
+    assert.equal(invalidAudio.statusCode, 422)
+    const disabled = await app.inject({ method: 'PATCH', url: '/api/v1/retention-policy', headers: { 'if-match': policy.headers.etag }, payload: { captureTranscript: false, transcriptDays: null, captureAudio: false, audioDays: null } })
+    assert.equal(disabled.statusCode, 200)
+  } finally {
+    await app.close()
+  }
+})
+
 test('OpenAPI is generated from every registered route', async () => {
   const app = await buildApp({ env })
   await app.ready()

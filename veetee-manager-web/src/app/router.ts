@@ -4,6 +4,7 @@ import AssistantIndexView from '@/views/AssistantIndexView.vue'
 import AssistantModelMemoryView from '@/views/AssistantModelMemoryView.vue'
 import AssistantRoleView from '@/views/AssistantRoleView.vue'
 import AssistantDevicesView from '@/views/AssistantDevicesView.vue'
+import AssistantHistoryView from '@/views/AssistantHistoryView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
 import ProviderRegistryView from '@/views/ProviderRegistryView.vue'
 
@@ -32,6 +33,12 @@ const routes: RouteRecordRaw[] = [
     name: 'assistant-devices',
     component: AssistantDevicesView,
     meta: { title: 'Thiết bị' },
+  },
+  {
+    path: '/assistants/:id/history',
+    name: 'assistant-history',
+    component: AssistantHistoryView,
+    meta: { title: 'Lịch sử hội thoại' },
   },
   { path: '/providers', name: 'providers', component: ProviderRegistryView, meta: { title: 'Provider registry' } },
 ]

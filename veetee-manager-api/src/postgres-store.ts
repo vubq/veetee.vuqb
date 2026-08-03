@@ -1,8 +1,10 @@
 import { randomInt, randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import {
   assistantRevisionTable,
   assistantTable,
+  conversationTable,
+  conversationTurnTable,
   deviceTable,
   managerSessionTable,
   pairingChallengeTable,
@@ -10,15 +12,22 @@ import {
   providerConfigRevisionTable,
   providerConfigTable,
   runtimePublicationTable,
+  retentionPolicyTable,
   secretReferenceTable,
 } from './db/schema.js'
 import { openDatabase, readDatabaseUrl, type DatabaseHandle } from './db/client.js'
 import {
   etag,
+  defaultRetentionPolicy,
   hashPairingCode,
   problem,
   validateSecretBindings,
   type Assistant,
+  type ConversationDetail,
+  type ConversationStatus,
+  type ConversationSummary,
+  type ConversationTurn,
+  type ConversationTurnInput,
   type Device,
   type ManagerSession,
   type ModelMemoryView,
@@ -26,6 +35,7 @@ import {
   type ProviderConfig,
   type ProviderInstallation,
   type ProviderKind,
+  type RetentionPolicy,
   type RuntimePublication,
   type RuntimeSnapshot,
   type SecretReference,
@@ -42,6 +52,9 @@ type ProviderConfigRevisionRow = typeof providerConfigRevisionTable.$inferSelect
 type ManagerSessionRow = typeof managerSessionTable.$inferSelect
 type SecretReferenceRow = typeof secretReferenceTable.$inferSelect
 type DeviceRow = typeof deviceTable.$inferSelect
+type RetentionPolicyRow = typeof retentionPolicyTable.$inferSelect
+type ConversationRow = typeof conversationTable.$inferSelect
+type ConversationTurnRow = typeof conversationTurnTable.$inferSelect
 
 export interface PostgresStoreOptions {
   catalog: ProviderInstallation[]
@@ -395,6 +408,68 @@ export class PostgresStore implements Store {
     })
   }
 
+  async getRetentionPolicy(ownerId: string): Promise<RetentionPolicy> {
+    const [row] = await this.handle.db.select().from(retentionPolicyTable).where(eq(retentionPolicyTable.ownerId, ownerId)).limit(1)
+    return row ? this.mapRetentionPolicy(row) : defaultRetentionPolicy(ownerId)
+  }
+
+  async updateRetentionPolicy(ownerId: string, value: Pick<RetentionPolicy, 'captureTranscript' | 'transcriptDays' | 'captureAudio' | 'audioDays'>, ifMatch: string): Promise<RetentionPolicy> {
+    const current = await this.getRetentionPolicy(ownerId)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Retention policy changed', 409)
+    validateRetentionPolicyInput(value)
+    const revision = current.revision + 1
+    const nextEtag = etag({ ...value, revision })
+    const effectiveAt = new Date()
+    const [updated] = await this.handle.db.insert(retentionPolicyTable).values({ ownerId, captureTranscript: value.captureTranscript, transcriptDays: value.transcriptDays, captureAudio: value.captureAudio, audioDays: value.audioDays, effectiveAt, revision, etag: nextEtag }).onConflictDoUpdate({ target: retentionPolicyTable.ownerId, set: { captureTranscript: value.captureTranscript, transcriptDays: value.transcriptDays, captureAudio: value.captureAudio, audioDays: value.audioDays, effectiveAt, revision, etag: nextEtag } }).returning()
+    if (!updated) throw new Error('retention policy update returned no row')
+    return this.mapRetentionPolicy(updated)
+  }
+
+  async ingestConversationTurn(value: ConversationTurnInput): Promise<ConversationDetail> {
+    validateConversationTurnInput(value)
+    const [assistant] = await this.handle.db.select({ id: assistantTable.id, ownerId: assistantTable.ownerId }).from(assistantTable).where(eq(assistantTable.id, value.assistantId)).limit(1)
+    if (!assistant) throw problem('NOT_FOUND', 'Assistant not found', 404)
+    const policy = await this.getRetentionPolicy(assistant.ownerId)
+    const existingTurn = await this.handle.db.select().from(conversationTurnTable).where(and(eq(conversationTurnTable.conversationId, value.conversationId), eq(conversationTurnTable.turnId, value.turnId))).limit(1)
+    if (existingTurn.length) {
+      const existing = await this.getConversation(assistant.ownerId, value.conversationId)
+      if (!existing) throw problem('NOT_FOUND', 'Conversation not found', 404)
+      return existing
+    }
+    const transcript = policy.captureTranscript ? structuredClone(value.transcript) : []
+    const status = value.conversationStatus ?? (value.state === 'completed' ? 'completed' : value.state === 'aborted' ? 'aborted' : 'error')
+    const retentionUntil = policy.captureTranscript && policy.transcriptDays !== null && status !== 'active'
+      ? new Date(Date.parse(value.conversationEndedAt ?? value.endedAt) + policy.transcriptDays * 86_400_000)
+      : null
+    await this.handle.db.transaction(async (tx) => {
+      const [current] = await tx.select().from(conversationTable).where(eq(conversationTable.id, value.conversationId)).for('update').limit(1)
+      if (!current) {
+        await tx.insert(conversationTable).values({ id: value.conversationId, ownerId: assistant.ownerId, assistantId: value.assistantId, deviceKey: value.deviceKey ?? null, startedAt: new Date(value.conversationStartedAt), endedAt: value.conversationEndedAt ? new Date(value.conversationEndedAt) : null, locale: value.locale, configRevision: value.configRevision, status, turnCount: 0, lastTurnAt: null, aggregateTimings: {}, retentionUntil })
+      }
+      const [conversation] = await tx.select().from(conversationTable).where(eq(conversationTable.id, value.conversationId)).for('update').limit(1)
+      if (!conversation) throw new Error('conversation insert returned no row')
+      const aggregateTimings = { ...asJsonObject(conversation.aggregateTimings), ...value.timings }
+      const nextStatus = status as ConversationStatus
+      await tx.insert(conversationTurnTable).values({ id: randomUUID(), conversationId: value.conversationId, turnId: value.turnId, sequence: value.sequence, state: value.state, startedAt: new Date(value.startedAt), endedAt: new Date(value.endedAt), finishReason: value.finishReason, timings: structuredClone(value.timings), transcript, toolCalls: structuredClone(value.toolCalls) }).onConflictDoNothing()
+      await tx.update(conversationTable).set({ deviceKey: value.deviceKey ?? conversation.deviceKey, endedAt: value.conversationEndedAt ? new Date(value.conversationEndedAt) : conversation.endedAt, status: nextStatus, turnCount: conversation.turnCount + 1, lastTurnAt: new Date(value.endedAt), aggregateTimings, retentionUntil: retentionUntil ?? conversation.retentionUntil }).where(eq(conversationTable.id, value.conversationId))
+    })
+    const detail = await this.getConversation(assistant.ownerId, value.conversationId)
+    if (!detail) throw new Error('conversation ingest returned no row')
+    return detail
+  }
+
+  async listConversations(ownerId: string, assistantId: string, limit: number): Promise<ConversationSummary[]> {
+    const rows = await this.handle.db.select().from(conversationTable).where(and(eq(conversationTable.ownerId, ownerId), eq(conversationTable.assistantId, assistantId), or(isNull(conversationTable.retentionUntil), gt(conversationTable.retentionUntil, new Date())))).orderBy(desc(conversationTable.startedAt)).limit(limit)
+    return rows.map((row) => this.mapConversation(row))
+  }
+
+  async getConversation(ownerId: string, id: string): Promise<ConversationDetail | undefined> {
+    const [conversation] = await this.handle.db.select().from(conversationTable).where(and(eq(conversationTable.ownerId, ownerId), eq(conversationTable.id, id), or(isNull(conversationTable.retentionUntil), gt(conversationTable.retentionUntil, new Date())))).limit(1)
+    if (!conversation) return undefined
+    const turns = await this.handle.db.select().from(conversationTurnTable).where(eq(conversationTurnTable.conversationId, id)).orderBy(asc(conversationTurnTable.sequence))
+    return { summary: this.mapConversation(conversation), turns: turns.map((row) => this.mapConversationTurn(row)), retention: await this.getRetentionPolicy(ownerId) }
+  }
+
   private async assertMigrated(): Promise<void> {
     try {
       await this.handle.db.select({ id: assistantTable.id }).from(assistantTable).limit(1)
@@ -472,6 +547,18 @@ export class PostgresStore implements Store {
     return { id: row.id, ownerId: row.ownerId, assistantId: row.assistantId, displayName: row.displayName, maskedMac: row.maskedMac, firmwareVersion: row.firmwareVersion, board: row.board, onlineState: row.onlineState === 'online' ? 'online' : 'offline', lastSeenAt: row.lastSeenAt.toISOString(), lastConversationAt: row.lastConversationAt?.toISOString() ?? null }
   }
 
+  private mapRetentionPolicy(row: RetentionPolicyRow): RetentionPolicy {
+    return { ownerId: row.ownerId, captureTranscript: row.captureTranscript, transcriptDays: row.transcriptDays, captureAudio: row.captureAudio, audioDays: row.audioDays, effectiveAt: row.effectiveAt.toISOString(), revision: row.revision, etag: row.etag }
+  }
+
+  private mapConversation(row: ConversationRow): ConversationSummary {
+    return { id: row.id, assistantId: row.assistantId, deviceKey: row.deviceKey, startedAt: row.startedAt.toISOString(), endedAt: row.endedAt?.toISOString() ?? null, locale: row.locale, configRevision: row.configRevision, status: asConversationStatus(row.status), turnCount: row.turnCount, lastTurnAt: row.lastTurnAt?.toISOString() ?? null, aggregateTimings: asTimings(row.aggregateTimings), retentionUntil: row.retentionUntil?.toISOString() ?? null }
+  }
+
+  private mapConversationTurn(row: ConversationTurnRow): ConversationTurn {
+    return { id: row.id, conversationId: row.conversationId, turnId: row.turnId, sequence: row.sequence, state: asTurnState(row.state), startedAt: row.startedAt.toISOString(), endedAt: row.endedAt.toISOString(), finishReason: row.finishReason, timings: asTimings(row.timings), transcript: asTranscript(row.transcript), toolCalls: asToolCalls(row.toolCalls) }
+  }
+
   private async modelMemory(current: Assistant): Promise<ModelMemoryView> {
     const kinds: ProviderKind[] = ['vad', 'asr', 'llm', 'tts', 'intent', 'memory']
     const selections = kinds.map((kind) => {
@@ -522,4 +609,38 @@ function validateJsonObject(value: JsonObject, schema: Record<string, unknown>):
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function asConversationStatus(value: string): ConversationStatus {
+  return value === 'active' || value === 'completed' || value === 'aborted' ? value : 'error'
+}
+
+function asTurnState(value: string): ConversationTurn['state'] {
+  return value === 'completed' || value === 'aborted' ? value : 'error'
+}
+
+function asTranscript(value: unknown): ConversationTurn['transcript'] {
+  return Array.isArray(value) ? value.filter((item): item is ConversationTurn['transcript'][number] => Boolean(item && typeof item === 'object' && typeof (item as { speaker?: unknown }).speaker === 'string' && typeof (item as { text?: unknown }).text === 'string')).map((item) => structuredClone(item)) : []
+}
+
+function asTimings(value: unknown): Record<string, number> {
+  return Object.fromEntries(Object.entries(asJsonObject(value)).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1])))
+}
+
+function asToolCalls(value: unknown): ConversationTurn['toolCalls'] {
+  return Array.isArray(value) ? value.filter((item): item is ConversationTurn['toolCalls'][number] => Boolean(item && typeof item === 'object' && typeof (item as { toolName?: unknown }).toolName === 'string')).map((item) => structuredClone(item)) : []
+}
+
+function validateRetentionPolicyInput(value: Pick<RetentionPolicy, 'captureTranscript' | 'transcriptDays' | 'captureAudio' | 'audioDays'>): void {
+  if (value.captureAudio || value.audioDays !== null) throw problem('AUDIO_RETENTION_UNSUPPORTED', 'Audio recording is not enabled in this baseline', 422)
+  if (value.captureTranscript && (!Number.isInteger(value.transcriptDays) || (value.transcriptDays ?? 0) < 1 || (value.transcriptDays ?? 0) > 3650)) throw problem('RETENTION_INVALID', 'transcriptDays must be between 1 and 3650', 422)
+  if (!value.captureTranscript && value.transcriptDays !== null) throw problem('RETENTION_INVALID', 'transcriptDays must be null when transcript capture is disabled', 422)
+}
+
+function validateConversationTurnInput(value: ConversationTurnInput): void {
+  if (!isUuid(value.conversationId)) throw problem('HISTORY_INVALID', 'conversationId must be a UUID', 422)
+  if (!isUuid(value.assistantId)) throw problem('HISTORY_INVALID', 'assistantId must be a UUID', 422)
+  if (!value.turnId || !value.locale || !Number.isInteger(value.configRevision) || value.configRevision < 1 || !Number.isInteger(value.sequence) || value.sequence < 1) throw problem('HISTORY_INVALID', 'conversation turn identity is invalid', 422)
+  if (!Number.isFinite(Date.parse(value.startedAt)) || !Number.isFinite(Date.parse(value.endedAt)) || !Number.isFinite(Date.parse(value.conversationStartedAt))) throw problem('HISTORY_INVALID', 'conversation turn timestamps are invalid', 422)
+  if (value.transcript.length > 128 || value.toolCalls.length > 64) throw problem('HISTORY_LIMIT_EXCEEDED', 'conversation event is too large', 413)
 }

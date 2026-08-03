@@ -29,7 +29,7 @@ export interface NotFoundProblem extends ProblemBase {
   type: 'not-found'
   code: 'RESOURCE_NOT_FOUND'
   retryable: false
-  resource: 'assistant' | 'device' | 'voice' | 'provider-config'
+  resource: 'assistant' | 'device' | 'voice' | 'provider-config' | 'conversation'
   resourceId: string
 }
 

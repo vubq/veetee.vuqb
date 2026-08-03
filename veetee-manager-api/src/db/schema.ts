@@ -1,4 +1,4 @@
-import { integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { boolean, integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 
 /**
  * The Manager control-plane schema is isolated from any other application
@@ -130,3 +130,46 @@ export const pairingChallengeTable = managerSchema.table('pairing_challenge', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
   usedAt: timestamp('used_at', { withTimezone: true, mode: 'date' }),
 })
+
+type JsonArray = unknown[]
+
+export const retentionPolicyTable = managerSchema.table('retention_policy', {
+  ownerId: text('owner_id').primaryKey(),
+  captureTranscript: boolean('capture_transcript').notNull(),
+  transcriptDays: integer('transcript_days'),
+  captureAudio: boolean('capture_audio').notNull(),
+  audioDays: integer('audio_days'),
+  effectiveAt: timestamp('effective_at', { withTimezone: true, mode: 'date' }).notNull(),
+  revision: integer('revision').notNull(),
+  etag: text('etag').notNull(),
+})
+
+export const conversationTable = managerSchema.table('conversation', {
+  id: uuid('id').primaryKey(),
+  ownerId: text('owner_id').notNull(),
+  assistantId: uuid('assistant_id').notNull().references(() => assistantTable.id, { onDelete: 'cascade' }),
+  deviceKey: text('device_key'),
+  startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
+  endedAt: timestamp('ended_at', { withTimezone: true, mode: 'date' }),
+  locale: text('locale').notNull(),
+  configRevision: integer('config_revision').notNull(),
+  status: text('status').notNull(),
+  turnCount: integer('turn_count').notNull(),
+  lastTurnAt: timestamp('last_turn_at', { withTimezone: true, mode: 'date' }),
+  aggregateTimings: jsonb('aggregate_timings').$type<JsonObject>().notNull(),
+  retentionUntil: timestamp('retention_until', { withTimezone: true, mode: 'date' }),
+})
+
+export const conversationTurnTable = managerSchema.table('conversation_turn', {
+  id: uuid('id').primaryKey(),
+  conversationId: uuid('conversation_id').notNull().references(() => conversationTable.id, { onDelete: 'cascade' }),
+  turnId: text('turn_id').notNull(),
+  sequence: integer('sequence').notNull(),
+  state: text('state').notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
+  endedAt: timestamp('ended_at', { withTimezone: true, mode: 'date' }).notNull(),
+  finishReason: text('finish_reason').notNull(),
+  timings: jsonb('timings').$type<JsonObject>().notNull(),
+  transcript: jsonb('transcript').$type<JsonArray>().notNull(),
+  toolCalls: jsonb('tool_calls').$type<JsonArray>().notNull(),
+}, (table) => ({ turnUnique: uniqueIndex('conversation_turn_identity_unique').on(table.conversationId, table.turnId), sequenceUnique: uniqueIndex('conversation_turn_sequence_unique').on(table.conversationId, table.sequence) }))

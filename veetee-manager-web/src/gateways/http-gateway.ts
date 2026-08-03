@@ -1,6 +1,8 @@
 import type {
   AssistantCard,
   AssistantListQuery,
+  ConversationDetail,
+  ConversationSummary,
   CreateAssistantInput,
   DemoResetSummary,
   DeviceCard,
@@ -13,6 +15,7 @@ import type {
   PreviewScenarioId,
   ProviderConfigRecord,
   ProviderInstallationView,
+  RetentionPolicy,
   RevisionConflictProblem,
   RoleConfig,
   RoleConfigDraft,
@@ -42,6 +45,9 @@ type ProviderConfigResource = paths['/api/v1/provider-configs']['get']['response
 type VoiceResource = paths['/api/v1/voices']['get']['responses'][200]['content']['application/json']['items'][number]
 type ModelMemoryResource = paths['/api/v1/assistants/{id}/model-memory']['get']['responses'][200]['content']['application/json']
 type DeviceResource = paths['/api/v1/assistants/{id}/devices']['get']['responses'][200]['content']['application/json']['items'][number]
+type RetentionResource = paths['/api/v1/retention-policy']['get']['responses'][200]['content']['application/json']
+type ConversationSummaryResource = paths['/api/v1/assistants/{id}/conversations']['get']['responses'][200]['content']['application/json']['items'][number]
+type ConversationDetailResource = paths['/api/v1/conversations/{id}']['get']['responses'][200]['content']['application/json']
 
 export function createHttpGatewayDependencies(baseUrl: string): GatewayDependencies {
   const gateway = new HttpManagerGateway(baseUrl)
@@ -191,6 +197,24 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     return this.success(deviceCard(result.data))
   }
 
+  async getRetentionPolicy(): Promise<GatewayResult<RetentionPolicy, never>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/retention-policy'))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(retentionPolicy(result.data))
+  }
+
+  async listConversations(assistantId: string, limit = 20): Promise<GatewayResult<Page<ConversationSummary>, never>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/assistants/{id}/conversations', { params: { path: { id: assistantId }, query: { limit } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ items: result.data.items.map(conversationSummary), total: result.data.total })
+  }
+
+  async getConversation(id: string): Promise<GatewayResult<ConversationDetail, never>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/conversations/{id}', { params: { path: { id } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(conversationDetail(result.data))
+  }
+
   getScenario(): PreviewScenarioId { return this.scenario }
   setScenario(scenario: PreviewScenarioId): void { this.scenario = scenario }
   listScenarios(): readonly PreviewScenarioDefinition[] { return [] }
@@ -273,4 +297,16 @@ function modelMemory(value: ModelMemoryResource): ModelMemoryWorkspace {
 
 function deviceCard(value: DeviceResource): DeviceCard {
   return { id: value.id, assistantId: value.assistantId, displayName: value.displayName, maskedMac: value.maskedMac, firmwareVersion: value.firmwareVersion, board: value.board, onlineState: value.onlineState, lastSeenAt: value.lastSeenAt, lastConversationAt: value.lastConversationAt }
+}
+
+function retentionPolicy(value: RetentionResource): RetentionPolicy {
+  return { ownerId: value.ownerId, captureTranscript: value.captureTranscript, transcriptDays: value.transcriptDays, captureAudio: value.captureAudio, audioDays: value.audioDays, effectiveAt: value.effectiveAt, revision: value.revision, etag: value.etag }
+}
+
+function conversationSummary(value: ConversationSummaryResource): ConversationSummary {
+  return { id: value.id, assistantId: value.assistantId, deviceKey: value.deviceKey, startedAt: value.startedAt, endedAt: value.endedAt, locale: value.locale, configRevision: value.configRevision, status: value.status, turnCount: value.turnCount, lastTurnAt: value.lastTurnAt, aggregateTimings: value.aggregateTimings, retentionUntil: value.retentionUntil }
+}
+
+function conversationDetail(value: ConversationDetailResource): ConversationDetail {
+  return { summary: conversationSummary(value.summary), turns: value.turns, retention: retentionPolicy(value.retention) }
 }

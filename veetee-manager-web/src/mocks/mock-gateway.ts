@@ -1,6 +1,8 @@
 import type {
   AssistantCard,
   AssistantListQuery,
+  ConversationDetail,
+  ConversationSummary,
   CreateAssistantInput,
   DemoResetSummary,
   DeviceCard,
@@ -33,6 +35,7 @@ import type {
   VoiceProfile,
   ProviderConfigRecord,
   ProviderInstallationView,
+  RetentionPolicy,
 } from '@/domain'
 import { PROVIDER_KINDS } from '@/domain'
 import type {
@@ -642,6 +645,23 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
       assistant.value.onlineDeviceCount += 1
     }
     return this.success(device, request)
+  }
+
+  async getRetentionPolicy(): Promise<GatewayResult<RetentionPolicy, never>> {
+    const request = await this.begin('read')
+    return this.success({ ownerId: 'local-owner', captureTranscript: true, transcriptDays: 30, captureAudio: false, audioDays: null, effectiveAt: '1970-01-01T00:00:00.000Z', revision: 1, etag: '"baseline-transcript-30d-audio-off"' }, request)
+  }
+
+  async listConversations(assistantId: string, limit = 20): Promise<GatewayResult<Page<ConversationSummary>, NotFoundProblem>> {
+    const request = await this.begin('read')
+    if (!this.state.assistants[assistantId]) return this.failure(this.notFound('assistant', assistantId, request.requestId), request)
+    const items: ConversationSummary[] = []
+    return this.success({ items: items.slice(0, limit), total: items.length }, request)
+  }
+
+  async getConversation(id: string): Promise<GatewayResult<ConversationDetail, NotFoundProblem>> {
+    const request = await this.begin('read')
+    return this.failure(this.notFound('conversation', id, request.requestId), request)
   }
 
   private async begin(operation: DelayOperation): Promise<RequestContext> {

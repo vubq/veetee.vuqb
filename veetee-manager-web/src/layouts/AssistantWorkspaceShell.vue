@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, Bot, BrainCircuit, Cpu, UserRound } from '@lucide/vue'
+import { ArrowLeft, Bot, BrainCircuit, Cpu, History, UserRound } from '@lucide/vue'
 
 import VtIcon from '@/ui/primitives/VtIcon.vue'
 import VtStatus from '@/ui/primitives/VtStatus.vue'
@@ -20,6 +20,7 @@ const links = [
   { name: 'assistant-role', label: 'Vai trò & giọng nói', icon: UserRound },
   { name: 'assistant-model-memory', label: 'Mô hình & bộ nhớ', icon: BrainCircuit },
   { name: 'assistant-devices', label: 'Thiết bị', icon: Cpu },
+  { name: 'assistant-history', label: 'Lịch sử hội thoại', icon: History },
 ]
 </script>
 
