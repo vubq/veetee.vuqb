@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from veetee_server.mcp import DeviceMcpBridge
+from veetee_server.providers import ProviderError
 
 
 @pytest.mark.asyncio
@@ -35,3 +36,26 @@ async def test_mcp_cancel_generation_cancels_pending_call():
     bridge.cancel_generation(3)
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+def test_mcp_resolve_rejects_invalid_jsonrpc_ids():
+    async def send(value):
+        del value
+
+    bridge = DeviceMcpBridge(session_id="session", send=send, descriptors=[], timeout_ms=1000)
+    assert bridge.resolve({"jsonrpc": "1.0", "id": 1, "result": {}}) is False
+    assert bridge.resolve({"jsonrpc": "2.0", "id": True, "result": {}}) is False
+    assert bridge.resolve({"jsonrpc": "2.0", "id": 0, "result": {}}) is False
+    assert bridge.resolve({"jsonrpc": "2.0", "id": -1, "result": {}}) is False
+
+
+@pytest.mark.asyncio
+async def test_mcp_send_failure_removes_pending_request():
+    async def send(value):
+        del value
+        raise OSError("socket closed")
+
+    bridge = DeviceMcpBridge(session_id="session", send=send, descriptors=[{"name": "device.led.set"}], timeout_ms=1000)
+    with pytest.raises(ProviderError, match="device tool request could not be sent"):
+        await bridge.call("device.led.set", {}, generation=4)
+    assert bridge._pending == {}

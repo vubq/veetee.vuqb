@@ -38,19 +38,32 @@ class DeviceMcpBridge:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
         self._pending[request_id] = PendingCall(request_id, generation, future)
-        await self._send(self._envelope(request_id, "tools/call", {"name": name, "arguments": arguments}))
         try:
+            await self._send(self._envelope(request_id, "tools/call", {"name": name, "arguments": arguments}))
             result = await asyncio.wait_for(future, timeout=self._timeout_s)
+        except asyncio.CancelledError:
+            self._pending.pop(request_id, None)
+            raise
         except asyncio.TimeoutError as exc:
             self._pending.pop(request_id, None)
             raise ProviderError("TOOL_TIMEOUT", f"device tool timed out: {name}", retryable=True) from exc
+        except ProviderError:
+            self._pending.pop(request_id, None)
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self._pending.pop(request_id, None)
+            raise ProviderError("TOOL_TRANSPORT_FAILED", "device tool request could not be sent", retryable=True) from exc
+        finally:
+            self._pending.pop(request_id, None)
         if result.get("error"):
             raise ProviderError("TOOL_FAILED", str(result["error"]))
         return result
 
     def resolve(self, payload: dict[str, Any]) -> bool:
+        if payload.get("jsonrpc") != "2.0":
+            return False
         request_id = payload.get("id")
-        if not isinstance(request_id, int):
+        if isinstance(request_id, bool) or not isinstance(request_id, int) or not 0 < request_id <= 2_147_483_647:
             return False
         pending = self._pending.pop(request_id, None)
         if pending is None or pending.future.done():
