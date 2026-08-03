@@ -24,6 +24,8 @@ import type {
   Versioned,
   VoicePreview,
   VoiceProfile,
+  ProviderConfigRecord,
+  ProviderInstallationView,
 } from '@/domain'
 
 export type CreateAssistantProblem =
@@ -70,6 +72,10 @@ export interface AssistantGateway {
     assistantId: string,
     expectedEtag: string,
   ): Promise<GatewayResult<{ revision: number }, RoleSaveProblem>>
+
+  listProviderInstallations(): Promise<GatewayResult<ProviderInstallationView[], never>>
+  listProviderConfigs(): Promise<GatewayResult<ProviderConfigRecord[], never>>
+  createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>>
 
   listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>>
 

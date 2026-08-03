@@ -5,6 +5,7 @@ import AssistantModelMemoryView from '@/views/AssistantModelMemoryView.vue'
 import AssistantRoleView from '@/views/AssistantRoleView.vue'
 import AssistantDevicesView from '@/views/AssistantDevicesView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
+import ProviderRegistryView from '@/views/ProviderRegistryView.vue'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/assistants' },
@@ -32,6 +33,7 @@ const routes: RouteRecordRaw[] = [
     component: AssistantDevicesView,
     meta: { title: 'Thiết bị' },
   },
+  { path: '/providers', name: 'providers', component: ProviderRegistryView, meta: { title: 'Provider registry' } },
 ]
 
 if (import.meta.env.DEV) {
@@ -55,4 +57,3 @@ router.afterEach((to) => {
   const title = typeof to.meta.title === 'string' ? to.meta.title : 'Bảng điều khiển'
   document.title = `${title} · Veetee`
 })
-

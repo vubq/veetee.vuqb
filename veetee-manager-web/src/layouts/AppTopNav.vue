@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, Component, LayoutGrid, Menu, RotateCcw } from '@lucide/vue'
+import { Bot, Component, LayoutGrid, Menu, Puzzle, RotateCcw } from '@lucide/vue'
 import { useRouter } from 'vue-router'
 
 import VtBadge from '@/ui/primitives/VtBadge.vue'
@@ -51,6 +51,16 @@ function navigate(id: string) {
           <span>Trợ lý</span>
         </RouterLink>
         <RouterLink
+          class="nav-link"
+          to="/providers"
+        >
+          <VtIcon
+            :icon="Puzzle"
+            :size="16"
+          />
+          <span>Providers</span>
+        </RouterLink>
+        <RouterLink
           v-if="$router.hasRoute('component-preview')"
           class="nav-link"
           to="/_preview/components"
@@ -65,7 +75,7 @@ function navigate(id: string) {
 
       <div class="top-meta">
         <VtBadge tone="primary">
-          UI preview
+          {{ import.meta.env.VITE_MANAGER_API_URL ? 'Manager API' : 'UI preview' }}
         </VtBadge>
         <span class="mock-marker"><VtIcon
           :icon="RotateCcw"

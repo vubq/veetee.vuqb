@@ -90,6 +90,25 @@ export interface ProviderConfigSummary {
   supportedLocales: string[]
 }
 
+export interface ProviderInstallationView {
+  id: string
+  kind: ProviderKind
+  displayNameKey: string
+  version: string
+  manifest: Record<string, unknown>
+  configSchema: Record<string, unknown>
+}
+
+export interface ProviderConfigRecord {
+  id: string
+  installationId: string
+  name: string
+  revision: number
+  config: Record<string, unknown>
+  secretRefs: string[]
+  etag: string
+}
+
 export type ProviderSelection =
   | {
       kind: ProviderKind

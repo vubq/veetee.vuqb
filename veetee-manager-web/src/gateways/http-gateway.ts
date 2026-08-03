@@ -17,6 +17,9 @@ import type {
   Versioned,
   VoicePreview,
   VoiceProfile,
+  ProviderConfigRecord,
+  ProviderInstallationView,
+  ValidationProblem,
 } from '@/domain'
 import type { GatewayDependencies, ManagerGateway, PreviewControlGateway } from './manager-gateway'
 
@@ -73,6 +76,24 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     if (!result.response.ok) return this.failure(result)
     const body = result.body as { snapshot?: { revision?: number } }
     return this.success({ revision: Number(body.snapshot?.revision ?? 0) })
+  }
+
+  async listProviderInstallations(): Promise<GatewayResult<ProviderInstallationView[], never>> {
+    const result = await this.request('/api/v1/provider-installations')
+    if (!result.response.ok) return this.failure(result)
+    return this.success((result.body as { items?: ProviderInstallationView[] }).items ?? [])
+  }
+
+  async listProviderConfigs(): Promise<GatewayResult<ProviderConfigRecord[], never>> {
+    const result = await this.request('/api/v1/provider-configs')
+    if (!result.response.ok) return this.failure(result)
+    return this.success((result.body as { items?: ProviderConfigRecord[] }).items ?? [])
+  }
+
+  async createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {
+    const result = await this.request('/api/v1/provider-configs', { method: 'POST', body: JSON.stringify(input) })
+    if (!result.response.ok) return this.failure(result)
+    return this.success(result.body as ProviderConfigRecord)
   }
 
   async listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>> {

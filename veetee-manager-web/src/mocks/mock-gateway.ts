@@ -31,6 +31,8 @@ import type {
   Versioned,
   VoicePreview,
   VoiceProfile,
+  ProviderConfigRecord,
+  ProviderInstallationView,
 } from '@/domain'
 import { PROVIDER_KINDS } from '@/domain'
 import type {
@@ -333,6 +335,22 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
       assistant.value.publishedRevision = current.revision
     }
     return this.success({ revision: current.revision }, request)
+  }
+
+  async listProviderInstallations(): Promise<GatewayResult<ProviderInstallationView[], never>> {
+    const request = await this.begin('read')
+    return this.success([], request)
+  }
+
+  async listProviderConfigs(): Promise<GatewayResult<ProviderConfigRecord[], never>> {
+    const request = await this.begin('read')
+    return this.success([], request)
+  }
+
+  async createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const value: ProviderConfigRecord = { id: input.installationId, installationId: input.installationId, name: input.name, revision: 1, config: input.config, secretRefs: input.secretRefs ?? [], etag: '"preview"' }
+    return this.success(value, request)
   }
 
   async listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>> {
