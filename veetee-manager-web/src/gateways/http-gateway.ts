@@ -4,36 +4,44 @@ import type {
   CreateAssistantInput,
   DemoResetSummary,
   DeviceCard,
-  GatewayResult,
   GatewayProblem,
+  GatewayResult,
   ModelMemoryWorkspace,
   Page,
   PairDeviceInput,
   PreviewScenarioDefinition,
   PreviewScenarioId,
-  RoleConfig,
-  RoleConfigDraft,
-  UpdateProviderSelectionInput,
-  Versioned,
-  VoicePreview,
-  VoiceProfile,
   ProviderConfigRecord,
   ProviderInstallationView,
   RevisionConflictProblem,
+  RoleConfig,
+  RoleConfigDraft,
+  UpdateProviderSelectionInput,
   ValidationProblem,
+  Versioned,
+  VoicePreview,
+  VoiceProfile,
 } from '@/domain'
+import type { paths } from '@/api/generated'
 import type { GatewayDependencies, ManagerGateway, PreviewControlGateway } from './manager-gateway'
 import type {
   CreateAssistantRequest,
-  PairDeviceRequest,
   MemoryEnabledRequest,
+  PairDeviceRequest,
   ProviderConfigPatchRequest,
   ProviderConfigRequest,
   ProviderSelectionRequest,
   RoleConfigRequest,
 } from '@/api/contract'
+import { createManagerApiClient, type ManagerApiClient } from '@/api/manager-client'
 
-type HttpResponse = { response: Response; body: unknown }
+type ApiResult = { response: Response; data?: unknown; error?: unknown }
+type AssistantResource = paths['/api/v1/assistants']['get']['responses'][200]['content']['application/json']['items'][number]
+type ProviderInstallationResource = paths['/api/v1/provider-installations']['get']['responses'][200]['content']['application/json']['items'][number]
+type ProviderConfigResource = paths['/api/v1/provider-configs']['get']['responses'][200]['content']['application/json']['items'][number]
+type VoiceResource = paths['/api/v1/voices']['get']['responses'][200]['content']['application/json']['items'][number]
+type ModelMemoryResource = paths['/api/v1/assistants/{id}/model-memory']['get']['responses'][200]['content']['application/json']
+type DeviceResource = paths['/api/v1/assistants/{id}/devices']['get']['responses'][200]['content']['application/json']['items'][number]
 
 export function createHttpGatewayDependencies(baseUrl: string): GatewayDependencies {
   const gateway = new HttpManagerGateway(baseUrl)
@@ -48,78 +56,94 @@ export function createHttpGatewayDependencies(baseUrl: string): GatewayDependenc
 
 class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   private scenario: PreviewScenarioId = 'happy'
+  private readonly client: ManagerApiClient
 
-  constructor(private readonly baseUrl: string) {}
+  constructor(baseUrl: string) {
+    this.client = createManagerApiClient(baseUrl)
+  }
 
   async listAssistants(query: AssistantListQuery = {}): Promise<GatewayResult<Page<AssistantCard>, never>> {
-    const params = new URLSearchParams()
-    if (query.search) params.set('search', query.search)
-    const result = await this.request(`/api/v1/assistants?${params.toString()}`)
-    if (!result.response.ok) return this.failure<Page<AssistantCard>, never>(result)
-    const body = result.body as { items?: Array<Record<string, unknown>> }
-    const items = (body.items ?? []).map((value) => assistantCard(value))
+    const result = await this.execute(() => this.client.GET('/api/v1/assistants', {
+      params: query.search ? { query: { search: query.search } } : undefined,
+    }))
+    if (!result.response.ok || result.data === undefined) return this.failure<Page<AssistantCard>, never>(result)
+    const items = result.data.items.map((value) => assistantCard(value))
     return this.success({ items, total: items.length })
   }
 
   async createAssistant(input: CreateAssistantInput): Promise<GatewayResult<Versioned<AssistantCard>, never>> {
     const payload: CreateAssistantRequest = { name: input.name }
-    const result = await this.request('/api/v1/assistants', { method: 'POST', body: JSON.stringify(payload) })
-    if (!result.response.ok) return this.failure(result)
-    const value = result.body as Record<string, unknown>
-    const card = assistantCard(value)
-    return this.success({ value: card, revision: Number(value.draftRevision ?? 1), etag: result.response.headers.get('etag') ?? '"missing"' })
+    const result = await this.execute(() => this.client.POST('/api/v1/assistants', { body: payload }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    const card = assistantCard(result.data)
+    return this.success({ value: card, revision: result.data.draftRevision, etag: this.etag(result.response) })
   }
 
   async getRoleConfig(assistantId: string): Promise<GatewayResult<Versioned<RoleConfig>, never>> {
-    const result = await this.request(`/api/v1/assistants/${assistantId}/role-config`)
-    if (!result.response.ok) return this.failure(result)
-    return this.success({ value: roleConfig(assistantId, result.body as Record<string, unknown>), revision: 1, etag: result.response.headers.get('etag') ?? '"missing"' })
+    const result = await this.execute(() => this.client.GET('/api/v1/assistants/{id}/role-config', { params: { path: { id: assistantId } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ value: roleConfig(assistantId, result.data), revision: 1, etag: this.etag(result.response) })
   }
 
   async saveRoleConfig(assistantId: string, draft: RoleConfigDraft, expectedEtag: string): Promise<GatewayResult<Versioned<RoleConfig>, never>> {
-    const payload: RoleConfigRequest = { locale: draft.locale, basePrompt: draft.basePrompt, personality: { id: draft.personalityId, name: draft.personalityName }, speech: { ...draft.speech } }
-    const result = await this.request(`/api/v1/assistants/${assistantId}/role-config`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(payload) })
-    if (!result.response.ok) return this.failure(result)
-    return this.success({ value: roleConfig(assistantId, result.body as Record<string, unknown>), revision: 1, etag: result.response.headers.get('etag') ?? expectedEtag })
+    const payload: RoleConfigRequest = {
+      locale: draft.locale,
+      basePrompt: draft.basePrompt,
+      personality: { id: draft.personalityId, name: draft.personalityName },
+      speech: { ...draft.speech },
+    }
+    const result = await this.execute(() => this.client.PATCH('/api/v1/assistants/{id}/role-config', {
+      params: { path: { id: assistantId } },
+      headers: { 'If-Match': expectedEtag },
+      body: payload,
+    }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ value: roleConfig(assistantId, result.data), revision: 1, etag: this.etag(result.response, expectedEtag) })
   }
 
   async publishAssistant(assistantId: string, expectedEtag: string): Promise<GatewayResult<{ revision: number }, never>> {
-    const result = await this.request(`/api/v1/assistants/${assistantId}/publish`, { method: 'POST', headers: { 'If-Match': expectedEtag } })
-    if (!result.response.ok) return this.failure(result)
-    const body = result.body as { snapshot?: { revision?: number } }
-    return this.success({ revision: Number(body.snapshot?.revision ?? 0) })
+    const result = await this.execute(() => this.client.POST('/api/v1/assistants/{id}/publish', {
+      params: { path: { id: assistantId } },
+      headers: { 'If-Match': expectedEtag },
+    }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ revision: result.data.snapshot.revision })
   }
 
   async listProviderInstallations(): Promise<GatewayResult<ProviderInstallationView[], never>> {
-    const result = await this.request('/api/v1/provider-installations')
-    if (!result.response.ok) return this.failure(result)
-    return this.success((result.body as { items?: ProviderInstallationView[] }).items ?? [])
+    const result = await this.execute(() => this.client.GET('/api/v1/provider-installations'))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(result.data.items.map(providerInstallation))
   }
 
   async listProviderConfigs(): Promise<GatewayResult<ProviderConfigRecord[], never>> {
-    const result = await this.request('/api/v1/provider-configs')
-    if (!result.response.ok) return this.failure(result)
-    return this.success((result.body as { items?: ProviderConfigRecord[] }).items ?? [])
+    const result = await this.execute(() => this.client.GET('/api/v1/provider-configs'))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(result.data.items.map(providerConfig))
   }
 
   async createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {
     const payload: ProviderConfigRequest = input
-    const result = await this.request('/api/v1/provider-configs', { method: 'POST', body: JSON.stringify(payload) })
-    if (!result.response.ok) return this.failure(result)
-    return this.success(result.body as ProviderConfigRecord)
+    const result = await this.execute(() => this.client.POST('/api/v1/provider-configs', { body: payload }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(providerConfig(result.data))
   }
 
   async updateProviderConfig(id: string, input: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] }, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, RevisionConflictProblem<ProviderConfigRecord, unknown> | ValidationProblem>> {
     const payload: ProviderConfigPatchRequest = input
-    const result = await this.request(`/api/v1/provider-configs/${id}`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(payload) })
-    if (!result.response.ok) return this.failure(result)
-    return this.success(result.body as ProviderConfigRecord)
+    const result = await this.execute(() => this.client.PATCH('/api/v1/provider-configs/{id}', {
+      params: { path: { id } },
+      headers: { 'If-Match': expectedEtag },
+      body: payload,
+    }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(providerConfig(result.data))
   }
 
   async listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>> {
-    const result = await this.request(`/api/v1/voices?locale=${encodeURIComponent(locale)}`)
-    if (!result.response.ok) return this.failure(result)
-    return this.success(result.body as Page<VoiceProfile>)
+    const result = await this.execute(() => this.client.GET('/api/v1/voices', { params: { query: { locale } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ items: result.data.items.map(voiceProfile), total: result.data.total })
   }
 
   async previewVoice(voiceId: string, transcript: string): Promise<GatewayResult<VoicePreview, never>> {
@@ -127,36 +151,44 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   }
 
   async getModelMemory(assistantId: string): Promise<GatewayResult<Versioned<ModelMemoryWorkspace>, never>> {
-    const result = await this.request(`/api/v1/assistants/${assistantId}/model-memory`)
-    if (!result.response.ok) return this.failure(result)
-    return this.success({ value: result.body as ModelMemoryWorkspace, revision: 1, etag: result.response.headers.get('etag') ?? '"missing"' })
+    const result = await this.execute(() => this.client.GET('/api/v1/assistants/{id}/model-memory', { params: { path: { id: assistantId } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ value: modelMemory(result.data), revision: 1, etag: this.etag(result.response) })
   }
 
   async updateProviderSelection(assistantId: string, input: UpdateProviderSelectionInput, expectedEtag: string): Promise<GatewayResult<Versioned<ModelMemoryWorkspace>, never>> {
     const payload: ProviderSelectionRequest = input
-    const result = await this.request(`/api/v1/assistants/${assistantId}/model-memory/provider`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(payload) })
-    if (!result.response.ok) return this.failure(result)
-    return this.success({ value: result.body as ModelMemoryWorkspace, revision: 1, etag: result.response.headers.get('etag') ?? expectedEtag })
+    const result = await this.execute(() => this.client.PATCH('/api/v1/assistants/{id}/model-memory/provider', {
+      params: { path: { id: assistantId } },
+      headers: { 'If-Match': expectedEtag },
+      body: payload,
+    }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ value: modelMemory(result.data), revision: 1, etag: this.etag(result.response, expectedEtag) })
   }
 
   async setMemoryEnabled(assistantId: string, enabled: boolean, expectedEtag: string): Promise<GatewayResult<Versioned<ModelMemoryWorkspace>, never>> {
     const payload: MemoryEnabledRequest = { enabled }
-    const result = await this.request(`/api/v1/assistants/${assistantId}/model-memory/memory`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(payload) })
-    if (!result.response.ok) return this.failure(result)
-    return this.success({ value: result.body as ModelMemoryWorkspace, revision: 1, etag: result.response.headers.get('etag') ?? expectedEtag })
+    const result = await this.execute(() => this.client.PATCH('/api/v1/assistants/{id}/model-memory/memory', {
+      params: { path: { id: assistantId } },
+      headers: { 'If-Match': expectedEtag },
+      body: payload,
+    }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ value: modelMemory(result.data), revision: 1, etag: this.etag(result.response, expectedEtag) })
   }
 
   async listDevices(assistantId: string): Promise<GatewayResult<Page<DeviceCard>, never>> {
-    const result = await this.request(`/api/v1/assistants/${assistantId}/devices`)
-    if (!result.response.ok) return this.failure(result)
-    return this.success(result.body as Page<DeviceCard>)
+    const result = await this.execute(() => this.client.GET('/api/v1/assistants/{id}/devices', { params: { path: { id: assistantId } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ items: result.data.items.map(deviceCard), total: result.data.total })
   }
 
   async pairDevice(input: PairDeviceInput): Promise<GatewayResult<DeviceCard, never>> {
     const payload: PairDeviceRequest = input
-    const result = await this.request('/api/v1/devices/pair', { method: 'POST', body: JSON.stringify(payload) })
-    if (!result.response.ok) return this.failure(result)
-    return this.success(result.body as DeviceCard)
+    const result = await this.execute(() => this.client.POST('/api/v1/devices/pair', { body: payload }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(deviceCard(result.data))
   }
 
   getScenario(): PreviewScenarioId { return this.scenario }
@@ -164,40 +196,81 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   listScenarios(): readonly PreviewScenarioDefinition[] { return [] }
   async resetDemo(): Promise<GatewayResult<DemoResetSummary, never>> { return this.success({ assistantCount: 0, deviceCount: 0 }) }
 
-  private async request(path: string, init: RequestInit = {}): Promise<HttpResponse> {
-    const headers = new Headers(init.headers)
-    headers.set('Accept', 'application/json')
-    if (init.body) headers.set('Content-Type', 'application/json')
+  private async execute<T extends ApiResult>(operation: () => Promise<T>): Promise<T> {
     try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, { ...init, headers, credentials: 'include' })
-      const body = await response.json().catch(() => undefined)
-      return { response, body }
+      return await operation()
     } catch {
-      return { response: new Response(JSON.stringify({ code: 'OFFLINE_MUTATION_BLOCKED' }), { status: 503 }), body: undefined }
+      return { response: new Response(JSON.stringify({ code: 'OFFLINE_MUTATION_BLOCKED' }), { status: 503 }), error: { code: 'OFFLINE_MUTATION_BLOCKED' } } as T
     }
   }
+
+  private etag(response: Response, fallback = '"missing"'): string { return response.headers.get('etag') ?? fallback }
 
   private success<T>(data: T): GatewayResult<T, never> {
     return { ok: true, data, meta: { requestId: crypto.randomUUID(), completedAt: new Date().toISOString(), delayMs: 0, freshness: 'fresh', offline: false } }
   }
 
-  private failure<T, P extends GatewayProblem>(result: HttpResponse): GatewayResult<T, P> {
-    const body = result.body as { code?: string } | undefined
-    return { ok: false, problem: { type: 'validation', code: body?.code ?? 'REQUEST_FAILED', messageKey: `problem.${body?.code ?? 'requestFailed'}`, requestId: crypto.randomUUID(), retryable: result.response.status >= 500, fieldProblems: [] } as unknown as P, meta: { requestId: crypto.randomUUID(), completedAt: new Date().toISOString(), delayMs: 0, freshness: 'fresh', offline: result.response.status >= 500 } }
+  private failure<T, P extends GatewayProblem>(result: ApiResult): GatewayResult<T, P> {
+    const error = result.error
+    const code = isRecord(error) && typeof error.code === 'string' ? error.code : result.response.status === 503 ? 'OFFLINE_MUTATION_BLOCKED' : 'REQUEST_FAILED'
+    return { ok: false, problem: { type: 'validation', code, messageKey: `problem.${code}`, requestId: crypto.randomUUID(), retryable: result.response.status >= 500, fieldProblems: [] } as unknown as P, meta: { requestId: crypto.randomUUID(), completedAt: new Date().toISOString(), delayMs: 0, freshness: 'fresh', offline: result.response.status >= 500 } }
   }
 }
 
-function assistantCard(value: Record<string, unknown>): AssistantCard {
-  const role = (value.role as Record<string, unknown> | undefined) ?? {}
-  const speech = (role.speech as Record<string, unknown> | undefined) ?? {}
-  const personality = (role.personality as Record<string, unknown> | undefined) ?? {}
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }
+
+function assistantCard(value: AssistantResource): AssistantCard {
+  const role = isRecord(value.role) ? value.role : {}
+  const speech = isRecord(role.speech) ? role.speech : {}
+  const personality = isRecord(role.personality) ? role.personality : {}
   return {
-    id: String(value.id), name: String(value.name ?? ''), locale: String(role.locale ?? 'vi-VN'), voiceName: String(speech.voiceId ?? ''), personalityName: String(personality.name ?? ''), onlineDeviceCount: 0, deviceCount: 0, lastConversationAt: null, publishedRevision: typeof value.publishedRevision === 'number' ? value.publishedRevision : null, configurationState: value.publishedRevision ? 'published' : 'draft',
+    id: value.id,
+    name: value.name,
+    locale: typeof role.locale === 'string' ? role.locale : 'vi-VN',
+    voiceName: typeof speech.voiceId === 'string' ? speech.voiceId : '',
+    personalityName: typeof personality.name === 'string' ? personality.name : '',
+    onlineDeviceCount: 0,
+    deviceCount: 0,
+    lastConversationAt: null,
+    publishedRevision: value.publishedRevision,
+    configurationState: value.publishedRevision ? 'published' : 'draft',
   }
 }
 
 function roleConfig(assistantId: string, value: Record<string, unknown>): RoleConfig {
-  const personality = (value.personality as Record<string, unknown> | undefined) ?? {}
-  const speech = (value.speech as RoleConfig['speech'] | undefined) ?? { voiceId: '', rate: 1, pitch: 0, style: 'natural' }
-  return { assistantId, locale: String(value.locale ?? 'vi-VN'), basePrompt: String(value.basePrompt ?? ''), personalityId: String(personality.id ?? ''), personalityName: String(personality.name ?? ''), speech }
+  const personality = isRecord(value.personality) ? value.personality : {}
+  const speech = isRecord(value.speech) ? value.speech : {}
+  return {
+    assistantId,
+    locale: typeof value.locale === 'string' ? value.locale : 'vi-VN',
+    basePrompt: typeof value.basePrompt === 'string' ? value.basePrompt : '',
+    personalityId: typeof personality.id === 'string' ? personality.id : '',
+    personalityName: typeof personality.name === 'string' ? personality.name : '',
+    speech: {
+      voiceId: typeof speech.voiceId === 'string' ? speech.voiceId : '',
+      rate: typeof speech.rate === 'number' ? speech.rate : 1,
+      pitch: typeof speech.pitch === 'number' ? speech.pitch : 0,
+      style: speech.style === 'concise' || speech.style === 'detailed' ? speech.style : 'natural',
+    },
+  }
+}
+
+function providerInstallation(value: ProviderInstallationResource): ProviderInstallationView {
+  return { id: value.id, kind: value.kind, displayNameKey: value.displayNameKey, version: value.version, manifest: value.manifest, configSchema: value.configSchema }
+}
+
+function providerConfig(value: ProviderConfigResource): ProviderConfigRecord {
+  return { id: value.id, installationId: value.installationId, name: value.name, revision: value.revision, config: value.config, secretRefs: value.secretRefs, etag: value.etag }
+}
+
+function voiceProfile(value: VoiceResource): VoiceProfile {
+  return { id: value.id, name: value.name, providerName: value.providerName, locale: value.locale, description: value.description, previewDurationMs: value.previewDurationMs, available: value.available }
+}
+
+function modelMemory(value: ModelMemoryResource): ModelMemoryWorkspace {
+  return value
+}
+
+function deviceCard(value: DeviceResource): DeviceCard {
+  return { id: value.id, assistantId: value.assistantId, displayName: value.displayName, maskedMac: value.maskedMac, firmwareVersion: value.firmwareVersion, board: value.board, onlineState: value.onlineState, lastSeenAt: value.lastSeenAt, lastConversationAt: value.lastConversationAt }
 }

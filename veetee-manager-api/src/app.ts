@@ -111,10 +111,13 @@ const modelMemoryResponseSchema = {
   type: 'object', additionalProperties: false, required: ['assistantId', 'selections', 'availableConfigs', 'memory', 'memoryItems'],
   properties: {
     assistantId: { type: 'string' },
-    selections: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'mode'], properties: { kind: { type: 'string' }, mode: { type: 'string', enum: ['selected', 'disabled'] }, providerConfigId: { type: 'string' } } } },
-    availableConfigs: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'kind', 'name', 'providerName', 'availability', 'supportedLocales'], properties: { id: { type: 'string' }, kind: { type: 'string' }, name: { type: 'string' }, providerName: { type: 'string' }, availability: { type: 'string', enum: ['ready', 'unavailable', 'disabled'] }, supportedLocales: { type: 'array', items: { type: 'string' } } } } },
+    selections: { type: 'array', items: { oneOf: [
+      { type: 'object', additionalProperties: false, required: ['kind', 'mode', 'providerConfigId'], properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, mode: { const: 'selected' }, providerConfigId: { type: 'string' } } },
+      { type: 'object', additionalProperties: false, required: ['kind', 'mode'], properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, mode: { const: 'disabled' } } },
+    ] } },
+    availableConfigs: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'kind', 'name', 'providerName', 'availability', 'supportedLocales'], properties: { id: { type: 'string' }, kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, name: { type: 'string' }, providerName: { type: 'string' }, availability: { type: 'string', enum: ['ready', 'unavailable', 'disabled'] }, supportedLocales: { type: 'array', items: { type: 'string' } } } } },
     memory: { type: 'object', additionalProperties: false, required: ['enabled', 'itemCount'], properties: { enabled: { type: 'boolean' }, itemCount: { type: 'integer' } } },
-    memoryItems: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'kind', 'content', 'enabled', 'updatedAt'], properties: { id: { type: 'string' }, kind: { type: 'string' }, content: { type: 'string' }, enabled: { type: 'boolean' }, updatedAt: { type: 'string' } } } },
+    memoryItems: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'kind', 'content', 'enabled', 'updatedAt'], properties: { id: { type: 'string' }, kind: { type: 'string', enum: ['preference', 'fact', 'instruction'] }, content: { type: 'string' }, enabled: { type: 'boolean' }, updatedAt: { type: 'string' } } } },
   },
 } as const
 const voiceResponseSchema = {
@@ -314,12 +317,18 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   })
 
   app.get('/api/v1/provider-installations', { schema: { response: { 200: listResponse(providerInstallationResponseSchema) } } }, async () => ({ items: await store.listInstallations() }))
-  app.get<{ Querystring: { locale?: string } }>('/api/v1/voices', { schema: { response: { 200: listResponse(voiceResponseSchema, true) } } }, async (request) => {
+  app.get<{ Querystring: { locale?: string } }>('/api/v1/voices', { schema: {
+    querystring: { type: 'object', additionalProperties: false, properties: { locale: { type: 'string', minLength: 2, maxLength: 35 } } },
+    response: { 200: listResponse(voiceResponseSchema, true) },
+  } }, async (request) => {
     const installations = await store.listInstallations()
     const tts = installations.filter((item) => item.kind === 'tts')
     return { items: tts.filter((item) => !request.query.locale || item.manifest.locales === undefined || (item.manifest.locales as unknown[]).includes('*') || (item.manifest.locales as unknown[]).includes(request.query.locale)).map((item) => ({ id: item.id, name: item.displayNameKey, providerName: item.displayNameKey, locale: request.query.locale ?? '*', description: item.displayNameKey, previewDurationMs: 0, available: true })), total: tts.length }
   })
-  app.get<{ Querystring: { kind?: ProviderKind } }>('/api/v1/provider-configs', { schema: { response: { 200: listResponse(providerConfigResponseSchema) } } }, async (request: FastifyRequest<{ Querystring: { kind?: ProviderKind } }>) => ({ items: await store.listProviderConfigs(owner(request), request.query.kind) }))
+  app.get<{ Querystring: { kind?: ProviderKind } }>('/api/v1/provider-configs', { schema: {
+    querystring: { type: 'object', additionalProperties: false, properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] } } },
+    response: { 200: listResponse(providerConfigResponseSchema) },
+  } }, async (request: FastifyRequest<{ Querystring: { kind?: ProviderKind } }>) => ({ items: await store.listProviderConfigs(owner(request), request.query.kind) }))
   app.post<{ Body: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] } }>('/api/v1/provider-configs', { schema: { body: providerBodySchema, response: { 201: providerConfigResponseSchema } } }, async (request, reply) => {
     try {
       const value = await store.createProviderConfig(owner(request), request.body)
@@ -332,7 +341,15 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     try { const value = await store.updateProviderConfig(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
   })
 
-  app.get('/api/v1/assistants', { schema: { response: { 200: listResponse(assistantResponseSchema) } } }, async (request) => ({ items: await store.listAssistants(owner(request)) }))
+  app.get<{ Querystring: { search?: string } }>('/api/v1/assistants', { schema: {
+    querystring: { type: 'object', additionalProperties: false, properties: { search: { type: 'string', minLength: 1, maxLength: 120 } } },
+    response: { 200: listResponse(assistantResponseSchema) },
+  } }, async (request) => {
+    const items = await store.listAssistants(owner(request))
+    const search = request.query.search?.trim().toLocaleLowerCase()
+    if (!search) return { items }
+    return { items: items.filter((item) => item.name.toLocaleLowerCase().includes(search)) }
+  })
   app.post<{ Body: { name: string } }>('/api/v1/assistants', { schema: { body: assistantBodySchema, response: { 201: assistantResponseSchema } } }, async (request, reply) => reply.code(201).send(await store.createAssistant(owner(request), request.body.name)))
   app.get<{ Params: { id: string } }>('/api/v1/assistants/:id', { schema: { response: { 200: assistantResponseSchema } } }, async (request, reply) => {
     const item = await store.getAssistant(owner(request), request.params.id)
@@ -386,7 +403,10 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     const challenge = await store.createPairingChallenge(request.body)
     return reply.code(201).send(challenge)
   })
-  app.get<{ Querystring: { assistantId?: string } }>('/internal/v1/runtime-config', { schema: { response: { 200: runtimeSnapshotResponseSchema } } }, async (request, reply) => {
+  app.get<{ Querystring: { assistantId?: string } }>('/internal/v1/runtime-config', { schema: {
+    querystring: { type: 'object', additionalProperties: false, properties: { assistantId: { type: 'string', minLength: 1, maxLength: 120 } } },
+    response: { 200: runtimeSnapshotResponseSchema },
+  } }, async (request, reply) => {
     if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
     const publication = await store.runtime(request.query.assistantId)
     if (!publication) return reply.code(409).send({ code: 'NO_PUBLISHED_CONFIG' })

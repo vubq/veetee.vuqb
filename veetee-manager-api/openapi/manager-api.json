@@ -1695,6 +1695,18 @@
         "tags": [
           "providers"
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 35
+            },
+            "in": "query",
+            "name": "locale",
+            "required": false
+          }
+        ],
         "security": [
           {
             "veeteeSession": []
@@ -1881,6 +1893,24 @@
         "summary": "GET /api/v1/provider-configs",
         "tags": [
           "providers"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "vad",
+                "asr",
+                "llm",
+                "tts",
+                "intent",
+                "memory"
+              ]
+            },
+            "in": "query",
+            "name": "kind",
+            "required": false
+          }
         ],
         "security": [
           {
@@ -2516,6 +2546,18 @@
         "summary": "GET /api/v1/assistants",
         "tags": [
           "assistants"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
+          }
         ],
         "security": [
           {
@@ -3514,27 +3556,64 @@
                     "selections": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "kind",
-                          "mode"
-                        ],
-                        "properties": {
-                          "kind": {
-                            "type": "string"
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "kind",
+                              "mode",
+                              "providerConfigId"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "vad",
+                                  "asr",
+                                  "llm",
+                                  "tts",
+                                  "intent",
+                                  "memory"
+                                ]
+                              },
+                              "mode": {
+                                "enum": [
+                                  "selected"
+                                ]
+                              },
+                              "providerConfigId": {
+                                "type": "string"
+                              }
+                            }
                           },
-                          "mode": {
-                            "type": "string",
-                            "enum": [
-                              "selected",
-                              "disabled"
-                            ]
-                          },
-                          "providerConfigId": {
-                            "type": "string"
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "kind",
+                              "mode"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "vad",
+                                  "asr",
+                                  "llm",
+                                  "tts",
+                                  "intent",
+                                  "memory"
+                                ]
+                              },
+                              "mode": {
+                                "enum": [
+                                  "disabled"
+                                ]
+                              }
+                            }
                           }
-                        }
+                        ]
                       }
                     },
                     "availableConfigs": {
@@ -3555,7 +3634,15 @@
                             "type": "string"
                           },
                           "kind": {
-                            "type": "string"
+                            "type": "string",
+                            "enum": [
+                              "vad",
+                              "asr",
+                              "llm",
+                              "tts",
+                              "intent",
+                              "memory"
+                            ]
                           },
                           "name": {
                             "type": "string"
@@ -3613,7 +3700,12 @@
                             "type": "string"
                           },
                           "kind": {
-                            "type": "string"
+                            "type": "string",
+                            "enum": [
+                              "preference",
+                              "fact",
+                              "instruction"
+                            ]
                           },
                           "content": {
                             "type": "string"
@@ -3829,27 +3921,64 @@
                     "selections": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "kind",
-                          "mode"
-                        ],
-                        "properties": {
-                          "kind": {
-                            "type": "string"
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "kind",
+                              "mode",
+                              "providerConfigId"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "vad",
+                                  "asr",
+                                  "llm",
+                                  "tts",
+                                  "intent",
+                                  "memory"
+                                ]
+                              },
+                              "mode": {
+                                "enum": [
+                                  "selected"
+                                ]
+                              },
+                              "providerConfigId": {
+                                "type": "string"
+                              }
+                            }
                           },
-                          "mode": {
-                            "type": "string",
-                            "enum": [
-                              "selected",
-                              "disabled"
-                            ]
-                          },
-                          "providerConfigId": {
-                            "type": "string"
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "kind",
+                              "mode"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "vad",
+                                  "asr",
+                                  "llm",
+                                  "tts",
+                                  "intent",
+                                  "memory"
+                                ]
+                              },
+                              "mode": {
+                                "enum": [
+                                  "disabled"
+                                ]
+                              }
+                            }
                           }
-                        }
+                        ]
                       }
                     },
                     "availableConfigs": {
@@ -3870,7 +3999,15 @@
                             "type": "string"
                           },
                           "kind": {
-                            "type": "string"
+                            "type": "string",
+                            "enum": [
+                              "vad",
+                              "asr",
+                              "llm",
+                              "tts",
+                              "intent",
+                              "memory"
+                            ]
                           },
                           "name": {
                             "type": "string"
@@ -3928,7 +4065,12 @@
                             "type": "string"
                           },
                           "kind": {
-                            "type": "string"
+                            "type": "string",
+                            "enum": [
+                              "preference",
+                              "fact",
+                              "instruction"
+                            ]
                           },
                           "content": {
                             "type": "string"
@@ -4125,27 +4267,64 @@
                     "selections": {
                       "type": "array",
                       "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": [
-                          "kind",
-                          "mode"
-                        ],
-                        "properties": {
-                          "kind": {
-                            "type": "string"
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "kind",
+                              "mode",
+                              "providerConfigId"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "vad",
+                                  "asr",
+                                  "llm",
+                                  "tts",
+                                  "intent",
+                                  "memory"
+                                ]
+                              },
+                              "mode": {
+                                "enum": [
+                                  "selected"
+                                ]
+                              },
+                              "providerConfigId": {
+                                "type": "string"
+                              }
+                            }
                           },
-                          "mode": {
-                            "type": "string",
-                            "enum": [
-                              "selected",
-                              "disabled"
-                            ]
-                          },
-                          "providerConfigId": {
-                            "type": "string"
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "kind",
+                              "mode"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "vad",
+                                  "asr",
+                                  "llm",
+                                  "tts",
+                                  "intent",
+                                  "memory"
+                                ]
+                              },
+                              "mode": {
+                                "enum": [
+                                  "disabled"
+                                ]
+                              }
+                            }
                           }
-                        }
+                        ]
                       }
                     },
                     "availableConfigs": {
@@ -4166,7 +4345,15 @@
                             "type": "string"
                           },
                           "kind": {
-                            "type": "string"
+                            "type": "string",
+                            "enum": [
+                              "vad",
+                              "asr",
+                              "llm",
+                              "tts",
+                              "intent",
+                              "memory"
+                            ]
                           },
                           "name": {
                             "type": "string"
@@ -4224,7 +4411,12 @@
                             "type": "string"
                           },
                           "kind": {
-                            "type": "string"
+                            "type": "string",
+                            "enum": [
+                              "preference",
+                              "fact",
+                              "instruction"
+                            ]
                           },
                           "content": {
                             "type": "string"
@@ -5218,6 +5410,18 @@
         "summary": "GET /internal/v1/runtime-config",
         "tags": [
           "runtime"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "in": "query",
+            "name": "assistantId",
+            "required": false
+          }
         ],
         "security": [
           {

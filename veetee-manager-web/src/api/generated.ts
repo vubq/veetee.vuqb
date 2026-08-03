@@ -1205,7 +1205,9 @@ export interface operations {
     };
     getApiV1Voices: {
         parameters: {
-            query?: never;
+            query?: {
+                locale?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1292,7 +1294,9 @@ export interface operations {
     };
     getApiV1ProviderConfigs: {
         parameters: {
-            query?: never;
+            query?: {
+                kind?: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1581,7 +1585,9 @@ export interface operations {
     };
     getApiV1Assistants: {
         parameters: {
-            query?: never;
+            query?: {
+                search?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2065,15 +2071,22 @@ export interface operations {
                 content: {
                     "application/json": {
                         assistantId: string;
-                        selections: {
-                            kind: string;
+                        selections: ({
                             /** @enum {string} */
-                            mode: "selected" | "disabled";
-                            providerConfigId?: string;
-                        }[];
+                            kind: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
+                            /** @enum {unknown} */
+                            mode: "selected";
+                            providerConfigId: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
+                            /** @enum {unknown} */
+                            mode: "disabled";
+                        })[];
                         availableConfigs: {
                             id: string;
-                            kind: string;
+                            /** @enum {string} */
+                            kind: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
                             name: string;
                             providerName: string;
                             /** @enum {string} */
@@ -2086,7 +2099,8 @@ export interface operations {
                         };
                         memoryItems: {
                             id: string;
-                            kind: string;
+                            /** @enum {string} */
+                            kind: "preference" | "fact" | "instruction";
                             content: string;
                             enabled: boolean;
                             updatedAt: string;
@@ -2181,15 +2195,22 @@ export interface operations {
                 content: {
                     "application/json": {
                         assistantId: string;
-                        selections: {
-                            kind: string;
+                        selections: ({
                             /** @enum {string} */
-                            mode: "selected" | "disabled";
-                            providerConfigId?: string;
-                        }[];
+                            kind: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
+                            /** @enum {unknown} */
+                            mode: "selected";
+                            providerConfigId: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
+                            /** @enum {unknown} */
+                            mode: "disabled";
+                        })[];
                         availableConfigs: {
                             id: string;
-                            kind: string;
+                            /** @enum {string} */
+                            kind: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
                             name: string;
                             providerName: string;
                             /** @enum {string} */
@@ -2202,7 +2223,8 @@ export interface operations {
                         };
                         memoryItems: {
                             id: string;
-                            kind: string;
+                            /** @enum {string} */
+                            kind: "preference" | "fact" | "instruction";
                             content: string;
                             enabled: boolean;
                             updatedAt: string;
@@ -2293,15 +2315,22 @@ export interface operations {
                 content: {
                     "application/json": {
                         assistantId: string;
-                        selections: {
-                            kind: string;
+                        selections: ({
                             /** @enum {string} */
-                            mode: "selected" | "disabled";
-                            providerConfigId?: string;
-                        }[];
+                            kind: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
+                            /** @enum {unknown} */
+                            mode: "selected";
+                            providerConfigId: string;
+                        } | {
+                            /** @enum {string} */
+                            kind: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
+                            /** @enum {unknown} */
+                            mode: "disabled";
+                        })[];
                         availableConfigs: {
                             id: string;
-                            kind: string;
+                            /** @enum {string} */
+                            kind: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
                             name: string;
                             providerName: string;
                             /** @enum {string} */
@@ -2314,7 +2343,8 @@ export interface operations {
                         };
                         memoryItems: {
                             id: string;
-                            kind: string;
+                            /** @enum {string} */
+                            kind: "preference" | "fact" | "instruction";
                             content: string;
                             enabled: boolean;
                             updatedAt: string;
@@ -2766,7 +2796,9 @@ export interface operations {
     };
     getInternalV1RuntimeConfig: {
         parameters: {
-            query?: never;
+            query?: {
+                assistantId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

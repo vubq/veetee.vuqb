@@ -64,6 +64,23 @@ test('manager API publishes config through immutable ETag flow', async () => {
   }
 })
 
+test('assistant search is validated and filtered by the API contract', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const filtered = await app.inject({ method: 'GET', url: '/api/v1/assistants?search=vee' })
+    assert.equal(filtered.statusCode, 200)
+    const body = filtered.json() as { items: Array<{ name: string }> }
+    assert.ok(body.items.length > 0)
+    assert.ok(body.items.every((item) => item.name.toLocaleLowerCase().includes('vee')))
+
+    const invalid = await app.inject({ method: 'GET', url: `/api/v1/assistants?search=${'x'.repeat(121)}` })
+    assert.equal(invalid.statusCode, 400)
+  } finally {
+    await app.close()
+  }
+})
+
 test('provider config is schema-driven and rejects unknown fields', async () => {
   const app = await buildApp({ env })
   await app.ready()
