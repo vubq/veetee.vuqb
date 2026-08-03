@@ -49,6 +49,22 @@ export interface Device {
   lastConversationAt: string | null
 }
 
+export interface DevicePresenceInput {
+  identityHash: string
+  clientIdHash: string
+  maskedMac: string
+  firmwareVersion: string
+  board: string
+  onlineState: 'online' | 'offline'
+}
+
+export interface DevicePresenceResult {
+  id: string
+  paired: boolean
+  onlineState: 'online' | 'offline'
+  lastSeenAt: string
+}
+
 export interface PairingChallenge {
   id: string
   deviceId: string
@@ -255,6 +271,7 @@ export interface Store {
   updateSecretReference(ownerId: string, id: string, value: { name?: string; locatorMasked?: string }, ifMatch: string): Promise<SecretReference>
   deleteSecretReference(ownerId: string, id: string, ifMatch: string): Promise<void>
   listDevices(ownerId: string, assistantId: string): Promise<Device[]>
+  reportDevicePresence(value: DevicePresenceInput): Promise<DevicePresenceResult>
   createPairingChallenge(value: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string }): Promise<PairingChallenge>
   pairDevice(ownerId: string, value: { assistantId: string; verificationCode: string; displayName?: string }): Promise<Device>
   getRetentionPolicy(ownerId: string): Promise<RetentionPolicy>
@@ -506,6 +523,24 @@ export class InMemoryStore implements Store {
     return [...this.devices.values()]
       .filter((item) => item.ownerId === ownerId && item.assistantId === assistantId)
       .map((item) => publicDevice(item))
+  }
+
+  async reportDevicePresence(value: DevicePresenceInput): Promise<DevicePresenceResult> {
+    const existing = [...this.devices.values()].find((item) => item.identityHash === value.identityHash && item.clientIdHash === value.clientIdHash)
+    const device: DeviceRecord = existing ?? {
+      id: randomUUID(), ownerId: '', assistantId: '', displayName: '', maskedMac: value.maskedMac,
+      firmwareVersion: value.firmwareVersion, board: value.board, onlineState: value.onlineState,
+      lastSeenAt: new Date().toISOString(), lastConversationAt: null,
+      identityHash: value.identityHash, clientIdHash: value.clientIdHash,
+    }
+    const now = new Date().toISOString()
+    device.maskedMac = value.maskedMac
+    device.firmwareVersion = value.firmwareVersion
+    device.board = value.board
+    device.onlineState = value.onlineState
+    device.lastSeenAt = now
+    this.devices.set(device.id, device)
+    return { id: device.id, paired: Boolean(device.ownerId && device.assistantId), onlineState: device.onlineState, lastSeenAt: now }
   }
 
   async createPairingChallenge(value: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string }): Promise<PairingChallenge> {

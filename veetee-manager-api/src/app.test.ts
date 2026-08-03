@@ -168,6 +168,38 @@ test('conversation history ingest is idempotent and respects transcript retentio
   }
 })
 
+test('device presence stores hashed identity and updates paired device state', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const online = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/devices/presence',
+      payload: {
+        identityHash: 'a'.repeat(64), clientIdHash: 'b'.repeat(64), maskedMac: 'AA:BB:CC:••:••:FF',
+        board: 'ESP32-S3 N16R8', firmwareVersion: 'presence-test', onlineState: 'online',
+      },
+    })
+    assert.equal(online.statusCode, 202)
+    assert.equal(online.json().paired, false)
+    assert.equal(online.json().onlineState, 'online')
+
+    const offline = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/devices/presence',
+      payload: {
+        identityHash: 'a'.repeat(64), clientIdHash: 'b'.repeat(64), maskedMac: 'AA:BB:CC:••:••:FF',
+        board: 'ESP32-S3 N16R8', firmwareVersion: 'presence-test', onlineState: 'offline',
+      },
+    })
+    assert.equal(offline.statusCode, 202)
+    assert.equal(offline.json().id, online.json().id)
+    assert.equal(offline.json().onlineState, 'offline')
+  } finally {
+    await app.close()
+  }
+})
+
 test('OpenAPI is generated from every registered route', async () => {
   const app = await buildApp({ env })
   await app.ready()
@@ -186,7 +218,7 @@ test('OpenAPI is generated from every registered route', async () => {
       '/api/v1/provider-configs', '/api/v1/provider-configs/{id}', '/api/v1/voices', '/api/v1/assistants',
       '/api/v1/assistants/{id}', '/api/v1/assistants/{id}/role-config', '/api/v1/assistants/{id}/model-memory',
       '/api/v1/assistants/{id}/model-memory/provider', '/api/v1/assistants/{id}/model-memory/memory',
-      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/internal/v1/devices/pairing-challenges',
+      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/internal/v1/devices/pairing-challenges', '/internal/v1/devices/presence',
       '/internal/v1/runtime-config',
     ]
     for (const path of requiredPaths) assert.ok(document.paths[path], `missing OpenAPI path ${path}`)

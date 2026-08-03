@@ -21,7 +21,8 @@ static int profile_version_number(vt_protocol_profile_t profile) {
 
 int vt_transport_init(vt_transport_t *transport, const vt_transport_config_t *config) {
     if (transport == NULL || config == NULL || config->uri == NULL || config->device_id == NULL ||
-        config->client_id == NULL || config->on_text == NULL || config->on_audio == NULL ||
+        config->client_id == NULL || config->firmware_version == NULL || config->board_profile == NULL ||
+        config->on_text == NULL || config->on_audio == NULL ||
         config->input_sample_rate <= 0 || config->output_sample_rate <= 0 || config->frame_duration_ms <= 0) return ESP_ERR_INVALID_ARG;
     memset(transport, 0, sizeof(*transport));
     transport->config = *config;
@@ -117,8 +118,9 @@ static int send_hello(vt_transport_t *transport) {
     cJSON *root = cJSON_CreateObject();
     cJSON *features = cJSON_CreateObject();
     cJSON *audio = cJSON_CreateObject();
-    if (root == NULL || features == NULL || audio == NULL) {
-        cJSON_Delete(root); cJSON_Delete(features); cJSON_Delete(audio);
+    cJSON *device_info = cJSON_CreateObject();
+    if (root == NULL || features == NULL || audio == NULL || device_info == NULL) {
+        cJSON_Delete(root); cJSON_Delete(features); cJSON_Delete(audio); cJSON_Delete(device_info);
         return ESP_ERR_NO_MEM;
     }
     cJSON_AddStringToObject(root, "type", "hello");
@@ -131,6 +133,9 @@ static int send_hello(vt_transport_t *transport) {
     cJSON_AddNumberToObject(audio, "channels", 1);
     cJSON_AddNumberToObject(audio, "frame_duration", transport->config.frame_duration_ms);
     cJSON_AddItemToObject(root, "audio_params", audio);
+    cJSON_AddStringToObject(device_info, "firmwareVersion", transport->config.firmware_version);
+    cJSON_AddStringToObject(device_info, "board", transport->config.board_profile);
+    cJSON_AddItemToObject(root, "device_info", device_info);
     char *serialized = cJSON_PrintUnformatted(root);
     int result = serialized == NULL ? ESP_ERR_NO_MEM : send_raw_text(transport, serialized);
     cJSON_free(serialized);

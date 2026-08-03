@@ -32,6 +32,13 @@ class ServerConfig:
     history_max_retries: int
     history_retry_backoff_ms: int
     history_shutdown_drain_ms: int
+    presence_enabled: bool
+    presence_path: str
+    presence_queue_size: int
+    presence_request_timeout_ms: int
+    presence_max_retries: int
+    presence_retry_backoff_ms: int
+    presence_shutdown_drain_ms: int
     config_poll_ms: int
     log_level: str
     max_ws_message_bytes: int
@@ -54,6 +61,9 @@ class ServerConfig:
         history_enabled = _bool_env("VEETEE_HISTORY_ENABLED", False)
         if history_enabled and not manager_url:
             raise ConfigurationError("VEETEE_MANAGER_API_URL is required when history reporting is enabled")
+        presence_enabled = _bool_env("VEETEE_PRESENCE_ENABLED", False)
+        if presence_enabled and not manager_url:
+            raise ConfigurationError("VEETEE_MANAGER_API_URL is required when presence reporting is enabled")
         port = _positive_int("VEETEE_VOICE_PORT", os.getenv("VEETEE_VOICE_PORT", "8000"))
         poll_ms = _positive_int("VEETEE_CONFIG_POLL_MS", os.getenv("VEETEE_CONFIG_POLL_MS", "2000"))
         return cls(
@@ -73,6 +83,13 @@ class ServerConfig:
             history_max_retries=_bounded_int("VEETEE_HISTORY_MAX_RETRIES", os.getenv("VEETEE_HISTORY_MAX_RETRIES", "2"), minimum=0, maximum=8),
             history_retry_backoff_ms=_bounded_int("VEETEE_HISTORY_RETRY_BACKOFF_MS", os.getenv("VEETEE_HISTORY_RETRY_BACKOFF_MS", "100"), minimum=0, maximum=10000),
             history_shutdown_drain_ms=_bounded_int("VEETEE_HISTORY_SHUTDOWN_DRAIN_MS", os.getenv("VEETEE_HISTORY_SHUTDOWN_DRAIN_MS", "500"), minimum=0, maximum=30000),
+            presence_enabled=presence_enabled,
+            presence_path=_normalise_path(os.getenv("VEETEE_PRESENCE_PATH", "/internal/v1/devices/presence")),
+            presence_queue_size=_bounded_int("VEETEE_PRESENCE_QUEUE_SIZE", os.getenv("VEETEE_PRESENCE_QUEUE_SIZE", "32"), minimum=1, maximum=1024),
+            presence_request_timeout_ms=_bounded_int("VEETEE_PRESENCE_REQUEST_TIMEOUT_MS", os.getenv("VEETEE_PRESENCE_REQUEST_TIMEOUT_MS", "1000"), minimum=1, maximum=30000),
+            presence_max_retries=_bounded_int("VEETEE_PRESENCE_MAX_RETRIES", os.getenv("VEETEE_PRESENCE_MAX_RETRIES", "1"), minimum=0, maximum=8),
+            presence_retry_backoff_ms=_bounded_int("VEETEE_PRESENCE_RETRY_BACKOFF_MS", os.getenv("VEETEE_PRESENCE_RETRY_BACKOFF_MS", "100"), minimum=0, maximum=10000),
+            presence_shutdown_drain_ms=_bounded_int("VEETEE_PRESENCE_SHUTDOWN_DRAIN_MS", os.getenv("VEETEE_PRESENCE_SHUTDOWN_DRAIN_MS", "500"), minimum=0, maximum=30000),
             config_poll_ms=poll_ms,
             log_level=os.getenv("VEETEE_LOG_LEVEL", "INFO").upper(),
             max_ws_message_bytes=_positive_int(

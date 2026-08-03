@@ -60,6 +60,7 @@
         "VEETEE_MANAGER_API_URL": "http://127.0.0.1:18101",
         "VEETEE_ALLOW_INSECURE_LOCAL_CONFIG": "true",
         "VEETEE_HISTORY_ENABLED": "true",
+        "VEETEE_PRESENCE_ENABLED": "true",
         "VEETEE_VOICE_HOST": "0.0.0.0",
         "VEETEE_VOICE_PORT": "18100",
         "VEETEE_GROQ_SECRET_FILE": "${VEETEE_ROOT}/secrets/groq.keys",

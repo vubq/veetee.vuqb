@@ -197,6 +197,10 @@ Client MUST gửi `hello` ngay sau upgrade và trước audio/control khác:
     "mcp": true,
     "glyph_push": false
   },
+  "device_info": {
+    "board": "ESP32-S3 N16R8",
+    "firmwareVersion": "0.1.0"
+  },
   "transport": "websocket",
   "audio_params": {
     "format": "opus",
@@ -208,7 +212,11 @@ Client MUST gửi `hello` ngay sau upgrade và trước audio/control khác:
 ```
 
 Required: `type`, `version`, `transport`, toàn bộ bốn field trong `audio_params`.
-`features` là object; `mcp`, `glyph_push`, `aec` là optional boolean. `text_font`
+`features` là object; `mcp`, `glyph_push`, `aec` là optional boolean.
+`device_info` là optional additive object; nếu có, `board` và `firmwareVersion`
+là non-empty strings và chỉ dùng cho Manager device presence, không tham gia
+handshake compatibility hoặc audio routing. Peer cũ được phép bỏ qua field này.
+`text_font`
 chỉ được gửi khi `glyph_push:true`. Shape này được tạo ở firmware tham chiếu
 (`references/xiaozhi-esp32/main/protocols/websocket_protocol.cc:198-221`,
 `references/xiaozhi-esp32/main/protocols/protocol.cc:8-24`).

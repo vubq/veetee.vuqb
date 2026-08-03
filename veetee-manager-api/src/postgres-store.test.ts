@@ -129,6 +129,38 @@ test('PostgreSQL persists a paired device and consumes its challenge once', { sk
   } finally { await restarted.close() }
 })
 
+test('PostgreSQL persists device presence across API restart', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8018, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_LOG_LEVEL: 'silent',
+  }
+  const identityHash = `a${'1'.repeat(63)}`
+  const clientIdHash = `b${'2'.repeat(63)}`
+  const app = await buildApp({ env })
+  await app.ready()
+  let deviceId = ''
+  try {
+    const online = await app.inject({ method: 'POST', url: '/internal/v1/devices/presence', payload: {
+      identityHash, clientIdHash, maskedMac: 'AA:BB:CC:••:••:FF', board: 'ESP32-S3 N16R8', firmwareVersion: 'presence-pg', onlineState: 'online',
+    } })
+    assert.equal(online.statusCode, 202)
+    deviceId = online.json().id
+  } finally { await app.close() }
+
+  const restarted = await buildApp({ env })
+  await restarted.ready()
+  try {
+    const offline = await restarted.inject({ method: 'POST', url: '/internal/v1/devices/presence', payload: {
+      identityHash, clientIdHash, maskedMac: 'AA:BB:CC:••:••:FF', board: 'ESP32-S3 N16R8', firmwareVersion: 'presence-pg', onlineState: 'offline',
+    } })
+    assert.equal(offline.statusCode, 202)
+    assert.equal(offline.json().id, deviceId)
+    assert.equal(offline.json().onlineState, 'offline')
+  } finally { await restarted.close() }
+})
+
 test('PostgreSQL keeps secret references that occur in immutable provider history', { skip: !databaseUrlFile }, async () => {
   const env: Environment = {
     VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8015, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,

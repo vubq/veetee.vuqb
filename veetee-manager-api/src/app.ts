@@ -144,6 +144,24 @@ const pairingChallengeResponseSchema = {
   type: 'object', additionalProperties: false, required: ['id', 'deviceId', 'verificationCode', 'expiresAt'],
   properties: { id: { type: 'string' }, deviceId: { type: 'string' }, verificationCode: { type: 'string' }, expiresAt: { type: 'string' } },
 } as const
+const devicePresenceBodySchema = {
+  type: 'object', additionalProperties: false, required: ['identityHash', 'clientIdHash', 'maskedMac', 'board', 'firmwareVersion', 'onlineState'],
+  properties: {
+    identityHash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+    clientIdHash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+    maskedMac: { type: 'string', minLength: 1, maxLength: 64 },
+    board: { type: 'string', minLength: 1, maxLength: 120 },
+    firmwareVersion: { type: 'string', minLength: 1, maxLength: 80 },
+    onlineState: { type: 'string', enum: ['online', 'offline'] },
+  },
+} as const
+const devicePresenceResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'paired', 'onlineState', 'lastSeenAt'],
+  properties: {
+    id: { type: 'string' }, paired: { type: 'boolean' },
+    onlineState: { type: 'string', enum: ['online', 'offline'] }, lastSeenAt: { type: 'string' },
+  },
+} as const
 const retentionPolicyResponseSchema = {
   type: 'object', additionalProperties: false, required: ['ownerId', 'captureTranscript', 'transcriptDays', 'captureAudio', 'audioDays', 'effectiveAt', 'revision', 'etag'],
   properties: { ownerId: { type: 'string' }, captureTranscript: { type: 'boolean' }, transcriptDays: { type: ['integer', 'null'] }, captureAudio: { type: 'boolean' }, audioDays: { type: ['integer', 'null'] }, effectiveAt: { type: 'string' }, revision: { type: 'integer' }, etag: { type: 'string' } },
@@ -483,6 +501,16 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
     const challenge = await store.createPairingChallenge(request.body)
     return reply.code(201).send(challenge)
+  })
+  app.post<{ Body: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string; onlineState: 'online' | 'offline' } }>('/internal/v1/devices/presence', { schema: {
+    body: devicePresenceBodySchema,
+    response: { 202: devicePresenceResponseSchema },
+  } }, async (request, reply) => {
+    if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    try {
+      const result = await store.reportDevicePresence(request.body)
+      return reply.code(202).send(result)
+    } catch (error) { return sendProblem(reply, error) }
   })
   app.post<{ Body: ConversationTurnInput }>('/internal/v1/conversations/turns', { schema: {
     body: conversationTurnBodySchema,

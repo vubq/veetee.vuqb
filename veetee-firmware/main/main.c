@@ -14,6 +14,7 @@
 #include "driver/gpio.h"
 #include "esp_event.h"
 #include "esp_err.h"
+#include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
@@ -461,6 +462,8 @@ static void network_task(void *context) {
             .uri = CONFIG_VEETEE_WS_URI,
             .device_id = app->device_id,
             .client_id = app->client_id,
+            .firmware_version = esp_app_get_description()->version,
+            .board_profile = CONFIG_VEETEE_BOARD_PROFILE,
             .profile = (vt_protocol_profile_t)CONFIG_VEETEE_PROTOCOL_PROFILE,
             .input_sample_rate = CONFIG_VEETEE_MIC_SAMPLE_RATE,
             .output_sample_rate = CONFIG_VEETEE_SPK_SAMPLE_RATE,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import hashlib
 import json
 import logging
 import secrets
@@ -16,6 +17,7 @@ from aiohttp import WSMsgType, web
 from .config import ServerConfig
 from .history import ConversationHistoryReporter
 from .pipeline import Turn, TurnPipeline
+from .presence import DevicePresenceReporter
 from .mcp import DeviceMcpBridge
 from .protocol import ProtocolError, decode_audio, decode_json, profile_from_version, control_message
 from .providers import IntentMatch, MemorySession, OpusCodec, ProviderError
@@ -29,10 +31,11 @@ def _utc_now() -> str:
 
 
 class VoiceApplication:
-    def __init__(self, config: ServerConfig, runtime: RuntimeConfigManager, *, history_reporter: ConversationHistoryReporter | None = None) -> None:
+    def __init__(self, config: ServerConfig, runtime: RuntimeConfigManager, *, history_reporter: ConversationHistoryReporter | None = None, presence_reporter: DevicePresenceReporter | None = None) -> None:
         self.config = config
         self.runtime = runtime
         self.history_reporter = history_reporter
+        self.presence_reporter = presence_reporter
         self.log = logging.getLogger("veetee.voice")
         self.metrics: dict[str, int] = {
             "connections": 0,
@@ -77,6 +80,8 @@ class VoiceApplication:
         payload = dict(self.metrics)
         if self.history_reporter is not None:
             payload.update({f"history_{key}": value for key, value in self.history_reporter.metrics().items()})
+        if self.presence_reporter is not None:
+            payload.update({f"presence_{key}": value for key, value in self.presence_reporter.metrics().items()})
         return web.json_response(payload)
 
     async def websocket(self, request: web.Request) -> web.WebSocketResponse:
@@ -128,6 +133,7 @@ class VoiceSession:
         self.conversation_id = str(uuid4())
         self.conversation_started_at: str | None = None
         self.turn_sequence = 0
+        self.device_info: dict[str, str] | None = None
 
     async def run(self) -> None:
         try:
@@ -160,6 +166,7 @@ class VoiceSession:
             self.app.metrics["protocol_errors"] += 1
             await self.close(1002, "protocol error")
         finally:
+            await self._report_presence("offline")
             await self._abort(reason="disconnect", send_stop=False)
 
     async def _hello(self, message: dict[str, Any]) -> None:
@@ -182,6 +189,7 @@ class VoiceSession:
         if channels != 1 or sample_rate != 16000 or frame_duration != 60:
             raise ProtocolError("client audio must be opus mono 16kHz/60ms")
         self.client_hello = message
+        self.device_info = self._parse_device_info(message.get("device_info"))
         snapshot = self.app.runtime.view.snapshot
         wire = snapshot.raw.get("wire") or {}
         self.codec = OpusCodec(int(wire.get("uplinkSampleRate", 16000)), int(wire.get("downlinkSampleRate", 24000)))
@@ -209,6 +217,7 @@ class VoiceSession:
             await self.mcp.initialize()
             await self.mcp.list_tools()
         self.ready = True
+        self._report_presence("online")
 
     async def _control(self, message: dict[str, Any]) -> None:
         if not self.ready:
@@ -418,6 +427,35 @@ class VoiceSession:
         if not reporter.enqueue(event):
             self.app.metrics["history_enqueue_dropped"] = self.app.metrics.get("history_enqueue_dropped", 0) + 1
 
+    def _report_presence(self, state: str) -> bool:
+        reporter = self.app.presence_reporter
+        if reporter is None or self.device_info is None or state not in {"online", "offline"}:
+            return False
+        event = {
+            "identityHash": hashlib.sha256(self.device_id.encode("utf-8")).hexdigest(),
+            "clientIdHash": hashlib.sha256(self.client_id.encode("utf-8")).hexdigest(),
+            "maskedMac": _mask_device_id(self.device_id),
+            "board": self.device_info["board"],
+            "firmwareVersion": self.device_info["firmwareVersion"],
+            "onlineState": state,
+        }
+        if not reporter.enqueue(event):
+            self.app.metrics["presence_enqueue_dropped"] = self.app.metrics.get("presence_enqueue_dropped", 0) + 1
+            return False
+        return True
+
+    @staticmethod
+    def _parse_device_info(value: Any) -> dict[str, str] | None:
+        if not isinstance(value, dict):
+            return None
+        board = value.get("board")
+        firmware = value.get("firmwareVersion")
+        if not isinstance(board, str) or not board.strip() or len(board) > 120:
+            return None
+        if not isinstance(firmware, str) or not firmware.strip() or len(firmware) > 80:
+            return None
+        return {"board": board.strip(), "firmwareVersion": firmware.strip()}
+
     async def send_text(self, value: dict[str, Any]) -> None:
         if not self._closed:
             turn_id = value.get("turn_id")
@@ -438,3 +476,11 @@ class VoiceSession:
             return
         self._closed = True
         await self.ws.close(code=code, message=message.encode())
+
+
+def _mask_device_id(value: str) -> str:
+    parts = value.split(":")
+    if len(parts) == 6 and all(len(part) == 2 for part in parts):
+        return ":".join([parts[0], parts[1], parts[2], "••", "••", parts[5]])
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return f"id:{digest[:4]}…{digest[-4:]}"

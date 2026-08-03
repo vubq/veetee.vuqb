@@ -29,6 +29,8 @@ import {
   type ConversationTurn,
   type ConversationTurnInput,
   type Device,
+  type DevicePresenceInput,
+  type DevicePresenceResult,
   type ManagerSession,
   type ModelMemoryView,
   type PairingChallenge,
@@ -373,6 +375,40 @@ export class PostgresStore implements Store {
   async listDevices(ownerId: string, assistantId: string): Promise<Device[]> {
     const rows = await this.handle.db.select().from(deviceTable).where(and(eq(deviceTable.ownerId, ownerId), eq(deviceTable.assistantId, assistantId))).orderBy(desc(deviceTable.updatedAt))
     return rows.map((row) => this.mapDevice(row))
+  }
+
+  async reportDevicePresence(value: DevicePresenceInput): Promise<DevicePresenceResult> {
+    const now = new Date()
+    const [existing] = await this.handle.db.select().from(deviceTable).where(and(eq(deviceTable.identityHash, value.identityHash), eq(deviceTable.clientIdHash, value.clientIdHash))).limit(1)
+    const deviceId = existing?.id ?? randomUUID()
+    if (existing) {
+      await this.handle.db.update(deviceTable).set({
+        maskedMac: value.maskedMac,
+        board: value.board,
+        firmwareVersion: value.firmwareVersion,
+        onlineState: value.onlineState,
+        lastSeenAt: now,
+        updatedAt: now,
+      }).where(eq(deviceTable.id, deviceId))
+    } else {
+      await this.handle.db.insert(deviceTable).values({
+        id: deviceId,
+        ownerId: null,
+        assistantId: null,
+        identityHash: value.identityHash,
+        clientIdHash: value.clientIdHash,
+        displayName: '',
+        maskedMac: value.maskedMac,
+        firmwareVersion: value.firmwareVersion,
+        board: value.board,
+        onlineState: value.onlineState,
+        lastSeenAt: now,
+        lastConversationAt: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+    return { id: deviceId, paired: Boolean(existing?.ownerId && existing.assistantId), onlineState: value.onlineState, lastSeenAt: now.toISOString() }
   }
 
   async createPairingChallenge(value: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string }): Promise<PairingChallenge> {

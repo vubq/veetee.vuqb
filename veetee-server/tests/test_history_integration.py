@@ -25,6 +25,18 @@ class RecordingReporter:
         return {"enqueued": len(self.events), "sent": 0, "dropped": 0, "failed": 0, "retries": 0, "queued": 0}
 
 
+class PresenceRecordingReporter:
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def enqueue(self, event: dict[str, Any]) -> bool:
+        self.events.append(event)
+        return True
+
+    def metrics(self) -> dict[str, int]:
+        return {"enqueued": len(self.events), "sent": 0, "dropped": 0, "failed": 0, "retries": 0, "queued": 0}
+
+
 @pytest.mark.asyncio
 async def test_completed_turn_is_reported_outside_websocket_send_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = Path(__file__).parents[1] / "config/fixtures/m0.json"
@@ -77,6 +89,47 @@ async def test_completed_turn_is_reported_outside_websocket_send_path(tmp_path: 
         assert event["timings"]["turn_duration_ms"] >= 0
         assert {segment["speaker"] for segment in event["transcript"]} == {"user", "assistant"}
         await ws.close()
+    finally:
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_device_info_reports_online_and_offline_presence_without_raw_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    snapshot = json.loads(source.read_text(encoding="utf-8"))
+    snapshot["assistantId"] = "11111111-1111-4111-8111-111111111111"
+    fixture = tmp_path / "presence.json"
+    fixture.write_text(json.dumps(snapshot), encoding="utf-8")
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    monkeypatch.setenv("VEETEE_CONFIG_POLL_MS", "5000")
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    reporter = PresenceRecordingReporter()
+    service = VoiceApplication(config, runtime, presence_reporter=reporter)  # type: ignore[arg-type]
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "AA:BB:CC:DD:EE:FF", "Client-Id": "veetee-AA:BB:CC:DD:EE:FF", "Protocol-Version": "3"},
+        )
+        await ws.send_json({
+            "type": "hello",
+            "version": 3,
+            "transport": "websocket",
+            "device_info": {"board": "ESP32-S3 N16R8", "firmwareVersion": "test-build"},
+            "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+        })
+        await ws.receive_json()
+        await ws.close()
+        assert [event["onlineState"] for event in reporter.events] == ["online", "offline"]
+        assert reporter.events[0]["maskedMac"] == "AA:BB:CC:••:••:FF"
+        assert reporter.events[0]["identityHash"] != "AA:BB:CC:DD:EE:FF"
+        assert reporter.events[0]["clientIdHash"] != "veetee-AA:BB:CC:DD:EE:FF"
     finally:
         await client.close()
         await runtime.stop()

@@ -30,6 +30,12 @@ tham số `VEETEE_HISTORY_QUEUE_SIZE`, `VEETEE_HISTORY_REQUEST_TIMEOUT_MS`,
 `VEETEE_HISTORY_MAX_RETRIES`, `VEETEE_HISTORY_RETRY_BACKOFF_MS` và
 `VEETEE_HISTORY_SHUTDOWN_DRAIN_MS` chỉ là vận hành, không chứa credential.
 
+Presence tùy chọn bằng `VEETEE_PRESENCE_ENABLED=true` đẩy online/offline của
+session tới `POST /internal/v1/devices/presence` qua queue riêng. Payload chỉ
+chứa SHA-256 của `Device-Id`/`Client-Id`, MAC đã mask, board và firmware version;
+raw identity không đi vào Manager API. Các tham số queue/timeout/retry tương ứng
+có prefix `VEETEE_PRESENCE_`.
+
 Các giá trị vận hành đọc từ environment hoặc snapshot. Fixture mặc định dùng
 provider deterministic để contract test không gọi API ngoài. Groq/VieNeu thật chỉ
 được activate bằng snapshot/provider manifest và dependency đã cài. Adapter VieNeu
