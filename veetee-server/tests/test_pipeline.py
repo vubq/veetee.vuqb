@@ -298,5 +298,48 @@ async def test_active_provider_fault_is_terminal_without_secondary_call():
     assert secondary_calls == 0
 
 
+@pytest.mark.asyncio
+async def test_tts_fault_after_first_segment_emits_one_stop_without_fallback():
+    snapshot = load_snapshot(Path(__file__).parents[1] / "config/fixtures/m0.json")
+    registry = ProviderRegistry(snapshot)
+    calls = 0
+
+    class FailingAfterFirstTTS:
+        async def stream(self, text, *, locale, voice):
+            nonlocal calls
+            del text, locale, voice
+            calls += 1
+            if calls == 1:
+                yield AudioChunk(b"\0\0" * 2400, 24_000, final=True)
+                return
+            raise ProviderError("TTS_SYNTHESIS_FAILED", "active provider failure")
+
+    registry.tts = FailingAfterFirstTTS()
+    turn = Turn(turn_id="provider-fault-after-start", generation=1, mode="manual", cancelled=asyncio.Event())
+    events = []
+    pipeline = TurnPipeline(
+        snapshot=snapshot,
+        registry=registry,
+        codec=OpusCodec(16_000, 24_000),
+        profile="ws-v3",
+        session_id="provider-fault-after-start-session",
+        turn=turn,
+        send_text=lambda value: _append(events, value),
+        send_binary=lambda value: _append(events, value),
+        metrics={},
+    )
+    await pipeline.ingest(b"\0" * 1920)
+    await pipeline.finish()
+
+    controls = [event for event in events if isinstance(event, dict)]
+    stops = [event for event in controls if event.get("type") == "tts" and event.get("state") == "stop"]
+    assert turn.state == "error"
+    assert any(event.get("type") == "tts" and event.get("state") == "start" for event in controls)
+    assert any(event.get("type") == "alert" and event.get("code") == "TTS_SYNTHESIS_FAILED" for event in controls)
+    assert len(stops) == 1
+    assert stops[0]["reason"] == "TTS_SYNTHESIS_FAILED"
+    assert calls == 2
+
+
 async def _append(target, value):
     target.append(value)

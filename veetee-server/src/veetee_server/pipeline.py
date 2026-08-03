@@ -107,6 +107,8 @@ class TurnPipeline:
         self._frame_duration_ms = int(wire.get("frameDurationMs", 60))
         self._frame_samples = self._downlink_rate * self._frame_duration_ms // 1000
         self._egress_pcm = bytearray()
+        self._tts_started = False
+        self._tts_stop_sent = False
 
     async def ingest(self, pcm: bytes) -> None:
         if self.turn.cancelled and self.turn.cancelled.is_set():
@@ -148,6 +150,7 @@ class TurnPipeline:
             self.turn.finish_reason = exc.code
             self.metrics[f"provider_error_{exc.code}"] = self.metrics.get(f"provider_error_{exc.code}", 0) + 1
             await self._send_text(control_message("alert", session_id=self.session_id, status="error", code=exc.code))
+            await self._emit_tts_stop(exc.code)
         finally:
             self.turn.ended_at = self.turn.ended_at or self._utc_now()
             self.metrics["turn_count"] = self.metrics.get("turn_count", 0) + 1
@@ -243,6 +246,7 @@ class TurnPipeline:
                     if not answer_started:
                         self.turn.tts_started_at = time.perf_counter()
                         await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
+                        self._tts_started = True
                         answer_started = True
                     await self._speak_segment(segment)
 
@@ -321,8 +325,16 @@ class TurnPipeline:
             break
         if answer_started and not self._cancelled():
             await self._flush_packetizer()
-            await self._send_text(control_message("tts", session_id=self.session_id, state="stop", turn_id=self.turn.turn_id))
+            await self._emit_tts_stop("complete")
         return " ".join(answer_parts).strip()
+
+    async def _emit_tts_stop(self, reason: str) -> None:
+        """Close the speaking phase once, including terminal provider errors."""
+
+        if not self._tts_started or self._tts_stop_sent:
+            return
+        self._tts_stop_sent = True
+        await self._send_text(control_message("tts", session_id=self.session_id, state="stop", reason=reason, turn_id=self.turn.turn_id))
 
     def _memory_answer_limit(self) -> int:
         providers = self.snapshot.raw.get("providers")
