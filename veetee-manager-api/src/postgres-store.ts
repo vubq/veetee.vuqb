@@ -244,6 +244,9 @@ export class PostgresStore implements Store {
           continue
         }
         if (typeof value.providerId === 'string' && value.config && typeof value.config === 'object') {
+          const installation = this.installations.find((item) => item.id === value.providerId)
+          if (!installation) throw problem('CONFIG_NOT_PUBLISHABLE', `Provider installation is not configured: ${kind}`, 422)
+          validateSecretBindings(installation, asSecretRefs(value.secretRefs), { requireComplete: true })
           resolvedProviders[kind] = structuredClone(value)
           continue
         }
@@ -252,6 +255,7 @@ export class PostgresStore implements Store {
         const [providerRevision] = provider ? await tx.select().from(providerConfigRevisionTable).where(and(eq(providerConfigRevisionTable.providerConfigId, provider.id), eq(providerConfigRevisionTable.revision, provider.currentRevision))).limit(1) : []
         const installation = provider ? this.installations.find((item) => item.id === provider.installationId) : undefined
         if (!provider || !providerRevision || !installation) throw problem('CONFIG_NOT_PUBLISHABLE', `Provider selection is not configured: ${kind}`, 422)
+        validateSecretBindings(installation, asSecretRefs(providerRevision.secretRefs), { requireComplete: true })
         resolvedProviders[kind] = { providerId: installation.id, version: installation.version, providerConfigId: provider.id, configRevision: providerRevision.revision, config: asJsonObject(providerRevision.config), secretRefs: asSecretRefs(providerRevision.secretRefs) }
       }
       const snapshot: RuntimeSnapshot = {

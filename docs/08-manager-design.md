@@ -348,7 +348,9 @@ Không có transition quay lại `candidate` hoặc sửa tại chỗ.
 
 1. verify `If-Match` và quyền owner/operator;
 2. validate required providers, package installation state, locale/voice capability,
-   extension schema và secret reference status;
+   extension schema và secret reference status; provider draft có thể tạm
+   `secretRefs: []` trong lúc rotation, nhưng selected provider phải đủ binding
+   theo `manifest.secretFields` ở bước publish;
 3. canonicalize snapshot rồi tính checksum;
 4. pin provider-config revision/package version, đánh dấu revision published và
    atomically đổi `publishedRevisionId`;
@@ -515,8 +517,8 @@ chỉ liệt kê lỗi domain bổ sung.
 | `GET /provider-installations` | User:R | `kind,locale,installed,limit,cursor` | `200 Page<ProviderInstallationView>` | — | `C`; read-only catalog. |
 | `GET /provider-installations/{id}` | User:R | none | `200 installation + configSchema + manifest` | `404` | Safe. |
 | `GET /provider-configs` | User:R | `kind,enabled,search,limit,cursor` | `200 Page<ProviderConfigView>` | — | `C`; secret status only. |
-| `POST /provider-configs` | Owner | `{installationId,name,config,secretRefs}` | `201 ProviderConfigView` + `ETag` | `422 PACKAGE_NOT_INSTALLED`, `CONFIG_INVALID` hoặc `SECRET_INVALID` | `IK` required. |
-| `PATCH /provider-configs/{id}` | Owner | `{name?,config?,enabled?,secretRefs?}` | `200 ProviderConfigView` + `ETag` | `409 REVISION_CONFLICT`; `422` | `IM` required; tạo config revision immutable. |
+| `POST /provider-configs` | Owner | `{installationId,name,config,secretRefs}` | `201 ProviderConfigView` + `ETag` | `422 PACKAGE_NOT_INSTALLED`, `CONFIG_INVALID` hoặc `SECRET_INVALID` | `IK` required; draft có thể chưa bind đủ secret và được hiển thị unavailable. |
+| `PATCH /provider-configs/{id}` | Owner | `{name?,config?,enabled?,secretRefs?}` | `200 ProviderConfigView` + `ETag` | `409 REVISION_CONFLICT`; `422` | `IM` required; tạo config revision immutable; publish mới strict đủ secret. |
 | `DELETE /provider-configs/{id}` | Owner | none | `204` | `409 RESOURCE_IN_USE` | `IM`; repeat `204`. |
 | `POST /provider-configs/{id}/probes` | Owner | `{probeProfileId?}` | `202 ProviderProbeJob` | `409 JOB_ALREADY_RUNNING` | `IK`; provider failure nằm trong terminal job; no fallback. |
 | `GET /provider-probes/{jobId}` | Owner | none | `200 ProviderProbeJob` | `404` | Safe/pollable. |

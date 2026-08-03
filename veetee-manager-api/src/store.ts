@@ -281,6 +281,9 @@ export class InMemoryStore implements Store {
         continue
       }
       if (typeof value.providerId === 'string' && value.config && typeof value.config === 'object') {
+        const installation = this.installations.find((item) => item.id === value.providerId)
+        if (!installation) throw problem('CONFIG_NOT_PUBLISHABLE', `Provider installation is not configured: ${kind}`, 422)
+        validateSecretBindings(installation, Array.isArray(value.secretRefs) ? value.secretRefs.filter((item): item is string => typeof item === 'string') : [], { requireComplete: true })
         resolvedProviders[kind] = value
         continue
       }
@@ -288,6 +291,7 @@ export class InMemoryStore implements Store {
       const selected = selectedId ? this.providerConfigs.get(selectedId) : undefined
       const installation = selected ? this.installations.find((item) => item.id === selected.installationId) : undefined
       if (!selected || !installation) throw problem('CONFIG_NOT_PUBLISHABLE', `Provider selection is not configured: ${kind}`, 422)
+      validateSecretBindings(installation, selected.secretRefs, { requireComplete: true })
       resolvedProviders[kind] = { providerId: installation.id, version: installation.version, config: selected.config, secretRefs: [...selected.secretRefs] }
     }
     const snapshot: RuntimeSnapshot = {
@@ -412,10 +416,16 @@ function validateJsonObject(value: Record<string, unknown>, schema: Record<strin
   for (const required of (schema.required as string[] | undefined) ?? []) if (!(required in value)) throw problem('CONFIG_INVALID', `Missing provider field: ${required}`, 422)
 }
 
-export function validateSecretBindings(installation: ProviderInstallation, refs: string[]): void {
+export function validateSecretBindings(installation: ProviderInstallation, refs: string[], options: { requireComplete?: boolean } = {}): void {
   const fields = Array.isArray(installation.manifest.secretFields) ? installation.manifest.secretFields : []
-  if (refs.length !== fields.length) {
-    if (fields.length > 0) throw problem('SECRET_INVALID', `${installation.id} requires exactly ${fields.length} secretRef`, 422)
+  const uniqueRefs = new Set(refs)
+  if (uniqueRefs.size !== refs.length) throw problem('SECRET_INVALID', `${installation.id} cannot bind the same secretRef more than once`, 422)
+  if (fields.length === 0) {
     if (refs.length > 0) throw problem('SECRET_INVALID', `${installation.id} does not declare secret fields`, 422)
+    return
+  }
+  if (refs.length > fields.length || (options.requireComplete === true && refs.length !== fields.length)) {
+    const qualifier = options.requireComplete === true ? 'exactly' : 'at most'
+    throw problem('SECRET_INVALID', `${installation.id} requires ${qualifier} ${fields.length} secretRef`, 422)
   }
 }
