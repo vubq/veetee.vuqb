@@ -54,6 +54,24 @@ async def test_vieneu_adapter_is_lazy_and_resamples_stream(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_vieneu_prepare_prewarm_is_configured(monkeypatch):
+    calls = []
+
+    class FakeEngine:
+        sample_rate = 48_000
+
+    def factory(**kwargs):
+        calls.append(kwargs)
+        return FakeEngine()
+
+    monkeypatch.setitem(sys.modules, "vieneu", types.SimpleNamespace(Vieneu=factory))
+    adapter = VieNeuTTS({"backboneRepo": "test/backbone", "prewarm": True})
+    assert calls == []
+    await adapter.prepare()
+    assert calls == [{"mode": "v3turbo", "backbone_repo": "test/backbone"}]
+
+
+@pytest.mark.asyncio
 async def test_vieneu_adapter_propagates_synthesis_error(monkeypatch):
     class FakeEngine:
         sample_rate = 48_000

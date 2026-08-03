@@ -40,6 +40,10 @@ Silero VAD adapter dùng ONNX recurrent state và reframe mỗi input thành
 endpoint policy đều đến từ snapshot; thiếu artifact/dependency tạo typed provider
 error, không tự chuyển về energy VAD.
 
+VieNeu có `prewarm: true` tùy chọn trong provider config. Khi bật, runtime load
+local engine trước khi công bố readiness/snapshot; nếu không bật, engine vẫn lazy
+load ở lần synthesize đầu.
+
 Health:
 
 - `GET /health/live`

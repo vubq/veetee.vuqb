@@ -198,6 +198,9 @@ Golden corpus phải có viết tắt, số thập phân, ngày/giờ, URL, emoj
 - Selected VieNeu v3 Turbo `3.2.4`/pinned model revision nhận ordered `SpeechSegment` và yield PCM chunks bằng ONNX INT8 CPU; không trả full WAV cho answer dài.
 - Mỗi segment có independent synthesis context nhưng voice/style/speaker embedding được reuse trong turn/session theo manifest.
 - Current realtime candidate có frame streaming; output source rate được adapter khai báo. Nếu là 48 kHz, server resample streaming về negotiated 24 kHz trước Opus.
+- Provider config có thể đặt `prewarm:true` để load local TTS engine trong
+  activation/readiness; mặc định false cho fixture. Prewarm failure làm snapshot
+  fail activation thay vì lazy-load bất ngờ ở user turn.
 - Text normalization nằm ở locale/TTS adapter; core không thay từ tiếng Việt bằng rule hardcode.
 - TTS cancel phải dừng generation và release queue/worker trong deadline.
 - First segment có thể được warm/prepared; không lazy-download model trên user turn.

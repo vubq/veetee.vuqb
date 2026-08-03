@@ -528,6 +528,7 @@ class VieNeuTTS:
         self._mode = str(config.get("mode", "v3turbo"))
         self._sample_rate = _positive_int(config, "sampleRate", fallback=24000)
         self._source_sample_rate = _positive_int(config, "sourceSampleRate", fallback=48000)
+        self._prewarm = bool(config.get("prewarm", False))
         self._factory_config = self._factory_kwargs(config)
         self._engine: Any | None = None
         self._engine_lock = asyncio.Lock()
@@ -563,6 +564,11 @@ class VieNeuTTS:
                 except Exception as exc:  # noqa: BLE001
                     raise ProviderError("TTS_MODEL_LOAD_FAILED", "VieNeu model could not be loaded") from exc
         return self._engine
+
+    async def prepare(self) -> None:
+        """Load an opted-in local model before the runtime snapshot is ready."""
+        if self._prewarm:
+            await self._get_engine()
 
     async def stream(self, text: str, *, locale: str, voice: dict[str, Any]) -> AsyncIterator[AudioChunk]:
         del locale  # VieNeu's Vietnamese model infers language from configured text/voice.
@@ -670,6 +676,11 @@ class ProviderRegistry:
         self.tts = self._tts(snapshot.provider("tts"))
         self.intent = self._optional(snapshot, "intent", self._intent)
         self.memory = self._optional(snapshot, "memory", self._memory)
+
+    async def prepare(self) -> None:
+        preparer = getattr(self.tts, "prepare", None)
+        if callable(preparer):
+            await preparer()
 
     def _selection(self, item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         provider_id = item["providerId"]

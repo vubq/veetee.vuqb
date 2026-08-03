@@ -122,6 +122,7 @@ class RuntimeConfigManager:
         async with self._lock:
             try:
                 registry = ProviderRegistry(snapshot, secret_file=self.secret_file, secret_resolver=self.secret_resolver)
+                await registry.prepare()
                 view = RuntimeView(snapshot=snapshot, registry=registry)
             except (ConfigurationError, ProviderError):
                 self.activation_failures += 1
