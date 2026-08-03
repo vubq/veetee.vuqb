@@ -147,6 +147,7 @@ typedef struct {
 #define VT_WS_RETRY_DELAY_MS 2000
 #define VT_PTT_POLL_MS 10
 #define VT_PTT_DEBOUNCE_SAMPLES 3
+#define VT_PTT_RETRY_DELAY_MS 250
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static int wifi_start(vt_app_t *app);
@@ -297,7 +298,12 @@ static void ptt_task(void *context) {
     vt_app_t *app = (vt_app_t *)context;
     bool stable = false;
     bool candidate = false;
+    bool pending_start = false;
     int samples = 0;
+    TickType_t retry_after = 0;
+    ESP_LOGI(TAG, "PTT monitor gpio=%d active_level=%d initial_level=%d",
+             CONFIG_VEETEE_PTT_GPIO, CONFIG_VEETEE_PTT_ACTIVE_LEVEL,
+             gpio_get_level(CONFIG_VEETEE_PTT_GPIO));
     while (!app->stop_requested) {
         bool active = gpio_get_level(CONFIG_VEETEE_PTT_GPIO) == CONFIG_VEETEE_PTT_ACTIVE_LEVEL;
         if (active != candidate) {
@@ -308,23 +314,37 @@ static void ptt_task(void *context) {
             if (samples >= VT_PTT_DEBOUNCE_SAMPLES && stable != candidate) {
                 stable = candidate;
                 if (stable) {
+                    pending_start = true;
                     if (state_read(app) == VT_DEVICE_SPEAKING) {
                         app->capture_active = false;
                         (void)send_control(app, "abort", NULL, "button_interrupt");
                         (void)xQueueReset(app->playback_queue);
                         (void)state_apply(app, VT_EVENT_ABORT);
-                    } else if (state_read(app) == VT_DEVICE_LISTENING) {
-                        vt_audio_reset(&app->audio);
-                        if (send_control(app, "listen", "start", NULL) == ESP_OK) {
-                            app->capture_active = true;
-                            ESP_LOGI(TAG, "PTT start");
-                        }
+                        ESP_LOGI(TAG, "PTT interrupt");
                     }
                 } else if (app->capture_active) {
+                    pending_start = false;
                     app->capture_active = false;
-                    (void)send_control(app, "listen", "stop", NULL);
+                    int result = send_control(app, "listen", "stop", NULL);
                     (void)state_apply(app, VT_EVENT_LISTEN_STOP);
-                    ESP_LOGI(TAG, "PTT stop");
+                    ESP_LOGI(TAG, "PTT stop result=%s", esp_err_to_name(result));
+                } else {
+                    pending_start = false;
+                }
+            }
+        }
+        if (stable && pending_start && !app->capture_active && state_read(app) == VT_DEVICE_LISTENING) {
+            TickType_t now = xTaskGetTickCount();
+            if ((int32_t)(now - retry_after) >= 0) {
+                vt_audio_reset(&app->audio);
+                int result = send_control(app, "listen", "start", NULL);
+                if (result == ESP_OK) {
+                    app->capture_active = true;
+                    pending_start = false;
+                    ESP_LOGI(TAG, "PTT start");
+                } else {
+                    retry_after = now + pdMS_TO_TICKS(VT_PTT_RETRY_DELAY_MS);
+                    ESP_LOGW(TAG, "PTT start send failed result=%s; retrying", esp_err_to_name(result));
                 }
             }
         }
