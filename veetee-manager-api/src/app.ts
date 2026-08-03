@@ -72,6 +72,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
         title: 'Veetee Manager API',
         version: '0.1.0',
         description: 'Control-plane API for assistant, provider and device configuration.',
+        license: { name: 'Private project', identifier: 'LicenseRef-Veetee-Private' },
       },
       servers: [{ url: '{baseUrl}', variables: { baseUrl: { default: 'http://127.0.0.1:8001' } } }],
       tags: [
@@ -93,8 +94,16 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       const method = (Array.isArray(route.method) ? route.method[0] : route.method) ?? 'GET'
       const operationId = schema?.operationId ?? operationIdFor(method, url)
       const tag = tagFor(url)
-      const response = schema?.response ?? { default: { type: 'object', additionalProperties: true } }
       const security = securityFor(url)
+      const response = {
+        '400': problemResponse('Invalid request'),
+        '500': problemResponse('Unexpected server error'),
+        ...(security ? {
+          '401': problemResponse('Authentication required'),
+          '403': problemResponse('Forbidden'),
+        } : {}),
+        ...(schema?.response ?? { default: { type: 'object', additionalProperties: true } }),
+      }
       return {
         url,
         schema: {
@@ -103,7 +112,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
           tags: schema?.tags ?? [tag],
           summary: schema?.summary ?? `${method} ${url}`,
           response,
-          ...(security ? { security } : {}),
+          security: security ?? [],
         },
       }
     },
@@ -365,4 +374,25 @@ function securityFor(url: string): ReadonlyArray<Record<string, readonly string[
   if (url.startsWith('/health/') || url === '/api/v1/auth/login' || url === '/openapi.json') return undefined
   if (url.startsWith('/internal/')) return [{ machineBearer: [] }]
   return [{ veeteeSession: [] }]
+}
+
+function problemResponse(description: string): Record<string, unknown> {
+  return {
+    description,
+    content: {
+      'application/problem+json': {
+        schema: {
+          type: 'object',
+          required: ['code'],
+          properties: {
+            type: { type: 'string' },
+            code: { type: 'string' },
+            title: { type: 'string' },
+            detail: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+  }
 }
