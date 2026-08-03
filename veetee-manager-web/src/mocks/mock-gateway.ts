@@ -353,6 +353,15 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     return this.success(value, request)
   }
 
+  async updateProviderConfig(id: string, input: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] }, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    if (expectedEtag !== '"preview"') {
+      const problem = this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)
+      if (problem) return this.failure(problem, request)
+    }
+    return this.success({ id, installationId: id, name: input.name ?? id, revision: 2, config: input.config ?? {}, secretRefs: input.secretRefs ?? [], etag: '"preview"' }, request)
+  }
+
   async listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>> {
     const request = await this.begin('read')
     const items = this.state.voices

@@ -76,6 +76,7 @@ export interface AssistantGateway {
   listProviderInstallations(): Promise<GatewayResult<ProviderInstallationView[], never>>
   listProviderConfigs(): Promise<GatewayResult<ProviderConfigRecord[], never>>
   createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>>
+  updateProviderConfig(id: string, input: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] }, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem | RevisionConflictProblem<ProviderConfigRecord, unknown>>>
 
   listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>>
 

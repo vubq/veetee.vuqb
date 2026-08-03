@@ -19,6 +19,7 @@ import type {
   VoiceProfile,
   ProviderConfigRecord,
   ProviderInstallationView,
+  RevisionConflictProblem,
   ValidationProblem,
 } from '@/domain'
 import type { GatewayDependencies, ManagerGateway, PreviewControlGateway } from './manager-gateway'
@@ -92,6 +93,12 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
 
   async createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {
     const result = await this.request('/api/v1/provider-configs', { method: 'POST', body: JSON.stringify(input) })
+    if (!result.response.ok) return this.failure(result)
+    return this.success(result.body as ProviderConfigRecord)
+  }
+
+  async updateProviderConfig(id: string, input: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] }, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, RevisionConflictProblem<ProviderConfigRecord, unknown> | ValidationProblem>> {
+    const result = await this.request(`/api/v1/provider-configs/${id}`, { method: 'PATCH', headers: { 'If-Match': expectedEtag }, body: JSON.stringify(input) })
     if (!result.response.ok) return this.failure(result)
     return this.success(result.body as ProviderConfigRecord)
   }

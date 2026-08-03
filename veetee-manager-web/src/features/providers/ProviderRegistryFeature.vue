@@ -19,6 +19,7 @@ const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
 const installations = ref<ProviderInstallationView[]>([])
 const configs = ref<ProviderConfigRecord[]>([])
 const selectedId = ref('')
+const selectedConfigId = ref('')
 const name = ref('')
 const jsonConfig = ref('{}')
 const secretRefs = ref('')
@@ -32,6 +33,7 @@ const schemaKeys = computed(() => Object.keys((selected.value?.configSchema.prop
 function chooseInstallation(value: string) {
   selectedId.value = value
   const item = configs.value.find((config) => config.installationId === value)
+  selectedConfigId.value = item?.id ?? ''
   name.value = item?.name ?? ''
   jsonConfig.value = JSON.stringify(item?.config ?? {}, null, 2)
   secretRefs.value = item?.secretRefs.join(', ') ?? ''
@@ -40,11 +42,11 @@ function chooseInstallation(value: string) {
 async function load() {
   loading.value = true
   const [catalog, configured] = await Promise.all([gateway.listProviderInstallations(), gateway.listProviderConfigs()])
+  if (configured.ok) configs.value = configured.data
   if (catalog.ok) {
     installations.value = catalog.data
     if (!selectedId.value && catalog.data[0]) chooseInstallation(catalog.data[0].id)
   }
-  if (configured.ok) configs.value = configured.data
   loading.value = false
 }
 
@@ -60,11 +62,15 @@ async function save() {
     return
   }
   saving.value = true
-  const result = await gateway.createProviderConfig({ installationId: selected.value.id, name: name.value.trim(), config: parsed, secretRefs: secretRefs.value.split(',').map((item) => item.trim()).filter(Boolean) })
+  const payload = { name: name.value.trim(), config: parsed, secretRefs: secretRefs.value.split(',').map((item) => item.trim()).filter(Boolean) }
+  const result = selectedConfigId.value
+    ? await gateway.updateProviderConfig(selectedConfigId.value, payload, configs.value.find((item) => item.id === selectedConfigId.value)?.etag ?? '"missing"')
+    : await gateway.createProviderConfig({ installationId: selected.value.id, ...payload })
   saving.value = false
   if (result.ok) {
     configs.value = [...configs.value.filter((item) => item.id !== result.data.id), result.data]
-    notify('Đã lưu provider config', { tone: 'success', message: 'Selection chỉ đổi sau khi bạn chọn và publish trong Assistant.' })
+    selectedConfigId.value = result.data.id
+    notify('Đã lưu provider config', { tone: 'success', message: 'Revision đã được cập nhật; selection chỉ đổi sau khi bạn chọn và publish trong Assistant.' })
   } else {
     notify('Không thể lưu provider config', { tone: 'error', message: 'Schema provider từ chối giá trị; kiểm tra các field bắt buộc.', assertive: true })
   }
