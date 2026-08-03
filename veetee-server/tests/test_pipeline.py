@@ -200,5 +200,54 @@ async def test_tool_call_round_trip_streams_answer_after_device_result(tmp_path)
     assert binary
 
 
+@pytest.mark.asyncio
+async def test_long_answer_keeps_memory_excerpt_bounded(tmp_path):
+    source = json.loads((Path(__file__).parents[1] / "config/fixtures/m0.json").read_text(encoding="utf-8"))
+    source["providers"]["memory"] = {
+        "providerId": "veetee.memory.session-window",
+        "version": "1.0.0",
+        "config": {"maxTurns": 4, "maxCharacters": 120},
+    }
+    source["providers"]["llm"]["config"] = {
+        "segments": ["đoạn trả lời rất dài. " * 80],
+        "chunkSize": 11,
+    }
+    fixture = tmp_path / "long-answer.json"
+    fixture.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    snapshot = load_snapshot(fixture)
+    registry = ProviderRegistry(snapshot)
+
+    class RecordingMemory:
+        assistant_text = ""
+
+        def add_turn(self, user_text: str, assistant_text: str) -> None:
+            del user_text
+            self.assistant_text = assistant_text
+
+        def context(self) -> str:
+            return ""
+
+    memory = RecordingMemory()
+    codec = OpusCodec(16000, 24000)
+    turn = Turn(turn_id="long-answer-turn", generation=1, mode="manual", cancelled=asyncio.Event())
+    binary = []
+    pipeline = TurnPipeline(
+        snapshot=snapshot,
+        registry=registry,
+        codec=codec,
+        profile="ws-v3",
+        session_id="long-answer-session",
+        turn=turn,
+        send_text=lambda value: _append([], value),
+        send_binary=lambda value: _append(binary, value),
+        memory=memory,
+        metrics={},
+    )
+    await pipeline.ingest(b"\0" * 1920)
+    await pipeline.finish()
+    assert 0 < len(memory.assistant_text) <= 120
+    assert binary
+
+
 async def _append(target, value):
     target.append(value)

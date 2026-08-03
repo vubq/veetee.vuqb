@@ -152,6 +152,25 @@ class TurnPipeline:
         max_rounds = max(1, int((self.snapshot.raw.get("toolPolicy") or {}).get("maxRounds", 3)))
         answer_started = False
         answer_parts: list[str] = []
+        answer_length = 0
+        answer_limit = self._memory_answer_limit()
+
+        def remember_answer(segment: str) -> None:
+            """Keep only the bounded excerpt needed by the Memory provider."""
+
+            nonlocal answer_length
+            if answer_limit <= 0:
+                return
+            if len(segment) >= answer_limit:
+                answer_parts.clear()
+                answer_parts.append(segment[-answer_limit:])
+                answer_length = answer_limit
+                return
+            answer_parts.append(segment)
+            answer_length += len(segment)
+            while answer_length > answer_limit and answer_parts:
+                answer_length -= len(answer_parts.pop(0))
+
         current_prompt = prompt
         for _round in range(max_rounds):
             segmenter = SemanticSegmenter(self.snapshot.raw.get("segmentation") or {})
@@ -171,7 +190,7 @@ class TurnPipeline:
                 for segment in segmenter.push(delta.text, final=delta.final):
                     if self._cancelled():
                         return
-                    answer_parts.append(segment)
+                    remember_answer(segment)
                     if not answer_started:
                         self.turn.tts_started_at = time.perf_counter()
                         await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
@@ -225,6 +244,21 @@ class TurnPipeline:
             await self._flush_packetizer()
             await self._send_text(control_message("tts", session_id=self.session_id, state="stop", turn_id=self.turn.turn_id))
         return " ".join(answer_parts).strip()
+
+    def _memory_answer_limit(self) -> int:
+        providers = self.snapshot.raw.get("providers")
+        if not isinstance(providers, dict):
+            return 0
+        memory = providers.get("memory")
+        if not isinstance(memory, dict) or memory.get("mode") == "disabled":
+            return 0
+        config = memory.get("config")
+        if not isinstance(config, dict):
+            return 0
+        try:
+            return max(0, int(config.get("maxCharacters", 12000)))
+        except (TypeError, ValueError):
+            return 0
 
     def _progress_ack(self) -> tuple[int, str]:
         policy = self.snapshot.raw.get("progress")
