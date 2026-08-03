@@ -237,7 +237,8 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   private failure<T, P extends GatewayProblem>(result: ApiResult): GatewayResult<T, P> {
     const error = result.error
     const code = isRecord(error) && typeof error.code === 'string' ? error.code : result.response.status === 503 ? 'OFFLINE_MUTATION_BLOCKED' : 'REQUEST_FAILED'
-    return { ok: false, problem: { type: 'validation', code, messageKey: `problem.${code}`, requestId: crypto.randomUUID(), retryable: result.response.status >= 500, fieldProblems: [] } as unknown as P, meta: { requestId: crypto.randomUUID(), completedAt: new Date().toISOString(), delayMs: 0, freshness: 'fresh', offline: result.response.status >= 500 } }
+    const offline = result.response.status === 503 || code === 'OFFLINE_MUTATION_BLOCKED'
+    return { ok: false, problem: { type: 'validation', code, messageKey: `problem.${code}`, requestId: crypto.randomUUID(), retryable: result.response.status >= 500, fieldProblems: [] } as unknown as P, meta: { requestId: crypto.randomUUID(), completedAt: new Date().toISOString(), delayMs: 0, freshness: offline ? 'stale' : 'fresh', offline } }
   }
 }
 
