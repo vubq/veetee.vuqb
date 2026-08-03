@@ -106,6 +106,11 @@ class RuntimeConfigManager:
     async def refresh_now(self) -> bool:
         source = await self._read_source()
         if source.checksum == self.view.snapshot.checksum:
+            # A successful 304/unchanged read proves that the last-known-good
+            # generation is still reachable. Keep the cumulative failure count
+            # for diagnostics, but do not expose a stale transient error as the
+            # current health condition.
+            self.last_activation_error_type = None
             return False
         return await self._activate(source)
 

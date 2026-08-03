@@ -97,6 +97,22 @@ async def test_failed_candidate_is_closed_and_old_generation_stays_active(monkey
 
 
 @pytest.mark.asyncio
+async def test_successful_unchanged_poll_clears_transient_error_without_resetting_counter(monkeypatch):
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(FIXTURE))
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    await runtime.start()
+    try:
+        runtime.activation_failures = 3
+        runtime.last_activation_error_type = "ConnectError"
+        assert await runtime.refresh_now() is False
+        assert runtime.activation_failures == 3
+        assert runtime.last_activation_error_type is None
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_manager_snapshot_client_reuses_pool_and_retries_transient_connect(monkeypatch):
     monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "manager")
     monkeypatch.setenv("VEETEE_MANAGER_API_URL", "http://manager.test")
