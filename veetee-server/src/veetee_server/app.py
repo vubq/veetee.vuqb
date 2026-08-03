@@ -174,7 +174,10 @@ class VoiceSession:
                     await asyncio.gather(self._mcp_discovery_task, return_exceptions=True)
                 if self.mcp is not None:
                     self.mcp.cancel_all()
-                await self._report_presence("offline")
+                # Presence enqueue is intentionally synchronous and best-effort;
+                # the reporter owns delivery in its background worker.  Awaiting
+                # this boolean return would raise during every normal disconnect.
+                self._report_presence("offline")
                 await self._abort(reason="disconnect", send_stop=False)
             finally:
                 if self.view is not None:

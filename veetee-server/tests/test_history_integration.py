@@ -95,7 +95,9 @@ async def test_completed_turn_is_reported_outside_websocket_send_path(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_device_info_reports_online_and_offline_presence_without_raw_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_device_info_reports_online_and_offline_presence_without_raw_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     source = Path(__file__).parents[1] / "config/fixtures/m0.json"
     snapshot = json.loads(source.read_text(encoding="utf-8"))
     snapshot["assistantId"] = "11111111-1111-4111-8111-111111111111"
@@ -127,6 +129,7 @@ async def test_device_info_reports_online_and_offline_presence_without_raw_ident
         await ws.receive_json()
         await ws.close()
         assert [event["onlineState"] for event in reporter.events] == ["online", "offline"]
+        assert not any("object bool can't be used in 'await' expression" in record.getMessage() for record in caplog.records)
         assert reporter.events[0]["maskedMac"] == "AA:BB:CC:••:••:FF"
         assert reporter.events[0]["identityHash"] != "AA:BB:CC:DD:EE:FF"
         assert reporter.events[0]["clientIdHash"] != "veetee-AA:BB:CC:DD:EE:FF"
