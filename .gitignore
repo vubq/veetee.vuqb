@@ -11,6 +11,8 @@
 **/test-results/
 **/playwright-report/
 **/*.tsbuildinfo
+**/build*/
+/veetee-firmware/sdkconfig
 
 # Local environment and secrets
 .env

@@ -1,0 +1,32 @@
+#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+
+typedef enum {
+    VT_DEVICE_IDLE = 0,
+    VT_DEVICE_CONNECTING,
+    VT_DEVICE_LISTENING,
+    VT_DEVICE_THINKING,
+    VT_DEVICE_SPEAKING,
+} vt_device_state_t;
+
+typedef enum {
+    VT_EVENT_CONNECT = 0,
+    VT_EVENT_HELLO_READY,
+    VT_EVENT_LISTEN_START,
+    VT_EVENT_LISTEN_STOP,
+    VT_EVENT_TTS_START,
+    VT_EVENT_TTS_STOP,
+    VT_EVENT_ABORT,
+    VT_EVENT_DISCONNECT,
+} vt_device_event_t;
+
+typedef struct {
+    vt_device_state_t state;
+    uint32_t generation;
+} vt_device_state_machine_t;
+
+bool vt_state_apply(vt_device_state_machine_t *machine, vt_device_event_t event);
+bool vt_state_can_transition(vt_device_state_t from, vt_device_state_t to);
+const char *vt_state_name(vt_device_state_t state);
