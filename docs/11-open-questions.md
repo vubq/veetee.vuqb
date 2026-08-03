@@ -70,6 +70,8 @@ Composition API + `<script setup lang="ts">`, typed API client, route/feature bo
 | D-012 | Local deployment | Host-native Ubuntu services; không Docker/Compose. |
 | D-013 | Manager Web primitives | Reka UI stable major chỉ trong Veetee wrappers; không browser-default visual. |
 | D-014 | UI preview foundation | Owner-approved current foundation: hybrid top-nav/context workspace, screenshot-aligned tokens và Be Vietnam Pro self-host. |
+| D-015 | Runtime configuration | Manager Web/API publish immutable snapshot; Voice Server poll ETag và atomic apply, không restart turn/process. |
+| D-016 | HTTPS inspection | Private Tailscale Serve; domain lấy từ `tailscale serve status`, không Funnel cho route Veetee. |
 
 ## 3. Blocking trước khi implement M0
 
@@ -93,7 +95,7 @@ Phương án B: kiến trúc đề xuất một reference board/BOM riêng và c
 
 ### Q-005 — Groq model nào được free account hiện thấy?
 
-**Trạng thái: Open, blocking real LLM acceptance nhưng không blocking fake-server tests.**
+**Trạng thái: Resolved cho baseline, promotion vẫn cần benchmark lặp lại.**
 
 Khi chủ dự án cung cấp key qua secret channel, test read-only phải lấy model list và probe:
 
@@ -105,27 +107,37 @@ Khi chủ dự án cung cấp key qua secret channel, test read-only phải lấ
 
 Phương án A: chọn model nhanh nhất pass intelligence/tool suite.  
 Phương án B: chọn model thông minh nhất vẫn giữ end-to-end TTFA budget.  
-**Default:** B trong giới hạn TTFA; model ID không hardcode trước probe.
+**Baseline đã chọn:** `llama-3.3-70b-versatile` vì probe ngày 2026-08-03 cho
+streaming first text khoảng 300 ms và có tool-call delta. `llama-3.1-8b-instant`
+là challenger nhanh/nhẹ. Đây là giá trị config được publish từ Web, không phải
+literal trong server và không tự rotate qua key/provider khác.
+
+**Promotion gate:** chạy lại corpus tiếng Việt + tool suite, p50/p95 first
+meaningful token, context/output limit và 429 behavior. Nếu không đạt TTFA,
+owner chọn challenger bằng revision mới; runtime không tự chuyển.
 
 ### Q-006 — Wake phrase và asset source?
 
-**Trạng thái: Open trước wake acceptance M1, không blocking PTT M0.**
+**Trạng thái: Resolved policy, asset cụ thể vẫn chờ board/corpus.**
 
 Cần exact phrase(s), accent coverage và custom WakeNet asset/training path nếu không dùng preset.
 
 Phương án A: preset WakeNet phrase để bring-up nhanh.  
 Phương án B: custom Vietnamese wake phrase sau khi có corpus.  
-**Default:** A ở M1; B là asset revision sau.
+Chọn preset WakeNet ở M1; custom Vietnamese phrase là asset revision sau khi có
+corpus và đo false-accept/false-reject. Phrase không nằm trong state-machine code.
 
 ## 4. Capacity và product policy
 
 ### Q-007 — Bao nhiêu device/session đồng thời?
 
-**Trạng thái: Open trước M2 capacity design.**
+**Trạng thái: Resolved baseline — một active conversation.**
 
 Phương án A: một active conversation, nhiều device paired nhưng queue/admission chỉ cho một turn dùng model.  
 Phương án B: từ hai active conversations trở lên, cần ASR/TTS concurrency/resource scheduling benchmark.  
-**Default:** A vì GPU 4 GB và môi trường cá nhân.
+Chọn một active conversation dùng model lease; nhiều device paired vẫn được,
+nhưng admission từ chối turn thứ hai bằng lỗi typed thay vì OOM/thrash. Mở rộng
+concurrency chỉ sau benchmark và ADR superseding.
 
 ### Q-008 — Single-owner hay multi-user/RBAC?
 
@@ -138,12 +150,13 @@ superseding [ADR-009](ADR/ADR-009-local-manager-authentication.md).
 
 ### Q-009 — Retention cho transcript/audio là bao lâu?
 
-**Trạng thái: Open trước history M2.**
+**Trạng thái: Resolved baseline.**
 
 Phương án A: transcript 30 ngày, audio off mặc định; local Owner có thể xóa/export.  
 Phương án B: không lưu transcript/audio, chỉ latency/error metadata.  
 Phương án C: retention khác do chủ dự án chỉ định.  
-**Default:** A cho transcript; audio off. UI luôn hiển thị retention notice.
+Chọn transcript 30 ngày, audio capture off mặc định; Owner có thể export/delete
+và UI luôn hiển thị retention notice. Thay đổi policy tạo revision.
 
 ### Q-010 — Chỉ LAN hay cần remote/public access?
 
@@ -171,7 +184,7 @@ planning baseline và không được âm thầm restyle UI đã duyệt. Xem
 
 ### Q-012 — Speaker enrollment consent và use case
 
-**Trạng thái: Open trước M3.**
+**Trạng thái: Resolved policy; implementation M3.**
 
 UI reference có speaker recognition, nhưng cần quyết định:
 
@@ -179,41 +192,46 @@ UI reference có speaker recognition, nhưng cần quyết định:
 - Ai được enroll/delete và retention của voiceprint?
 - Có yêu cầu liveness/anti-spoof không?
 
-**Default:** personalization only, không dùng voiceprint làm auth; explicit consent/delete.
+Chọn personalization-only, không dùng voiceprint làm authentication; enrollment,
+download và delete cần explicit consent/audit. Liveness/anti-spoof không thuộc
+baseline.
 
 M2 chỉ được render speaker tab ở deferred/empty state. Enrollment thật vẫn thuộc
 M3 và bị khóa cho đến khi câu hỏi consent/use case này được chốt.
 
 ### Q-013 — Firmware asset wizard exact outputs
 
-**Trạng thái: Open trước M3.**
+**Trạng thái: Resolved policy; exact board input vẫn blocking.**
 
 Cần source format/font license, supported display list, subtitle layout và `assets.bin` partition contract sau khi Q-004 có board/partition map.
 
-**Default:** wizard schema-first; generation bị block nếu board/display/partition không khớp, không tạo binary “best effort”.
+Chọn wizard schema-first; generation bị block nếu board/display/partition không
+khớp, không tạo binary “best effort”.
 
 ### Q-017 — PostgreSQL query/migration layer nào?
 
-**Trạng thái: Open trước Manager API implementation M2; không blocking M0/M1.**
+**Trạng thái: Resolved design choice; code gate M2.**
 
 Phương án A: Drizzle + generated SQL migration được review và chạy one-shot.  
 Phương án B: Kysely + migration tool SQL-first riêng.  
 Phương án C: Prisma nếu ưu tiên migration/admin ecosystem hơn footprint.
 
-**Default đề xuất:** A vì typed schema, footprint nhỏ và SQL vẫn inspect được;
-phải viết ADR với benchmark cold start, transaction/migration rollback rehearsal
-và compatibility với Fastify/PostgreSQL version thực tế trước khi tạo code.
+Chọn A (Drizzle + SQL migration được review) vì typed schema, footprint nhỏ và SQL
+inspect được. M2 phải bổ sung ADR/benchmark cold start, transaction rollback và
+PostgreSQL runtime trước khi promotion; memory store hiện chỉ là dev adapter.
 
 ### Q-018 — Secret store local cụ thể là gì?
 
-**Trạng thái: Open trước provider credential UI M2; không blocking fixture M0/M1.**
+**Trạng thái: Resolved baseline; implementation gate M2.**
 
 Phương án A: encrypted local secret store sau một `SecretStore` port; master key
 đến từ systemd credential/root-owned file, ciphertext tách khỏi config/audit.  
 Phương án B: external Vault/Infisical-compatible service.
 
-**Default đề xuất:** A cho single-host để không thêm service; threat model, key
-backup/rotation và mất-master-key recovery phải có ADR trước production secret.
+Chọn A cho single-host: encrypted local secret store qua `SecretStore` port,
+master key từ systemd credential/root-owned file, ciphertext tách config/audit.
+M2 phải ghi ADR threat model, rotation, backup và recovery; không đưa secret vào
+browser hoặc PostgreSQL plaintext.
 
 ### Q-019 — Headless UI primitives nào?
 
@@ -230,7 +248,7 @@ probe trước promotion. Quyết định nằm trong [ADR-004](ADR/ADR-004-vue-
 
 ### Q-020 — Backup RPO/RTO và đích lưu nào?
 
-**Trạng thái: Open trước lưu dữ liệu thật ở M2.**
+**Trạng thái: Resolved baseline; rehearsal gate M2/M4.**
 
 Phương án A: encrypted backup hằng ngày sang filesystem/ổ đĩa khác host volume,
 giữ 7 bản ngày + 4 bản tuần, target RPO 24 giờ/RTO 4 giờ.  
@@ -238,8 +256,8 @@ Phương án B: backup thủ công trước upgrade lớn, phù hợp dữ liệ
 không đủ cho lịch sử sử dụng hằng ngày.  
 Phương án C: encrypted remote object storage khi cho phép egress/chi phí.
 
-**Default đề xuất:** A; lịch cụ thể, encryption key custody và việc có backup
-audio hay không phải khớp Q-009. Một bản nằm cùng volume không được tính là backup.
+Chọn A: encrypted filesystem/ổ khác host, giữ 7 bản ngày + 4 bản tuần, target RPO
+24h/RTO 4h; audio off theo Q-009. Một bản cùng volume không được tính là backup.
 
 ## 6. Tài liệu chủ dự án đã hẹn cung cấp
 
@@ -262,13 +280,10 @@ audio hay không phải khớp Q-009. Một bản nằm cùng volume không đư
 
 ## 8. Những câu trả lời cần ưu tiên từ chủ dự án
 
-Theo thứ tự để không block implementation sau khi tài liệu được duyệt:
+Điểm còn thực sự blocking hoặc cần chủ dự án cung cấp:
 
 1. **Q-004:** schematic/BOM/pin map exact của robot.
-2. **Q-005:** Groq model list qua key test khi sẵn sàng; không gửi key trong chat/log/document.
-3. **Q-007:** xác nhận baseline một active conversation có đủ không.
-4. **Q-009:** retention transcript/audio.
-5. **Q-006:** wake phrase preset hay custom.
-6. Trước Manager API/data M2: chốt Q-017/Q-018; không tự tạo production secret
-   trước duyệt. Q-019 đã resolved cho UI preview.
-7. **Q-020:** backup RPO/RTO và đích lưu trước khi giữ dữ liệu thật.
+2. **Q-005:** chỉ cần benchmark lặp lại exact model/config trước production promotion; không gửi key trong chat/log/document.
+3. **Q-004 phụ thuộc:** exact wake asset/corpus nếu muốn custom (preset policy đã chọn).
+4. Q-017/Q-018/Q-020 đã chọn phương án; cần rehearsal/implementation evidence,
+   không cần chủ dự án chọn lại.
