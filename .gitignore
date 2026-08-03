@@ -30,6 +30,8 @@ secrets/*.keys
 secrets/*.secret
 secrets/*.url
 secrets/*.database-url
+secrets/*.token
+secrets/*.machine-token
 
 # Host-local agent/tool state and visual artifacts
 .agents/

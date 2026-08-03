@@ -2,6 +2,14 @@
   "schemaVersion": 1,
   "services": [
     {
+      "name": "veetee-machine-token",
+      "command": ["${PYTHON}", "tools/runtime/ensure_secret.py", "--path", "${VEETEE_ROOT}/secrets/manager.machine-token"],
+      "cwd": "${VEETEE_ROOT}",
+      "waitForExit": true,
+      "readyTimeoutSeconds": 10,
+      "dependencies": []
+    },
+    {
       "name": "veetee-postgres",
       "command": ["${PYTHON}", "tools/runtime/postgres_instance.py"],
       "cwd": "${VEETEE_ROOT}",
@@ -28,7 +36,7 @@
       },
       "readyTimeoutSeconds": 30,
       "waitForExit": true,
-      "dependencies": ["veetee-postgres"]
+      "dependencies": ["veetee-postgres", "veetee-machine-token"]
     },
     {
       "name": "veetee-manager-api-postgres",
@@ -39,6 +47,7 @@
         "VEETEE_API_PORT": "18101",
         "VEETEE_DATABASE_MODE": "postgres",
         "VEETEE_DATABASE_URL_FILE": "${VEETEE_ROOT}/secrets/manager.database-url",
+        "VEETEE_MACHINE_TOKEN_FILE": "${VEETEE_ROOT}/secrets/manager.machine-token",
         "VEETEE_SECRET_STORE_FILE": "${VEETEE_ROOT}/.runtime/manager-secrets.json",
         "VEETEE_SECRET_MASTER_KEY_FILE": "${VEETEE_ROOT}/secrets/manager.secret",
         "VEETEE_INITIAL_SNAPSHOT_FILE": "${VEETEE_ROOT}/veetee-server/config/fixtures/m0.json",
@@ -58,7 +67,7 @@
       "environment": {
         "VEETEE_CONFIG_SOURCE": "manager",
         "VEETEE_MANAGER_API_URL": "http://127.0.0.1:18101",
-        "VEETEE_ALLOW_INSECURE_LOCAL_CONFIG": "true",
+        "VEETEE_MACHINE_TOKEN_FILE": "${VEETEE_ROOT}/secrets/manager.machine-token",
         "VEETEE_HISTORY_ENABLED": "true",
         "VEETEE_PRESENCE_ENABLED": "true",
         "VEETEE_VOICE_HOST": "0.0.0.0",

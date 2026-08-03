@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from ensure_secret import ensure_secret
 from veetee_runtime import ManifestError, RuntimeSupervisor, _with_node_path
 
 
@@ -100,3 +101,21 @@ def test_runtime_preserves_bin_parent_for_symlinked_npm(tmp_path):
     result = _with_node_path({"HOME": str(tmp_path), "PATH": str(node_bin)})
 
     assert result["PATH"].split(os.pathsep)[0] == str(node_bin)
+
+
+def test_ensure_secret_is_owner_only_and_idempotent(tmp_path):
+    path = tmp_path / "manager.machine-token"
+    ensure_secret(path)
+    first = path.read_text(encoding="utf-8")
+    assert first.strip()
+    assert path.stat().st_mode & 0o077 == 0
+    ensure_secret(path)
+    assert path.read_text(encoding="utf-8") == first
+
+
+def test_ensure_secret_rejects_broad_existing_permissions(tmp_path):
+    path = tmp_path / "manager.machine-token"
+    path.write_text("existing\n", encoding="utf-8")
+    path.chmod(0o640)
+    with pytest.raises(RuntimeError, match="permissions"):
+        ensure_secret(path)

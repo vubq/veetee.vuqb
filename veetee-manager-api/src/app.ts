@@ -216,6 +216,9 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     maxBuckets: env.VEETEE_LOGIN_MAX_BUCKETS ?? 4096,
   })
   const machineToken = env.VEETEE_MACHINE_TOKEN_FILE ? (await readFile(env.VEETEE_MACHINE_TOKEN_FILE, 'utf8')).trim() : undefined
+  if (env.VEETEE_MACHINE_TOKEN_FILE && !machineToken) throw new Error('VEETEE_MACHINE_TOKEN_FILE is empty')
+  const machineAuthRequired = Boolean(machineToken) || (env.VEETEE_DATABASE_MODE === 'postgres' && env.VEETEE_ALLOW_INSECURE_LOCAL_CONFIG !== true)
+  if (machineAuthRequired && !machineToken) throw new Error('VEETEE_MACHINE_TOKEN_FILE is required for machine endpoints')
   const allowedOrigins = env.VEETEE_ALLOWED_ORIGINS.split(',').map((item) => item.trim()).filter(Boolean)
 
   await app.register(sensible)
@@ -498,7 +501,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   })
 
   app.post<{ Body: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string } }>('/internal/v1/devices/pairing-challenges', { schema: { body: pairingChallengeBodySchema, response: { 201: pairingChallengeResponseSchema } } }, async (request, reply) => {
-    if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
     const challenge = await store.createPairingChallenge(request.body)
     return reply.code(201).send(challenge)
   })
@@ -506,7 +509,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     body: devicePresenceBodySchema,
     response: { 202: devicePresenceResponseSchema },
   } }, async (request, reply) => {
-    if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
     try {
       const result = await store.reportDevicePresence(request.body)
       return reply.code(202).send(result)
@@ -516,7 +519,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     body: conversationTurnBodySchema,
     response: { 202: { type: 'object', additionalProperties: false, required: ['accepted', 'conversationId', 'turnId', 'status'], properties: { accepted: { type: 'boolean' }, conversationId: { type: 'string' }, turnId: { type: 'string' }, status: { type: 'string', enum: ['active', 'completed', 'aborted', 'error'] } } } },
   } }, async (request, reply) => {
-    if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
     try {
       const detail = await store.ingestConversationTurn(request.body)
       return reply.code(202).send({ accepted: true, conversationId: detail.summary.id, turnId: request.body.turnId, status: detail.summary.status })
@@ -526,7 +529,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     querystring: { type: 'object', additionalProperties: false, properties: { assistantId: { type: 'string', minLength: 1, maxLength: 120 } } },
     response: { 200: runtimeSnapshotResponseSchema },
   } }, async (request, reply) => {
-    if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
     const publication = await store.runtime(request.query.assistantId)
     if (!publication) return reply.code(409).send({ code: 'NO_PUBLISHED_CONFIG' })
     if (request.headers['if-none-match'] === publication.etag) return reply.code(304).send()
@@ -561,8 +564,9 @@ function sendProblem(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(value.statusCode ?? 500).type('application/problem+json').send({ code: value.code ?? 'INTERNAL_ERROR', detail: value.message ?? 'Request failed' })
 }
 
-function authorizeMachine(header: string | undefined, expected: string | undefined): boolean {
-  if (!expected) return true
+function authorizeMachine(header: string | undefined, expected: string | undefined, required: boolean): boolean {
+  if (!required && !expected) return true
+  if (!expected) return false
   if (!header?.startsWith('Bearer ')) return false
   const actual = Buffer.from(header.slice(7))
   const wanted = Buffer.from(expected)

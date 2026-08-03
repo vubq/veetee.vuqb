@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { buildApp } from './app.js'
 import type { Environment } from './config.js'
@@ -197,6 +199,27 @@ test('device presence stores hashed identity and updates paired device state', a
     assert.equal(offline.json().onlineState, 'offline')
   } finally {
     await app.close()
+  }
+})
+
+test('configured machine bearer is required for internal endpoints', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'veetee-machine-auth-'))
+  const tokenPath = resolve(directory, 'machine.token')
+  await writeFile(tokenPath, 'machine-test-token\n', { mode: 0o600 })
+  const app = await buildApp({ env: { ...env, VEETEE_MACHINE_TOKEN_FILE: tokenPath } })
+  await app.ready()
+  try {
+    const payload = {
+      identityHash: 'c'.repeat(64), clientIdHash: 'd'.repeat(64), maskedMac: 'CC:DD:EE:••:••:11',
+      board: 'ESP32-S3 N16R8', firmwareVersion: 'auth-test', onlineState: 'online',
+    }
+    assert.equal((await app.inject({ method: 'POST', url: '/internal/v1/devices/presence', payload })).statusCode, 401)
+    assert.equal((await app.inject({ method: 'POST', url: '/internal/v1/devices/presence', headers: { authorization: 'Bearer wrong' }, payload })).statusCode, 401)
+    const accepted = await app.inject({ method: 'POST', url: '/internal/v1/devices/presence', headers: { authorization: 'Bearer machine-test-token' }, payload })
+    assert.equal(accepted.statusCode, 202)
+  } finally {
+    await app.close()
+    await rm(directory, { recursive: true, force: true })
   }
 })
 

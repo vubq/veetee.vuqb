@@ -137,6 +137,7 @@ Service requirements:
 |---|---:|---|
 | `VEETEE_API_HOST`, `VEETEE_API_PORT` | no | Bind/port. |
 | `VEETEE_DATABASE_URL_FILE` | yes | PostgreSQL DSN secret file. |
+| `VEETEE_MACHINE_TOKEN_FILE` | yes với PostgreSQL/internal routes | Shared machine bearer file, owner-only `0600`; không đặt token literal trong env. |
 | `VEETEE_AUTH_SECRET_FILE` | yes | Session-token hash pepper + CSRF/key derivation material; không phải JWT key baseline. |
 | `VEETEE_SECRET_MASTER_KEY_FILE` | khi encrypted-local active | Owner-read master material cho encrypted secret file; không lưu trong DB/browser. |
 | `VEETEE_SECRET_STORE_FILE` | khi encrypted-local active | Ciphertext-only local secret file, atomic write, permission 0600. |
@@ -145,7 +146,7 @@ Service requirements:
 | `VEETEE_LOGIN_WINDOW_SECONDS` | no | Cửa sổ throttle login; mặc định 300 giây. |
 | `VEETEE_LOGIN_LOCKOUT_SECONDS` | no | Thời gian khóa sau khi đạt ngưỡng; mặc định 60 giây. |
 | `VEETEE_LOGIN_MAX_BUCKETS` | no | Giới hạn bucket throttle trong process; mặc định 4096. |
-| `VEETEE_MACHINE_AUTH_SECRET_FILE` | yes | Tách khỏi user auth. |
+| `VEETEE_MACHINE_TOKEN_FILE` | yes khi PostgreSQL/internal runtime | Bearer machine token trong file owner-only `0600`; host supervisor có thể tạo idempotent, không ghi token vào manifest/log. |
 | `VEETEE_OBJECT_DIR` | yes | Audio/assets root, path tuyệt đối. |
 | `VEETEE_PUBLIC_BASE_URL` | yes | URL qua proxy, không suy từ untrusted Host. |
 | `VEETEE_ALLOWED_ORIGINS` | yes | Exact origins, không wildcard với credential. |

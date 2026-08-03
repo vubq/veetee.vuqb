@@ -23,6 +23,7 @@ test('PostgreSQL persists a published assistant across Manager API restart', { s
     VEETEE_OWNER_EMAIL: undefined,
     VEETEE_OWNER_PASSWORD_HASH: undefined,
     VEETEE_MACHINE_TOKEN_FILE: undefined,
+    VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true,
     VEETEE_LOG_LEVEL: 'silent',
   }
   const marker = `postgres-restart-${Date.now()}`
@@ -64,7 +65,7 @@ test('PostgreSQL provider edits create immutable revisions and reject stale writ
     VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8012, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
     VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
     VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
-    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_LOG_LEVEL: 'silent',
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
   }
   const name = `postgres-provider-${Date.now()}`
   const app = await buildApp({ env })
@@ -100,7 +101,7 @@ test('PostgreSQL persists a paired device and consumes its challenge once', { sk
     VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8016, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
     VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
     VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
-    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_LOG_LEVEL: 'silent',
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
   }
   const app = await buildApp({ env })
   await app.ready()
@@ -134,7 +135,7 @@ test('PostgreSQL persists device presence across API restart', { skip: !database
     VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8018, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
     VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
     VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
-    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_LOG_LEVEL: 'silent',
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
   }
   const identityHash = `a${'1'.repeat(63)}`
   const clientIdHash = `b${'2'.repeat(63)}`
@@ -166,7 +167,7 @@ test('PostgreSQL keeps secret references that occur in immutable provider histor
     VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8015, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
     VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
     VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
-    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_LOG_LEVEL: 'silent',
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
   }
   const directory = await mkdtemp(resolve(tmpdir(), 'veetee-postgres-secret-test-'))
   const secretStore = new EncryptedFileSecretStore(resolve(directory, 'secrets.json'), 'postgres-secret-test-master')
@@ -198,7 +199,7 @@ test('PostgreSQL persists conversation turns and retention policy across restart
     VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8017, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
     VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
     VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
-    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_LOG_LEVEL: 'silent',
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
   }
   const conversationId = `22222222-2222-4222-8222-${String(Date.now()).slice(-12)}`
   const app = await buildApp({ env })

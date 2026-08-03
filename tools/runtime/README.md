@@ -42,6 +42,13 @@ Manifest `host-native-postgres-dev.json` chạy instance riêng ở
 ignored). Material `secrets/manager.secret` cũng owner-read/ignored; migration là
 one-shot trước khi Manager API khởi động.
 
+Manifest cũng chạy one-shot `veetee-machine-token`, gọi
+`ensure_secret.py` để tạo `secrets/manager.machine-token` với mode `0600` nếu
+chưa có. API và Voice Server dùng cùng bearer file cho internal runtime,
+conversation, pairing và presence routes; giá trị token không được in hoặc
+commit. Chỉ fixture/memory test mới được bật explicit
+`VEETEE_ALLOW_INSECURE_LOCAL_CONFIG=true`.
+
 ```bash
 python3 tools/runtime/veetee_runtime.py \
   --manifest tools/runtime/manifests/host-native-postgres-dev.json \
