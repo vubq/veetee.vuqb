@@ -201,7 +201,13 @@ const listResponse = (item: Record<string, unknown>, withTotal = false) => ({
   properties: { items: { type: 'array', items: item }, ...(withTotal ? { total: { type: 'integer' } } : {}) },
 })
 const problemBodySchema = {
-  type: 'object', additionalProperties: true,
+  type: 'object', additionalProperties: false, required: ['code'],
+  properties: {
+    type: { type: 'string' },
+    code: { type: 'string' },
+    title: { type: 'string' },
+    detail: { type: 'string' },
+  },
 } as const
 
 export async function buildApp(overrides?: { env?: Environment; store?: Store; authSecret?: string; secretStore?: SecretValueStore }): Promise<FastifyInstance> {
@@ -273,14 +279,22 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       const tag = tagFor(url)
       const security = securityFor(url)
       const response = {
+        ...(schema?.response ?? { default: { type: 'object', additionalProperties: true } }),
         '400': problemResponse('Invalid request'),
         '500': problemResponse('Unexpected server error'),
-        ...(url === '/api/v1/auth/login' ? { '429': problemResponse('Login throttled') } : {}),
+        ...(url === '/api/v1/auth/login' ? {
+          '401': problemResponse('Invalid credentials'),
+          '429': problemResponse('Login throttled'),
+        } : {}),
         ...(security ? {
           '401': problemResponse('Authentication required'),
           '403': problemResponse('Forbidden'),
+          '404': problemResponse('Resource not found'),
+          '409': problemResponse('State conflict'),
+          '422': problemResponse('Domain validation failed'),
+          '428': problemResponse('Precondition required'),
+          '503': problemResponse('Dependency unavailable'),
         } : {}),
-        ...(schema?.response ?? { default: { type: 'object', additionalProperties: true } }),
       }
       return {
         url,
@@ -359,7 +373,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     if (!current.ownerId || !current.csrfToken || !current.sessionExpiresAt) return reply.code(401).send({ code: 'UNAUTHORIZED' })
     return { user: { id: current.ownerId, email: env.VEETEE_OWNER_EMAIL ?? '' }, sessionExpiresAt: current.sessionExpiresAt, csrfToken: current.csrfToken }
   })
-  app.post('/api/v1/auth/logout', async (request, reply) => {
+  app.post('/api/v1/auth/logout', { schema: { response: { 204: { type: 'null' } } } }, async (request, reply) => {
     const current = request as OwnerRequest
     if (current.sessionToken && authSecret) await store.revokeSession(hashAuthValue(authSecret, current.sessionToken, 'session'))
     reply.clearCookie('veetee_session', { path: '/' })
@@ -396,7 +410,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       return reply.header('ETag', value.etag).send(value)
     } catch (error) { return sendProblem(reply, error) }
   })
-  app.delete<{ Params: { id: string } }>('/api/v1/secret-references/:id', async (request, reply) => {
+  app.delete<{ Params: { id: string } }>('/api/v1/secret-references/:id', { schema: { response: { 204: { type: 'null' } } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
     try {

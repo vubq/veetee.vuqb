@@ -277,6 +277,9 @@ test('OpenAPI is generated from every registered route', async () => {
         if (secured) {
           assert.ok(operation.responses?.['401'], `missing auth response for ${method} ${path}`)
           assert.ok(operation.responses?.['403'], `missing forbidden response for ${method} ${path}`)
+          for (const status of ['404', '409', '422', '428', '503']) {
+            assert.ok(operation.responses?.[status], `missing domain-error response ${status} for ${method} ${path}`)
+          }
         }
       }
     }
