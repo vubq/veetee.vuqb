@@ -7,7 +7,7 @@ import pytest
 
 from veetee_server.config import ServerConfig, load_snapshot
 from veetee_server.pipeline import Turn, TurnPipeline
-from veetee_server.providers import OpusCodec, ProviderRegistry
+from veetee_server.providers import LLMDelta, OpusCodec, ProviderRegistry
 
 
 @pytest.mark.asyncio
@@ -141,6 +141,63 @@ async def test_cancelled_turn_drops_queued_audio_packet():
     turn.cancelled.set()
     await pipeline._send_packet(b"\0" * (24000 * 60 // 1000 * 2))
     assert binary == []
+
+
+@pytest.mark.asyncio
+async def test_tool_call_round_trip_streams_answer_after_device_result(tmp_path):
+    source = json.loads((Path(__file__).parents[1] / "config/fixtures/m0.json").read_text(encoding="utf-8"))
+    source["tools"] = [{"name": "device.led.set", "description": "Set RGB LED", "inputSchema": {"type": "object"}}]
+    source["toolPolicy"] = {"maxRounds": 2}
+    fixture = tmp_path / "tool.json"
+    fixture.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    snapshot = load_snapshot(fixture)
+    registry = ProviderRegistry(snapshot)
+    calls = 0
+
+    class ToolLLM:
+        async def stream(self, *, prompt, locale, tools):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                yield LLMDelta(tool_name="device.led.set", tool_arguments='{"red":')
+                yield LLMDelta(tool_name="device.led.set", tool_arguments="255}")
+                yield LLMDelta(final=True)
+                return
+            yield LLMDelta(text="Đèn đã bật. ")
+            yield LLMDelta(text="")
+            yield LLMDelta(final=True)
+
+    registry.llm = ToolLLM()
+    codec = OpusCodec(16000, 24000)
+    turn = Turn(turn_id="tool-turn", generation=1, mode="manual", cancelled=asyncio.Event())
+    text = []
+    binary = []
+    executed = []
+
+    async def execute_tool(name, arguments, generation):
+        executed.append((name, arguments, generation))
+        return {"ok": True, "applied": arguments}
+
+    pipeline = TurnPipeline(
+        snapshot=snapshot,
+        registry=registry,
+        codec=codec,
+        profile="ws-v3",
+        session_id="tool-session",
+        turn=turn,
+        send_text=lambda value: _append(text, value),
+        send_binary=lambda value: _append(binary, value),
+        execute_tool=execute_tool,
+        metrics={},
+    )
+    await pipeline.ingest(b"\0" * 1920)
+    await pipeline.finish()
+
+    assert calls == 2
+    assert executed == [("device.led.set", {"red": 255}, 1)]
+    assert any(event.get("type") == "llm" for event in text)
+    assert any(event.get("type") == "tts" and event.get("state") == "start" for event in text)
+    assert binary
 
 
 async def _append(target, value):
