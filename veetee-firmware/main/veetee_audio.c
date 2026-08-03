@@ -107,6 +107,7 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
     memset(audio, 0, sizeof(*audio));
     audio->input_frame_samples = config->input_sample_rate * config->frame_duration_ms / 1000;
     audio->output_frame_samples = config->output_sample_rate * config->frame_duration_ms / 1000;
+    audio->output_sample_rate = config->output_sample_rate;
     audio->input_frame_bytes = audio->input_frame_samples * (int)sizeof(int16_t);
     audio->output_frame_bytes = audio->output_frame_samples * (int)sizeof(int16_t);
     if (audio->input_frame_samples <= 0 || audio->output_frame_samples <= 0) return ESP_ERR_INVALID_SIZE;
@@ -271,6 +272,38 @@ int vt_audio_decode_and_play(vt_audio_t *audio, const uint8_t *opus, size_t opus
     size_t output_bytes = samples * sizeof(*audio->output_pcm);
     error = i2s_channel_write(audio->tx_handle, audio->output_pcm, output_bytes, &bytes_written, pdMS_TO_TICKS(250));
     return error == ESP_OK && bytes_written == output_bytes ? ESP_OK : ESP_FAIL;
+}
+
+int vt_audio_play_tone(vt_audio_t *audio, int frequency_hz, int duration_ms, int amplitude) {
+    if (audio == NULL || !audio->started || audio->tx_handle == NULL || frequency_hz <= 0 ||
+        duration_ms <= 0 || amplitude <= 0 || amplitude > INT16_MAX) return ESP_ERR_INVALID_ARG;
+    const size_t block_samples = 240;
+    int32_t expanded[block_samples];
+    size_t total_samples = (size_t)audio->output_sample_rate * (size_t)duration_ms / 1000U;
+    const size_t fade_samples = (size_t)audio->output_sample_rate / 200U;
+    const uint32_t phase_step = (uint32_t)(((uint64_t)frequency_hz << 32) /
+                                           (uint32_t)audio->output_sample_rate);
+    uint32_t phase = 0;
+    size_t rendered = 0;
+    while (rendered < total_samples) {
+        size_t count = total_samples - rendered;
+        if (count > block_samples) count = block_samples;
+        for (size_t index = 0; index < count; ++index) {
+            size_t absolute = rendered + index;
+            int level = (phase & 0x80000000U) != 0U ? amplitude : -amplitude;
+            if (fade_samples > 0U && absolute < fade_samples) level = level * (int)absolute / (int)fade_samples;
+            size_t remaining = total_samples - absolute;
+            if (fade_samples > 0U && remaining < fade_samples) level = level * (int)remaining / (int)fade_samples;
+            expanded[index] = (int32_t)level << VT_AUDIO_PCM_SHIFT;
+            phase += phase_step;
+        }
+        size_t written = 0;
+        esp_err_t error = i2s_channel_write(audio->tx_handle, expanded, count * sizeof(expanded[0]),
+                                            &written, pdMS_TO_TICKS(250));
+        if (error != ESP_OK || written != count * sizeof(expanded[0])) return ESP_FAIL;
+        rendered += count;
+    }
+    return ESP_OK;
 }
 
 void vt_audio_reset(vt_audio_t *audio) {

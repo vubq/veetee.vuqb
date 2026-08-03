@@ -1,5 +1,6 @@
 #include "veetee_audio.h"
 #include "veetee_config.h"
+#include "veetee_display.h"
 #include "veetee_protocol.h"
 #include "veetee_state.h"
 #include "veetee_transport.h"
@@ -44,6 +45,81 @@
 #ifndef CONFIG_VEETEE_WIFI_OVERRIDE_NVS
 #define CONFIG_VEETEE_WIFI_OVERRIDE_NVS 0
 #endif
+#ifndef CONFIG_VEETEE_LCD_ENABLED
+#define CONFIG_VEETEE_LCD_ENABLED 0
+#endif
+#ifndef CONFIG_VEETEE_LCD_SPI_HOST
+#define CONFIG_VEETEE_LCD_SPI_HOST 3
+#endif
+#ifndef CONFIG_VEETEE_LCD_WIDTH
+#define CONFIG_VEETEE_LCD_WIDTH 240
+#endif
+#ifndef CONFIG_VEETEE_LCD_HEIGHT
+#define CONFIG_VEETEE_LCD_HEIGHT 280
+#endif
+#ifndef CONFIG_VEETEE_LCD_OFFSET_X
+#define CONFIG_VEETEE_LCD_OFFSET_X 0
+#endif
+#ifndef CONFIG_VEETEE_LCD_OFFSET_Y
+#define CONFIG_VEETEE_LCD_OFFSET_Y 20
+#endif
+#ifndef CONFIG_VEETEE_LCD_MOSI_GPIO
+#define CONFIG_VEETEE_LCD_MOSI_GPIO 47
+#endif
+#ifndef CONFIG_VEETEE_LCD_SCLK_GPIO
+#define CONFIG_VEETEE_LCD_SCLK_GPIO 21
+#endif
+#ifndef CONFIG_VEETEE_LCD_DC_GPIO
+#define CONFIG_VEETEE_LCD_DC_GPIO 40
+#endif
+#ifndef CONFIG_VEETEE_LCD_RESET_GPIO
+#define CONFIG_VEETEE_LCD_RESET_GPIO 45
+#endif
+#ifndef CONFIG_VEETEE_LCD_CS_GPIO
+#define CONFIG_VEETEE_LCD_CS_GPIO 41
+#endif
+#ifndef CONFIG_VEETEE_LCD_BACKLIGHT_GPIO
+#define CONFIG_VEETEE_LCD_BACKLIGHT_GPIO 42
+#endif
+#ifndef CONFIG_VEETEE_LCD_BACKLIGHT_ACTIVE_LEVEL
+#define CONFIG_VEETEE_LCD_BACKLIGHT_ACTIVE_LEVEL 1
+#endif
+#ifndef CONFIG_VEETEE_LCD_SPI_MODE
+#define CONFIG_VEETEE_LCD_SPI_MODE 0
+#endif
+#ifndef CONFIG_VEETEE_LCD_INVERT_COLOR
+#define CONFIG_VEETEE_LCD_INVERT_COLOR 1
+#endif
+#ifndef CONFIG_VEETEE_LCD_RGB_ORDER_BGR
+#define CONFIG_VEETEE_LCD_RGB_ORDER_BGR 0
+#endif
+#ifndef CONFIG_VEETEE_LCD_MIRROR_X
+#define CONFIG_VEETEE_LCD_MIRROR_X 0
+#endif
+#ifndef CONFIG_VEETEE_LCD_MIRROR_Y
+#define CONFIG_VEETEE_LCD_MIRROR_Y 0
+#endif
+#ifndef CONFIG_VEETEE_LCD_SWAP_XY
+#define CONFIG_VEETEE_LCD_SWAP_XY 0
+#endif
+#ifndef CONFIG_VEETEE_BOOT_CHIME_ENABLED
+#define CONFIG_VEETEE_BOOT_CHIME_ENABLED 0
+#endif
+#ifndef CONFIG_VEETEE_BOOT_CHIME_FIRST_HZ
+#define CONFIG_VEETEE_BOOT_CHIME_FIRST_HZ 880
+#endif
+#ifndef CONFIG_VEETEE_BOOT_CHIME_SECOND_HZ
+#define CONFIG_VEETEE_BOOT_CHIME_SECOND_HZ 1175
+#endif
+#ifndef CONFIG_VEETEE_BOOT_CHIME_TONE_MS
+#define CONFIG_VEETEE_BOOT_CHIME_TONE_MS 90
+#endif
+#ifndef CONFIG_VEETEE_BOOT_CHIME_GAP_MS
+#define CONFIG_VEETEE_BOOT_CHIME_GAP_MS 35
+#endif
+#ifndef CONFIG_VEETEE_BOOT_CHIME_AMPLITUDE
+#define CONFIG_VEETEE_BOOT_CHIME_AMPLITUDE 9000
+#endif
 
 static const char *TAG = "veetee-fw";
 
@@ -54,6 +130,7 @@ typedef struct {
 
 typedef struct {
     vt_audio_t audio;
+    vt_display_t display;
     vt_transport_t transport;
     vt_device_state_machine_t state;
     QueueHandle_t playback_queue;
@@ -79,6 +156,7 @@ static void network_task(void *context);
 static void capture_task(void *context);
 static void playback_task(void *context);
 static void ptt_task(void *context);
+static void display_task(void *context);
 static bool state_apply(vt_app_t *app, vt_device_event_t event);
 static vt_device_state_t state_read(vt_app_t *app);
 static int send_control(vt_app_t *app, const char *type, const char *state, const char *reason);
@@ -100,6 +178,22 @@ static vt_device_state_t state_read(vt_app_t *app) {
         xSemaphoreGive(app->state_lock);
     }
     return state;
+}
+
+static void display_task(void *context) {
+    vt_app_t *app = (vt_app_t *)context;
+    vt_device_state_t previous = (vt_device_state_t)-1;
+    while (!app->stop_requested) {
+        vt_device_state_t current = state_read(app);
+        if (current != previous) {
+            if (vt_display_show_state(&app->display, current) != ESP_OK && app->display.ready) {
+                ESP_LOGW(TAG, "LCD state render failed state=%s", vt_state_name(current));
+            }
+            previous = current;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    vTaskDelete(NULL);
 }
 
 static int send_control(vt_app_t *app, const char *type, const char *state, const char *reason) {
@@ -366,6 +460,30 @@ void app_main(void) {
         return;
     }
     ESP_LOGI(TAG, "board=%s protocol=v%d device=%s", CONFIG_VEETEE_BOARD_PROFILE, CONFIG_VEETEE_PROTOCOL_PROFILE, app->device_id);
+#if CONFIG_VEETEE_LCD_ENABLED
+    vt_display_config_t display_config = {
+        .spi_host = CONFIG_VEETEE_LCD_SPI_HOST,
+        .width = CONFIG_VEETEE_LCD_WIDTH,
+        .height = CONFIG_VEETEE_LCD_HEIGHT,
+        .offset_x = CONFIG_VEETEE_LCD_OFFSET_X,
+        .offset_y = CONFIG_VEETEE_LCD_OFFSET_Y,
+        .mosi_gpio = CONFIG_VEETEE_LCD_MOSI_GPIO,
+        .sclk_gpio = CONFIG_VEETEE_LCD_SCLK_GPIO,
+        .dc_gpio = CONFIG_VEETEE_LCD_DC_GPIO,
+        .reset_gpio = CONFIG_VEETEE_LCD_RESET_GPIO,
+        .cs_gpio = CONFIG_VEETEE_LCD_CS_GPIO,
+        .backlight_gpio = CONFIG_VEETEE_LCD_BACKLIGHT_GPIO,
+        .backlight_active_level = CONFIG_VEETEE_LCD_BACKLIGHT_ACTIVE_LEVEL,
+        .spi_mode = CONFIG_VEETEE_LCD_SPI_MODE,
+        .invert_color = CONFIG_VEETEE_LCD_INVERT_COLOR,
+        .rgb_order_bgr = CONFIG_VEETEE_LCD_RGB_ORDER_BGR,
+        .mirror_x = CONFIG_VEETEE_LCD_MIRROR_X,
+        .mirror_y = CONFIG_VEETEE_LCD_MIRROR_Y,
+        .swap_xy = CONFIG_VEETEE_LCD_SWAP_XY,
+    };
+    esp_err_t display_error = vt_display_init(&app->display, &display_config);
+    if (display_error != ESP_OK) ESP_LOGE(TAG, "LCD init failed: %s", esp_err_to_name(display_error));
+#endif
 #if CONFIG_VEETEE_ENABLE_HARDWARE
     vt_audio_config_t audio_config = {
         .input_sample_rate = CONFIG_VEETEE_MIC_SAMPLE_RATE,
@@ -380,6 +498,17 @@ void app_main(void) {
     };
     ESP_ERROR_CHECK(vt_audio_init(&app->audio, &audio_config));
     ESP_ERROR_CHECK(vt_audio_start(&app->audio));
+#if CONFIG_VEETEE_BOOT_CHIME_ENABLED
+    if (vt_audio_play_tone(&app->audio, CONFIG_VEETEE_BOOT_CHIME_FIRST_HZ,
+                           CONFIG_VEETEE_BOOT_CHIME_TONE_MS, CONFIG_VEETEE_BOOT_CHIME_AMPLITUDE) != ESP_OK) {
+        ESP_LOGW(TAG, "startup chime first tone failed");
+    }
+    vTaskDelay(pdMS_TO_TICKS(CONFIG_VEETEE_BOOT_CHIME_GAP_MS));
+    if (vt_audio_play_tone(&app->audio, CONFIG_VEETEE_BOOT_CHIME_SECOND_HZ,
+                           CONFIG_VEETEE_BOOT_CHIME_TONE_MS, CONFIG_VEETEE_BOOT_CHIME_AMPLITUDE) != ESP_OK) {
+        ESP_LOGW(TAG, "startup chime second tone failed");
+    }
+#endif
     gpio_config_t ptt = {
         .pin_bit_mask = 1ULL << CONFIG_VEETEE_PTT_GPIO,
         .mode = GPIO_MODE_INPUT,
@@ -396,6 +525,10 @@ void app_main(void) {
     configASSERT(task == pdPASS);
 #else
     ESP_LOGW(TAG, "hardware I/O disabled by config");
+#endif
+#if CONFIG_VEETEE_LCD_ENABLED
+    BaseType_t display_task_result = xTaskCreate(display_task, "vt_display", 4096, app, 3, NULL);
+    configASSERT(display_task_result == pdPASS);
 #endif
     BaseType_t network_task_result = xTaskCreate(network_task, "vt_network", 8192, app, 5, NULL);
     configASSERT(network_task_result == pdPASS);

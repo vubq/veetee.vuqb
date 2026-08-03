@@ -98,4 +98,122 @@ config VEETEE_AUDIO_FRAME_DURATION_MS
     range 20 120
     default 60
 
+config VEETEE_LCD_ENABLED
+    bool "Enable ST7789 LCD"
+    default n
+
+config VEETEE_LCD_SPI_HOST
+    int "LCD SPI host"
+    range 1 3
+    default 3
+
+config VEETEE_LCD_WIDTH
+    int "LCD width"
+    range 1 1024
+    default 240
+
+config VEETEE_LCD_HEIGHT
+    int "LCD height"
+    range 1 1024
+    default 280
+
+config VEETEE_LCD_OFFSET_X
+    int "LCD offset X"
+    range 0 1024
+    default 0
+
+config VEETEE_LCD_OFFSET_Y
+    int "LCD offset Y"
+    range 0 1024
+    default 20
+
+config VEETEE_LCD_MOSI_GPIO
+    int "LCD MOSI GPIO"
+    range 0 48
+    default 47
+
+config VEETEE_LCD_SCLK_GPIO
+    int "LCD SCLK GPIO"
+    range 0 48
+    default 21
+
+config VEETEE_LCD_DC_GPIO
+    int "LCD DC GPIO"
+    range 0 48
+    default 40
+
+config VEETEE_LCD_RESET_GPIO
+    int "LCD reset GPIO"
+    range 0 48
+    default 45
+
+config VEETEE_LCD_CS_GPIO
+    int "LCD CS GPIO"
+    range 0 48
+    default 41
+
+config VEETEE_LCD_BACKLIGHT_GPIO
+    int "LCD backlight GPIO"
+    range 0 48
+    default 42
+
+config VEETEE_LCD_BACKLIGHT_ACTIVE_LEVEL
+    int "LCD backlight active level"
+    range 0 1
+    default 1
+
+config VEETEE_LCD_SPI_MODE
+    int "LCD SPI mode"
+    range 0 3
+    default 0
+
+config VEETEE_LCD_INVERT_COLOR
+    bool "Invert LCD colors"
+    default y
+
+config VEETEE_LCD_RGB_ORDER_BGR
+    bool "Use BGR LCD color order"
+    default n
+
+config VEETEE_LCD_MIRROR_X
+    bool "Mirror LCD X"
+    default n
+
+config VEETEE_LCD_MIRROR_Y
+    bool "Mirror LCD Y"
+    default n
+
+config VEETEE_LCD_SWAP_XY
+    bool "Swap LCD axes"
+    default n
+
+config VEETEE_BOOT_CHIME_ENABLED
+    bool "Play startup chime"
+    default n
+
+config VEETEE_BOOT_CHIME_FIRST_HZ
+    int "Startup chime first frequency"
+    range 100 4000
+    default 880
+
+config VEETEE_BOOT_CHIME_SECOND_HZ
+    int "Startup chime second frequency"
+    range 100 4000
+    default 1175
+
+config VEETEE_BOOT_CHIME_TONE_MS
+    int "Startup chime tone duration"
+    range 20 500
+    default 90
+
+config VEETEE_BOOT_CHIME_GAP_MS
+    int "Startup chime gap"
+    range 0 500
+    default 35
+
+config VEETEE_BOOT_CHIME_AMPLITUDE
+    int "Startup chime amplitude"
+    range 100 30000
+    default 9000
+
 endmenu
