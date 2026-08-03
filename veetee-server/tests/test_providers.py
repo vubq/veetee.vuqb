@@ -1,11 +1,14 @@
 import asyncio
+import json
+from pathlib import Path
 import sys
 import types
 
 import numpy as np
 import pytest
 
-from veetee_server.providers import AudioChunk, GroqLLM, PatternIntent, PhoWhisperASR, SessionWindowMemory, SileroVAD, VieNeuTTS
+from veetee_server.config import ConfigurationError, load_snapshot
+from veetee_server.providers import AudioChunk, GroqLLM, PatternIntent, PhoWhisperASR, ProviderRegistry, SessionWindowMemory, SileroVAD, VieNeuTTS
 
 
 @pytest.mark.asyncio
@@ -208,3 +211,13 @@ def test_pattern_intent_and_session_memory_are_config_driven():
     context = memory.context()
     assert '"user":"một"' not in context
     assert '"user":"năm"' in context
+
+
+def test_provider_snapshot_rejects_fallback_shape_before_activation(tmp_path):
+    source = json.loads((Path(__file__).parents[1] / "config/fixtures/m0.json").read_text(encoding="utf-8"))
+    source["providers"]["tts"]["config"]["fallbackProviderId"] = "veetee.tts.fixture-tone"
+    fixture = tmp_path / "fallback.json"
+    fixture.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="provider fallback is unsupported"):
+        ProviderRegistry(load_snapshot(fixture))

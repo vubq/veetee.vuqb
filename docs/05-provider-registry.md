@@ -470,7 +470,9 @@ Contract test cài một fake secondary provider với counter. Khi active provi
 - [ ] Artifact reproducible từ pinned source hoặc download immutable checksum.
 - [ ] Resource/latency benchmark trên đúng host được attach config revision.
 - [ ] Secrets không xuất hiện trong API response/log/trace/history.
-- [ ] Fault test chứng minh không có runtime fallback.
+- [x] Fault test chứng minh không có runtime fallback: active TTS fault kết thúc
+  turn bằng typed error, registry không có secondary slot và counter provider
+  thứ hai vẫn bằng 0; snapshot chứa field fallback cũng bị reject trước activation.
 - [ ] Unload/drain trả task/thread/fd/RAM/VRAM về expected baseline.
 - [ ] Cả `BLUE_GREEN` và `QUIESCE_SWAP` fault injection chứng minh readiness,
   degraded interval và rollback reload đúng contract; rollback fail vẫn không gọi provider khác.

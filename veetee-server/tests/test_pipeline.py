@@ -7,7 +7,7 @@ import pytest
 
 from veetee_server.config import load_snapshot
 from veetee_server.pipeline import Turn, TurnPipeline
-from veetee_server.providers import LLMDelta, OpusCodec, ProviderRegistry
+from veetee_server.providers import AudioChunk, LLMDelta, OpusCodec, ProviderError, ProviderRegistry
 
 
 @pytest.mark.asyncio
@@ -247,6 +247,55 @@ async def test_long_answer_keeps_memory_excerpt_bounded(tmp_path):
     await pipeline.finish()
     assert 0 < len(memory.assistant_text) <= 120
     assert binary
+
+
+@pytest.mark.asyncio
+async def test_active_provider_fault_is_terminal_without_secondary_call():
+    snapshot = load_snapshot(Path(__file__).parents[1] / "config/fixtures/m0.json")
+    registry = ProviderRegistry(snapshot)
+    secondary_calls = 0
+
+    class ActiveFailingTTS:
+        async def stream(self, text, *, locale, voice):
+            del text, locale, voice
+            raise ProviderError("TTS_SYNTHESIS_FAILED", "active provider failure")
+            yield AudioChunk(b"", 24_000, final=True)
+
+    class SecondaryTTS:
+        async def stream(self, text, *, locale, voice):
+            nonlocal secondary_calls
+            del text, locale, voice
+            secondary_calls += 1
+            yield AudioChunk(b"\0\0", 24_000, final=True)
+
+    active_provider = ActiveFailingTTS()
+    secondary_provider = SecondaryTTS()
+    registry.tts = active_provider
+    # Even if a caller accidentally attaches a secondary object, the registry
+    # contract has no fallback path and the pipeline must never invoke it.
+    registry.fallback_tts = secondary_provider
+    assert secondary_provider is not active_provider
+
+    turn = Turn(turn_id="provider-fault", generation=1, mode="manual", cancelled=asyncio.Event())
+    events = []
+    pipeline = TurnPipeline(
+        snapshot=snapshot,
+        registry=registry,
+        codec=OpusCodec(16_000, 24_000),
+        profile="ws-v3",
+        session_id="provider-fault-session",
+        turn=turn,
+        send_text=lambda value: _append(events, value),
+        send_binary=lambda value: _append(events, value),
+        metrics={},
+    )
+    await pipeline.ingest(b"\0" * 1920)
+    await pipeline.finish()
+
+    assert turn.state == "error"
+    assert turn.finish_reason == "TTS_SYNTHESIS_FAILED"
+    assert any(event.get("type") == "alert" and event.get("code") == "TTS_SYNTHESIS_FAILED" for event in events)
+    assert secondary_calls == 0
 
 
 async def _append(target, value):

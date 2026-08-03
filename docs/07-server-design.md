@@ -479,7 +479,8 @@ Không dùng raw `session_id`, `device_id`, prompt hoặc transcript làm metric
 - [ ] Không có unowned background task sau session close.
 - [ ] Event-loop lag p99 và queue age nằm trong budget dưới acceptance load.
 - [ ] 0 stale output sau abort race suite.
-- [ ] Provider fail không gọi provider khác.
+- [x] Provider fail không gọi provider khác: regression inject active TTS fault,
+  kiểm tra typed `TTS_SYNTHESIS_FAILED`, alert và secondary counter bằng 0.
 - [ ] Protocol v1/v2/v3 golden/conformance pass.
 - [ ] Warm Lab E2E TTFA p95 < 1.500 ms trên đúng hardware/config đã ghi.
 - [ ] 60 phút session không tăng live task/fd/RSS/VRAM đơn điệu.

@@ -695,6 +695,11 @@ class ProviderRegistry:
         config = item.get("config")
         if not isinstance(config, dict):
             raise ConfigurationError(f"provider config must be object: {provider_id}")
+        # A runtime snapshot has exactly one selected provider per kind. Reject
+        # fallback-shaped fields explicitly instead of silently accepting a
+        # config that could make an operator believe a secondary provider runs.
+        if any(key in config for key in ("fallback", "fallbackProviderId", "fallbackProviderIds")):
+            raise ConfigurationError(f"provider fallback is unsupported: {provider_id}")
         return provider_id, config
 
     def _vad(self, item: dict[str, Any]) -> VADProvider:
