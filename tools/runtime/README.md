@@ -57,3 +57,21 @@ python3 tools/runtime/veetee_runtime.py \
 
 Instance này chỉ bind loopback. Không đổi route/Wi-Fi hoặc listener `5432` của
 service khác.
+
+## Realtime Lab host-only
+
+Đo synthetic TTFA mà không phát âm thanh và không mở serial/ESP32:
+
+```bash
+PYTHONPATH=veetee-server/src \
+  veetee-server/.venv/bin/python tools/runtime/realtime_lab.py \
+  --url ws://127.0.0.1:18100/veetee/v1/ \
+  --wav tools/physical/local-utterance-vi.wav \
+  --turns 3 --warmup-turns 1 \
+  --report /tmp/veetee-realtime-lab.json
+```
+
+Tool chỉ ghi event shape, số packet và timing; không ghi transcript, prompt,
+credential hay raw audio vào report. `--warmup-turns` bị loại khỏi p50/p95;
+default gate là warm p95 ≤ 1.500 ms và mỗi turn phải có `tts.start`, binary
+packet, `tts.stop`, không có protocol error.
