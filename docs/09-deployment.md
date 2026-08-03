@@ -399,6 +399,14 @@ tailscale serve --https=${VEETEE_TAILSCALE_PORT} http://${VEETEE_BIND_HOST}:${VE
 tailscale serve status
 ```
 
+Runtime hiện tại đã thêm mapping private additive (không ghi đè mapping cũ):
+`https://veetee-dev.tail52a635.ts.net:18443/` → `http://127.0.0.1:18181`
+(Manager Web; Vite proxy tiếp `/api` và `/veetee` tới API/Voice `18101/18100`).
+`AllowFunnel` không có entry cho port `18443`, nên mapping này chỉ dành cho
+tailnet. Probe từ chính host có userspace Tailscale không tự route được tới địa
+chỉ tailnet của chính nó và đã timeout; cần một peer tailnet khác để xác nhận
+TLS/HTML/WebSocket thực tế. Không coi timeout self-route là lỗi của Manager Web.
+
 Không hard-code `tail*.ts.net` trong firmware, UI hoặc docs runtime. Checklist:
 
 1. `tailscale status` chỉ ra interface/peer trong tailnet dự kiến.
