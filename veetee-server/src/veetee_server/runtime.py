@@ -40,6 +40,8 @@ class RuntimeConfigManager:
         self._view: RuntimeView | None = None
         self._etag: str | None = None
         self._lock = asyncio.Lock()
+        self._http_lock = asyncio.Lock()
+        self._http_client: httpx.AsyncClient | None = None
         self._task: asyncio.Task[None] | None = None
         self._listeners: list[Callable[[RuntimeView], Awaitable[None]]] = []
         self._retired: dict[int, RuntimeView] = {}
@@ -99,6 +101,7 @@ class RuntimeConfigManager:
             self._leases.clear()
         for view in views:
             await self._close_registry(view.registry)
+        await self._close_http_client()
 
     async def refresh_now(self) -> bool:
         source = await self._read_source()
@@ -139,8 +142,18 @@ class RuntimeConfigManager:
             headers.pop("Authorization")
         if self._etag:
             headers["If-None-Match"] = self._etag
-        async with httpx.AsyncClient(timeout=5) as client:
-            response = await client.get(path, headers=headers)
+        client = await self._get_http_client()
+        response: httpx.Response | None = None
+        for attempt in range(2):
+            try:
+                response = await client.get(path, headers=headers)
+                break
+            except httpx.ConnectError:
+                if attempt == 1:
+                    await self._close_http_client(client)
+                    raise
+                await asyncio.sleep(0.05)
+        assert response is not None
         if response.status_code == 304:
             return self.view.snapshot
         if response.status_code >= 400:
@@ -196,3 +209,23 @@ class RuntimeConfigManager:
             await registry.close()
         except Exception as exc:  # noqa: BLE001
             LOG.warning("provider generation close failed error_type=%s", type(exc).__name__)
+
+    async def _get_http_client(self) -> httpx.AsyncClient:
+        client = self._http_client
+        if client is not None:
+            return client
+        async with self._http_lock:
+            if self._http_client is None:
+                self._http_client = httpx.AsyncClient(
+                    timeout=5,
+                    limits=httpx.Limits(max_connections=2, max_keepalive_connections=1, keepalive_expiry=30),
+                )
+            return self._http_client
+
+    async def _close_http_client(self, expected: httpx.AsyncClient | None = None) -> None:
+        async with self._http_lock:
+            client = self._http_client
+            if client is None or (expected is not None and client is not expected):
+                return
+            self._http_client = None
+        await client.aclose()

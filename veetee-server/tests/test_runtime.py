@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
 from veetee_server.config import ServerConfig, load_snapshot
@@ -93,3 +94,48 @@ async def test_failed_candidate_is_closed_and_old_generation_stays_active(monkey
     assert runtime.activation_failures == 1
     assert TrackingRegistry.instances[-1].close_calls == 1
     await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_manager_snapshot_client_reuses_pool_and_retries_transient_connect(monkeypatch):
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "manager")
+    monkeypatch.setenv("VEETEE_MANAGER_API_URL", "http://manager.test")
+    monkeypatch.setenv("VEETEE_ALLOW_INSECURE_LOCAL_CONFIG", "true")
+    source = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    created: list[dict[str, object]] = []
+    calls = 0
+    closed = 0
+
+    class Response:
+        status_code = 200
+        headers = {"etag": '"fixture-etag"'}
+
+        def json(self):
+            return source
+
+    class Client:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+
+        async def get(self, url, *, headers):
+            nonlocal calls
+            del url, headers
+            calls += 1
+            if calls == 1:
+                raise httpx.ConnectError("temporary manager disconnect")
+            return Response()
+
+        async def aclose(self):
+            nonlocal closed
+            closed += 1
+
+    monkeypatch.setattr("veetee_server.runtime.httpx.AsyncClient", Client)
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    first = await runtime._read_source()
+    second = await runtime._read_source()
+
+    assert first.checksum == second.checksum
+    assert calls == 3  # one bounded retry, then one pooled request
+    assert len(created) == 1
+    await runtime.stop()
+    assert closed == 1
