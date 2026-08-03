@@ -77,6 +77,39 @@ test('provider config is schema-driven and rejects unknown fields', async () => 
   }
 })
 
+test('device pairing challenge is single-use and binds a device to an assistant', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistants = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    const assistantId = assistants.json().items[0].id as string
+    const challenge = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/devices/pairing-challenges',
+      payload: { identityHash: 'identity-hash-0123456789', clientIdHash: 'client-hash-0123456789', maskedMac: 'A4:CF:12:••:••:9D', board: 'ESP32-S3 N16R8', firmwareVersion: '0.1.0' },
+    })
+    assert.equal(challenge.statusCode, 201)
+    const code = challenge.json().verificationCode as string
+    assert.match(code, /^VT-\d{4}$/)
+
+    const invalid = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: 'VT-9999' } })
+    assert.equal(invalid.statusCode, 422)
+    const paired = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: code, displayName: 'Veetee phòng làm việc' } })
+    assert.equal(paired.statusCode, 201)
+    assert.equal(paired.json().displayName, 'Veetee phòng làm việc')
+    assert.equal(paired.json().maskedMac, 'A4:CF:12:••:••:9D')
+
+    const listed = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/devices` })
+    assert.equal(listed.statusCode, 200)
+    assert.equal(listed.json().total, 1)
+    assert.equal(listed.json().items[0].id, paired.json().id)
+    const reused = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: code } })
+    assert.equal(reused.statusCode, 422)
+  } finally {
+    await app.close()
+  }
+})
+
 test('OpenAPI is generated from every registered route', async () => {
   const app = await buildApp({ env })
   await app.ready()
@@ -95,7 +128,7 @@ test('OpenAPI is generated from every registered route', async () => {
       '/api/v1/provider-configs', '/api/v1/provider-configs/{id}', '/api/v1/voices', '/api/v1/assistants',
       '/api/v1/assistants/{id}', '/api/v1/assistants/{id}/role-config', '/api/v1/assistants/{id}/model-memory',
       '/api/v1/assistants/{id}/model-memory/provider', '/api/v1/assistants/{id}/model-memory/memory',
-      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair',
+      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/internal/v1/devices/pairing-challenges',
       '/internal/v1/runtime-config',
     ]
     for (const path of requiredPaths) assert.ok(document.paths[path], `missing OpenAPI path ${path}`)

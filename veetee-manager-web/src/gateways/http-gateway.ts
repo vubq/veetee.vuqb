@@ -25,6 +25,7 @@ import type {
 import type { GatewayDependencies, ManagerGateway, PreviewControlGateway } from './manager-gateway'
 import type {
   CreateAssistantRequest,
+  PairDeviceRequest,
   MemoryEnabledRequest,
   ProviderConfigPatchRequest,
   ProviderConfigRequest,
@@ -152,7 +153,8 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   }
 
   async pairDevice(input: PairDeviceInput): Promise<GatewayResult<DeviceCard, never>> {
-    const result = await this.request('/api/v1/devices/pair', { method: 'POST', body: JSON.stringify(input) })
+    const payload: PairDeviceRequest = input
+    const result = await this.request('/api/v1/devices/pair', { method: 'POST', body: JSON.stringify(payload) })
     if (!result.response.ok) return this.failure(result)
     return this.success(result.body as DeviceCard)
   }

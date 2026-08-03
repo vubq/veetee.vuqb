@@ -1,4 +1,4 @@
-import { integer, jsonb, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 
 /**
  * The Manager control-plane schema is isolated from any other application
@@ -101,4 +101,32 @@ export const auditEventTable = managerSchema.table('audit_event', {
   requestId: text('request_id'),
   diff: jsonb('diff').$type<JsonObject>().notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+})
+
+export const deviceTable = managerSchema.table('device', {
+  id: uuid('id').primaryKey(),
+  ownerId: text('owner_id'),
+  assistantId: uuid('assistant_id').references(() => assistantTable.id, { onDelete: 'set null' }),
+  identityHash: text('identity_hash').notNull(),
+  clientIdHash: text('client_id_hash').notNull(),
+  displayName: text('display_name').notNull(),
+  maskedMac: text('masked_mac').notNull(),
+  firmwareVersion: text('firmware_version').notNull(),
+  board: text('board').notNull(),
+  onlineState: text('online_state').notNull(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'date' }).notNull(),
+  lastConversationAt: timestamp('last_conversation_at', { withTimezone: true, mode: 'date' }),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+}, (table) => ({ identityUnique: uniqueIndex('device_identity_client_unique').on(table.identityHash, table.clientIdHash) }))
+
+export const pairingChallengeTable = managerSchema.table('pairing_challenge', {
+  id: uuid('id').primaryKey(),
+  deviceId: uuid('device_id').notNull().references(() => deviceTable.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(),
+  state: text('state').notNull(),
+  attempts: integer('attempts').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true, mode: 'date' }),
 })

@@ -1709,7 +1709,8 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "items"
+                    "items",
+                    "total"
                   ],
                   "properties": {
                     "items": {
@@ -4601,15 +4602,70 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
-                    "items"
+                    "items",
+                    "total"
                   ],
                   "properties": {
                     "items": {
                       "type": "array",
                       "items": {
                         "type": "object",
-                        "additionalProperties": true
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "ownerId",
+                          "assistantId",
+                          "displayName",
+                          "maskedMac",
+                          "firmwareVersion",
+                          "board",
+                          "onlineState",
+                          "lastSeenAt",
+                          "lastConversationAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "ownerId": {
+                            "type": "string"
+                          },
+                          "assistantId": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "maskedMac": {
+                            "type": "string"
+                          },
+                          "firmwareVersion": {
+                            "type": "string"
+                          },
+                          "board": {
+                            "type": "string"
+                          },
+                          "onlineState": {
+                            "type": "string",
+                            "enum": [
+                              "online",
+                              "offline"
+                            ]
+                          },
+                          "lastSeenAt": {
+                            "type": "string"
+                          },
+                          "lastConversationAt": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        }
                       }
+                    },
+                    "total": {
+                      "type": "integer"
                     }
                   }
                 }
@@ -4738,12 +4794,105 @@
         "tags": [
           "devices"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "assistantId",
+                  "verificationCode"
+                ],
+                "properties": {
+                  "assistantId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "verificationCode": {
+                    "type": "string",
+                    "minLength": 7,
+                    "maxLength": 7
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                }
+              }
+            }
+          }
+        },
         "security": [
           {
             "veeteeSession": []
           }
         ],
         "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "ownerId",
+                    "assistantId",
+                    "displayName",
+                    "maskedMac",
+                    "firmwareVersion",
+                    "board",
+                    "onlineState",
+                    "lastSeenAt",
+                    "lastConversationAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "ownerId": {
+                      "type": "string"
+                    },
+                    "assistantId": {
+                      "type": "string"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    },
+                    "maskedMac": {
+                      "type": "string"
+                    },
+                    "firmwareVersion": {
+                      "type": "string"
+                    },
+                    "board": {
+                      "type": "string"
+                    },
+                    "onlineState": {
+                      "type": "string",
+                      "enum": [
+                        "online",
+                        "offline"
+                      ]
+                    },
+                    "lastSeenAt": {
+                      "type": "string"
+                    },
+                    "lastConversationAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4855,14 +5004,207 @@
                 }
               }
             }
-          },
-          "default": {
+          }
+        }
+      }
+    },
+    "/internal/v1/devices/pairing-challenges": {
+      "post": {
+        "operationId": "postInternalV1DevicesPairingChallenges",
+        "summary": "POST /internal/v1/devices/pairing-challenges",
+        "tags": [
+          "runtime"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "identityHash",
+                  "clientIdHash",
+                  "maskedMac",
+                  "board",
+                  "firmwareVersion"
+                ],
+                "properties": {
+                  "identityHash": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 256
+                  },
+                  "clientIdHash": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 256
+                  },
+                  "maskedMac": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "board": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "firmwareVersion": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "machineBearer": []
+          }
+        ],
+        "responses": {
+          "201": {
             "description": "Default Response",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "deviceId",
+                    "verificationCode",
+                    "expiresAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "deviceId": {
+                      "type": "string"
+                    },
+                    "verificationCode": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
                 }
               }
             }

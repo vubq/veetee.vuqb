@@ -1,9 +1,11 @@
-import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { randomInt, randomUUID } from 'node:crypto'
+import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
 import {
   assistantRevisionTable,
   assistantTable,
+  deviceTable,
   managerSessionTable,
+  pairingChallengeTable,
   providerSecretBindingTable,
   providerConfigRevisionTable,
   providerConfigTable,
@@ -13,11 +15,14 @@ import {
 import { openDatabase, readDatabaseUrl, type DatabaseHandle } from './db/client.js'
 import {
   etag,
+  hashPairingCode,
   problem,
   validateSecretBindings,
   type Assistant,
+  type Device,
   type ManagerSession,
   type ModelMemoryView,
+  type PairingChallenge,
   type ProviderConfig,
   type ProviderInstallation,
   type ProviderKind,
@@ -36,6 +41,7 @@ type ProviderConfigRow = typeof providerConfigTable.$inferSelect
 type ProviderConfigRevisionRow = typeof providerConfigRevisionTable.$inferSelect
 type ManagerSessionRow = typeof managerSessionTable.$inferSelect
 type SecretReferenceRow = typeof secretReferenceTable.$inferSelect
+type DeviceRow = typeof deviceTable.$inferSelect
 
 export interface PostgresStoreOptions {
   catalog: ProviderInstallation[]
@@ -351,6 +357,44 @@ export class PostgresStore implements Store {
     await this.handle.db.delete(secretReferenceTable).where(and(eq(secretReferenceTable.id, id), eq(secretReferenceTable.ownerId, ownerId), eq(secretReferenceTable.etag, ifMatch)))
   }
 
+  async listDevices(ownerId: string, assistantId: string): Promise<Device[]> {
+    const rows = await this.handle.db.select().from(deviceTable).where(and(eq(deviceTable.ownerId, ownerId), eq(deviceTable.assistantId, assistantId))).orderBy(desc(deviceTable.updatedAt))
+    return rows.map((row) => this.mapDevice(row))
+  }
+
+  async createPairingChallenge(value: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string }): Promise<PairingChallenge> {
+    const now = new Date()
+    const existing = (await this.handle.db.select().from(deviceTable).where(and(eq(deviceTable.identityHash, value.identityHash), eq(deviceTable.clientIdHash, value.clientIdHash))).limit(1))[0]
+    const deviceId = existing?.id ?? randomUUID()
+    if (existing) {
+      await this.handle.db.update(deviceTable).set({ maskedMac: value.maskedMac, board: value.board, firmwareVersion: value.firmwareVersion, onlineState: 'online', lastSeenAt: now, updatedAt: now }).where(eq(deviceTable.id, existing.id))
+    } else {
+      await this.handle.db.insert(deviceTable).values({ id: deviceId, ownerId: null, assistantId: null, identityHash: value.identityHash, clientIdHash: value.clientIdHash, displayName: '', maskedMac: value.maskedMac, board: value.board, firmwareVersion: value.firmwareVersion, onlineState: 'online', lastSeenAt: now, lastConversationAt: null, createdAt: now, updatedAt: now })
+    }
+    const id = randomUUID()
+    const verificationCode = `VT-${randomInt(0, 10000).toString().padStart(4, '0')}`
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000)
+    await this.handle.db.insert(pairingChallengeTable).values({ id, deviceId, codeHash: hashPairingCode(verificationCode), state: 'pending', attempts: 0, expiresAt, createdAt: now, usedAt: null })
+    return { id, deviceId, verificationCode, expiresAt: expiresAt.toISOString() }
+  }
+
+  async pairDevice(ownerId: string, value: { assistantId: string; verificationCode: string; displayName?: string }): Promise<Device> {
+    return this.handle.db.transaction(async (tx) => {
+      const [assistant] = await tx.select({ id: assistantTable.id }).from(assistantTable).where(and(eq(assistantTable.id, value.assistantId), eq(assistantTable.ownerId, ownerId))).limit(1)
+      if (!assistant) throw problem('NOT_FOUND', 'Assistant not found', 404)
+      const codeHash = hashPairingCode(value.verificationCode.trim().toUpperCase())
+      const [challenge] = await tx.select().from(pairingChallengeTable).where(and(eq(pairingChallengeTable.codeHash, codeHash), eq(pairingChallengeTable.state, 'pending'), lt(pairingChallengeTable.attempts, 5), gt(pairingChallengeTable.expiresAt, new Date()))).limit(1)
+      if (!challenge) throw problem('PAIRING_CODE_INVALID', 'Pairing code is invalid or expired', 422)
+      const [device] = await tx.select().from(deviceTable).where(eq(deviceTable.id, challenge.deviceId)).limit(1)
+      if (!device || (device.ownerId && device.ownerId !== ownerId)) throw problem('PAIRING_CODE_INVALID', 'Pairing device is already owned', 422)
+      const now = new Date()
+      const [updated] = await tx.update(deviceTable).set({ ownerId, assistantId: value.assistantId, displayName: value.displayName?.trim() || device.displayName || `Veetee ${device.id.slice(0, 8)}`, onlineState: 'online', lastSeenAt: now, updatedAt: now }).where(eq(deviceTable.id, device.id)).returning()
+      await tx.update(pairingChallengeTable).set({ state: 'used', usedAt: now }).where(and(eq(pairingChallengeTable.id, challenge.id), eq(pairingChallengeTable.state, 'pending')))
+      if (!updated) throw new Error('device pairing update returned no row')
+      return this.mapDevice(updated)
+    })
+  }
+
   private async assertMigrated(): Promise<void> {
     try {
       await this.handle.db.select({ id: assistantTable.id }).from(assistantTable).limit(1)
@@ -421,6 +465,11 @@ export class PostgresStore implements Store {
 
   private mapSecretReference(row: SecretReferenceRow): SecretReference {
     return { id: row.id, ownerId: row.ownerId, name: row.name, store: 'encrypted-local', locatorMasked: row.locatorMasked, version: row.version, metadataRevision: row.metadataRevision, status: row.status === 'available' || row.status === 'revoked' ? row.status : 'unavailable', lastRotatedAt: row.lastRotatedAt?.toISOString() ?? null, etag: row.etag, updatedAt: row.updatedAt.toISOString() }
+  }
+
+  private mapDevice(row: DeviceRow): Device {
+    if (!row.ownerId || !row.assistantId) throw new Error('paired device is missing owner or assistant')
+    return { id: row.id, ownerId: row.ownerId, assistantId: row.assistantId, displayName: row.displayName, maskedMac: row.maskedMac, firmwareVersion: row.firmwareVersion, board: row.board, onlineState: row.onlineState === 'online' ? 'online' : 'offline', lastSeenAt: row.lastSeenAt.toISOString(), lastConversationAt: row.lastConversationAt?.toISOString() ?? null }
   }
 
   private async modelMemory(current: Assistant): Promise<ModelMemoryView> {

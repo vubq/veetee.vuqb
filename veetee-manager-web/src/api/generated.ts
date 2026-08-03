@@ -349,6 +349,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/v1/devices/pairing-challenges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /internal/v1/devices/pairing-challenges */
+        post: operations["postInternalV1DevicesPairingChallenges"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/v1/runtime-config": {
         parameters: {
             query?: never;
@@ -1211,7 +1228,7 @@ export interface operations {
                             previewDurationMs: number;
                             available: boolean;
                         }[];
-                        total?: number;
+                        total: number;
                     };
                 };
             };
@@ -2486,8 +2503,19 @@ export interface operations {
                 content: {
                     "application/json": {
                         items: {
-                            [key: string]: unknown;
+                            id: string;
+                            ownerId: string;
+                            assistantId: string;
+                            displayName: string;
+                            maskedMac: string;
+                            firmwareVersion: string;
+                            board: string;
+                            /** @enum {string} */
+                            onlineState: "online" | "offline";
+                            lastSeenAt: string;
+                            lastConversationAt: null | string;
                         }[];
+                        total: number;
                     };
                 };
             };
@@ -2556,8 +2584,37 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    assistantId: string;
+                    verificationCode: string;
+                    displayName?: string;
+                };
+            };
+        };
         responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        ownerId: string;
+                        assistantId: string;
+                        displayName: string;
+                        maskedMac: string;
+                        firmwareVersion: string;
+                        board: string;
+                        /** @enum {string} */
+                        onlineState: "online" | "offline";
+                        lastSeenAt: string;
+                        lastConversationAt: null | string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -2614,14 +2671,94 @@ export interface operations {
                     };
                 };
             };
+        };
+    };
+    postInternalV1DevicesPairingChallenges: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    identityHash: string;
+                    clientIdHash: string;
+                    maskedMac: string;
+                    board: string;
+                    firmwareVersion: string;
+                };
+            };
+        };
+        responses: {
             /** @description Default Response */
-            default: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        id: string;
+                        deviceId: string;
+                        verificationCode: string;
+                        expiresAt: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
                     };
                 };
             };

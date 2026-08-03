@@ -95,6 +95,40 @@ test('PostgreSQL provider edits create immutable revisions and reject stale writ
   }
 })
 
+test('PostgreSQL persists a paired device and consumes its challenge once', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8016, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_LOG_LEVEL: 'silent',
+  }
+  const app = await buildApp({ env })
+  await app.ready()
+  let assistantId = ''
+  let code = ''
+  let deviceId = ''
+  try {
+    const assistants = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    assistantId = assistants.json().items[0]?.id
+    const challenge = await app.inject({ method: 'POST', url: '/internal/v1/devices/pairing-challenges', payload: { identityHash: `pg-identity-${Date.now()}`, clientIdHash: `pg-client-${Date.now()}`, maskedMac: 'A4:CF:12:••:••:2B', board: 'ESP32-S3 N16R8', firmwareVersion: '0.1.0' } })
+    assert.equal(challenge.statusCode, 201)
+    code = challenge.json().verificationCode
+    const paired = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: code, displayName: 'Postgres robot' } })
+    assert.equal(paired.statusCode, 201)
+    deviceId = paired.json().id
+  } finally { await app.close() }
+
+  const restarted = await buildApp({ env })
+  await restarted.ready()
+  try {
+    const listed = await restarted.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/devices` })
+    assert.equal(listed.statusCode, 200)
+    assert.ok(listed.json().items.some((item: { id: string; displayName: string }) => item.id === deviceId && item.displayName === 'Postgres robot'))
+    const reused = await restarted.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: code } })
+    assert.equal(reused.statusCode, 422)
+  } finally { await restarted.close() }
+})
+
 test('PostgreSQL keeps secret references that occur in immutable provider history', { skip: !databaseUrlFile }, async () => {
   const env: Environment = {
     VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8015, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,

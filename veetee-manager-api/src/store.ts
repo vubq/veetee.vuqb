@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomInt, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 
 export type ProviderKind = 'vad' | 'asr' | 'llm' | 'tts' | 'intent' | 'memory'
@@ -34,6 +34,31 @@ export interface Assistant {
   publishedRevision: number | null
   etag: string
   updatedAt: string
+}
+
+export interface Device {
+  id: string
+  ownerId: string
+  assistantId: string
+  displayName: string
+  maskedMac: string
+  firmwareVersion: string
+  board: string
+  onlineState: 'online' | 'offline'
+  lastSeenAt: string
+  lastConversationAt: string | null
+}
+
+export interface PairingChallenge {
+  id: string
+  deviceId: string
+  verificationCode: string
+  expiresAt: string
+}
+
+interface DeviceRecord extends Device {
+  identityHash: string
+  clientIdHash: string
 }
 
 export interface RuntimeSnapshot {
@@ -138,6 +163,9 @@ export interface Store {
   createSecretReference(ownerId: string, value: { id: string; name: string; locatorMasked: string; version: number; status: SecretReference['status'] }): Promise<SecretReference>
   updateSecretReference(ownerId: string, id: string, value: { name?: string; locatorMasked?: string }, ifMatch: string): Promise<SecretReference>
   deleteSecretReference(ownerId: string, id: string, ifMatch: string): Promise<void>
+  listDevices(ownerId: string, assistantId: string): Promise<Device[]>
+  createPairingChallenge(value: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string }): Promise<PairingChallenge>
+  pairDevice(ownerId: string, value: { assistantId: string; verificationCode: string; displayName?: string }): Promise<Device>
 }
 
 export class InMemoryStore implements Store {
@@ -147,6 +175,8 @@ export class InMemoryStore implements Store {
   private readonly assistants = new Map<string, Assistant>()
   private readonly sessions = new Map<string, ManagerSession>()
   private readonly secretReferences = new Map<string, SecretReference>()
+  private readonly devices = new Map<string, DeviceRecord>()
+  private readonly pairingChallenges = new Map<string, { id: string; deviceId: string; codeHash: string; expiresAt: string; attempts: number; state: 'pending' | 'used' }>()
   private publication: RuntimePublication | undefined
 
   constructor(installations: ProviderInstallation[], initial?: RuntimeSnapshot) {
@@ -374,6 +404,50 @@ export class InMemoryStore implements Store {
     this.secretReferences.delete(id)
   }
 
+  async listDevices(ownerId: string, assistantId: string): Promise<Device[]> {
+    return [...this.devices.values()]
+      .filter((item) => item.ownerId === ownerId && item.assistantId === assistantId)
+      .map((item) => publicDevice(item))
+  }
+
+  async createPairingChallenge(value: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string }): Promise<PairingChallenge> {
+    const existing = [...this.devices.values()].find((item) => item.identityHash === value.identityHash && item.clientIdHash === value.clientIdHash)
+    const device: DeviceRecord = existing ?? {
+      id: randomUUID(), ownerId: '', assistantId: '', displayName: '', maskedMac: value.maskedMac, firmwareVersion: value.firmwareVersion, board: value.board,
+      onlineState: 'online', lastSeenAt: new Date().toISOString(), lastConversationAt: null, identityHash: value.identityHash, clientIdHash: value.clientIdHash,
+    }
+    device.maskedMac = value.maskedMac
+    device.firmwareVersion = value.firmwareVersion
+    device.board = value.board
+    device.onlineState = 'online'
+    device.lastSeenAt = new Date().toISOString()
+    this.devices.set(device.id, device)
+    const id = randomUUID()
+    const verificationCode = `VT-${randomInt(0, 10000).toString().padStart(4, '0')}`
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+    this.pairingChallenges.set(id, { id, deviceId: device.id, codeHash: hashPairingCode(verificationCode), expiresAt, attempts: 0, state: 'pending' })
+    return { id, deviceId: device.id, verificationCode, expiresAt }
+  }
+
+  async pairDevice(ownerId: string, value: { assistantId: string; verificationCode: string; displayName?: string }): Promise<Device> {
+    const assistant = this.assistants.get(value.assistantId)
+    if (!assistant || assistant.ownerId !== ownerId) throw problem('NOT_FOUND', 'Assistant not found', 404)
+    const codeHash = hashPairingCode(value.verificationCode.trim().toUpperCase())
+    const now = Date.now()
+    const challenge = [...this.pairingChallenges.values()].find((item) => item.state === 'pending' && item.attempts < 5 && Date.parse(item.expiresAt) > now && item.codeHash === codeHash)
+    if (!challenge) throw problem('PAIRING_CODE_INVALID', 'Pairing code is invalid or expired', 422)
+    const device = this.devices.get(challenge.deviceId)
+    if (!device) throw problem('PAIRING_CODE_INVALID', 'Pairing device is unavailable', 422)
+    if (device.ownerId && device.ownerId !== ownerId) throw problem('PAIRING_CODE_INVALID', 'Pairing device is already owned', 422)
+    device.ownerId = ownerId
+    device.assistantId = value.assistantId
+    device.displayName = value.displayName?.trim() || device.displayName || `Veetee ${device.id.slice(0, 8)}`
+    device.onlineState = 'online'
+    device.lastSeenAt = new Date().toISOString()
+    challenge.state = 'used'
+    return publicDevice(device)
+  }
+
   private kind(id: string): ProviderKind | undefined { return this.installations.find((item) => item.id === id)?.kind }
 
   private modelMemory(current: Assistant): ModelMemoryView {
@@ -412,6 +486,25 @@ export function problem(code: string, message: string, statusCode: number): Erro
   error.code = code
   error.statusCode = statusCode
   return error
+}
+
+export function hashPairingCode(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function publicDevice(value: DeviceRecord): Device {
+  return {
+    id: value.id,
+    ownerId: value.ownerId,
+    assistantId: value.assistantId,
+    displayName: value.displayName,
+    maskedMac: value.maskedMac,
+    firmwareVersion: value.firmwareVersion,
+    board: value.board,
+    onlineState: value.onlineState,
+    lastSeenAt: value.lastSeenAt,
+    lastConversationAt: value.lastConversationAt,
+  }
 }
 
 function validateJsonObject(value: Record<string, unknown>, schema: Record<string, unknown>): void {

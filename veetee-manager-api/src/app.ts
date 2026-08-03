@@ -121,8 +121,27 @@ const voiceResponseSchema = {
   type: 'object', additionalProperties: false, required: ['id', 'name', 'providerName', 'locale', 'description', 'previewDurationMs', 'available'],
   properties: { id: { type: 'string' }, name: { type: 'string' }, providerName: { type: 'string' }, locale: { type: 'string' }, description: { type: 'string' }, previewDurationMs: { type: 'integer' }, available: { type: 'boolean' } },
 } as const
+const deviceResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'assistantId', 'displayName', 'maskedMac', 'firmwareVersion', 'board', 'onlineState', 'lastSeenAt', 'lastConversationAt'],
+  properties: {
+    id: { type: 'string' }, ownerId: { type: 'string' }, assistantId: { type: 'string' }, displayName: { type: 'string' }, maskedMac: { type: 'string' },
+    firmwareVersion: { type: 'string' }, board: { type: 'string' }, onlineState: { type: 'string', enum: ['online', 'offline'] }, lastSeenAt: { type: 'string' }, lastConversationAt: { type: ['string', 'null'] },
+  },
+} as const
+const pairDeviceBodySchema = {
+  type: 'object', additionalProperties: false, required: ['assistantId', 'verificationCode'],
+  properties: { assistantId: { type: 'string', minLength: 1 }, verificationCode: { type: 'string', minLength: 7, maxLength: 7 }, displayName: { type: 'string', minLength: 1, maxLength: 80 } },
+} as const
+const pairingChallengeBodySchema = {
+  type: 'object', additionalProperties: false, required: ['identityHash', 'clientIdHash', 'maskedMac', 'board', 'firmwareVersion'],
+  properties: { identityHash: { type: 'string', minLength: 16, maxLength: 256 }, clientIdHash: { type: 'string', minLength: 16, maxLength: 256 }, maskedMac: { type: 'string', minLength: 1, maxLength: 64 }, board: { type: 'string', minLength: 1, maxLength: 120 }, firmwareVersion: { type: 'string', minLength: 1, maxLength: 80 } },
+} as const
+const pairingChallengeResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'deviceId', 'verificationCode', 'expiresAt'],
+  properties: { id: { type: 'string' }, deviceId: { type: 'string' }, verificationCode: { type: 'string' }, expiresAt: { type: 'string' } },
+} as const
 const listResponse = (item: Record<string, unknown>, withTotal = false) => ({
-  type: 'object', additionalProperties: false, required: ['items'],
+  type: 'object', additionalProperties: false, required: withTotal ? ['items', 'total'] : ['items'],
   properties: { items: { type: 'array', items: item }, ...(withTotal ? { total: { type: 'integer' } } : {}) },
 })
 const problemBodySchema = {
@@ -136,7 +155,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   const secretStore = overrides?.secretStore ?? await createSecretStore(env)
   if (env.VEETEE_AUTH_MODE === 'local' && !authSecret) throw new Error('VEETEE_AUTH_SECRET_FILE is required when VEETEE_AUTH_MODE=local')
   const app = Fastify({
-    logger: { level: env.VEETEE_LOG_LEVEL, redact: ['req.headers.authorization', '*.password', '*.secret', '*.apiKey'] },
+    logger: { level: env.VEETEE_LOG_LEVEL, redact: ['req.headers.authorization', '*.password', '*.secret', '*.apiKey', '*.verificationCode'] },
   })
   const machineToken = env.VEETEE_MACHINE_TOKEN_FILE ? (await readFile(env.VEETEE_MACHINE_TOKEN_FILE, 'utf8')).trim() : undefined
   const allowedOrigins = env.VEETEE_ALLOWED_ORIGINS.split(',').map((item) => item.trim()).filter(Boolean)
@@ -350,12 +369,23 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   app.post<{ Params: { id: string } }>('/api/v1/assistants/:id/publish', { schema: { response: { 200: runtimePublicationResponseSchema } } }, async (request, reply) => {
     try { const publication = await store.publish(owner(request), request.params.id, typeof request.headers['if-match'] === 'string' ? request.headers['if-match'] : undefined); return reply.header('ETag', publication.etag).send(publication) } catch (error) { return sendProblem(reply, error) }
   })
-  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/devices', { schema: { response: { 200: listResponse({ type: 'object', additionalProperties: true }) } } }, async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/devices', { schema: { response: { 200: listResponse(deviceResponseSchema, true) } } }, async (request, reply) => {
     if (!(await store.getAssistant(owner(request), request.params.id))) return reply.code(404).send({ code: 'NOT_FOUND' })
-    return { items: [], total: 0 }
+    const items = await store.listDevices(owner(request), request.params.id)
+    return { items, total: items.length }
   })
-  app.post('/api/v1/devices/pair', async (_request, reply) => reply.code(501).send({ code: 'DEVICE_PAIRING_NOT_READY', detail: 'Device pairing is reserved for the hardware milestone.' }))
+  app.post<{ Body: { assistantId: string; verificationCode: string; displayName?: string } }>('/api/v1/devices/pair', { schema: { body: pairDeviceBodySchema, response: { 201: deviceResponseSchema } } }, async (request, reply) => {
+    try {
+      const device = await store.pairDevice(owner(request), request.body)
+      return reply.code(201).send(device)
+    } catch (error) { return sendProblem(reply, error) }
+  })
 
+  app.post<{ Body: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string } }>('/internal/v1/devices/pairing-challenges', { schema: { body: pairingChallengeBodySchema, response: { 201: pairingChallengeResponseSchema } } }, async (request, reply) => {
+    if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    const challenge = await store.createPairingChallenge(request.body)
+    return reply.code(201).send(challenge)
+  })
   app.get<{ Querystring: { assistantId?: string } }>('/internal/v1/runtime-config', { schema: { response: { 200: runtimeSnapshotResponseSchema } } }, async (request, reply) => {
     if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
     const publication = await store.runtime(request.query.assistantId)
