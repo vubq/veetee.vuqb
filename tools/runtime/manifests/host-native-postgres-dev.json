@@ -59,9 +59,11 @@
         "VEETEE_CONFIG_SOURCE": "manager",
         "VEETEE_MANAGER_API_URL": "http://127.0.0.1:18101",
         "VEETEE_ALLOW_INSECURE_LOCAL_CONFIG": "true",
-        "VEETEE_VOICE_HOST": "127.0.0.1",
+        "VEETEE_VOICE_HOST": "0.0.0.0",
         "VEETEE_VOICE_PORT": "18100",
-        "VEETEE_GROQ_SECRET_FILE": "${VEETEE_ROOT}/secrets/groq.keys"
+        "VEETEE_GROQ_SECRET_FILE": "${VEETEE_ROOT}/secrets/groq.keys",
+        "VEETEE_SECRET_STORE_FILE": "${VEETEE_ROOT}/.runtime/manager-secrets.json",
+        "VEETEE_SECRET_MASTER_KEY_FILE": "${VEETEE_ROOT}/secrets/manager.secret"
       },
       "healthUrl": "http://127.0.0.1:18100/health/ready",
       "readyTimeoutSeconds": 30,

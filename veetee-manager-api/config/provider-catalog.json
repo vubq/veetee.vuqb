@@ -28,11 +28,30 @@
       "configSchema": { "type": "object", "additionalProperties": false, "required": ["text"], "properties": { "text": { "type": "string", "minLength": 1 } } }
     },
     {
+      "id": "veetee.asr.phowhisper",
+      "kind": "asr",
+      "displayNameKey": "provider.asr.phowhisper",
+      "version": "1.0.0",
+      "manifest": { "locales": ["vi-VN", "vi"], "supportsPartial": false, "supportsCancel": true, "requiresLocalArtifact": true },
+      "configSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["modelPath"],
+        "properties": {
+          "modelPath": { "type": "string", "minLength": 1 },
+          "device": { "type": "string", "enum": ["cuda", "cpu"] },
+          "computeType": { "type": "string", "enum": ["float16", "int8_float16", "int8" ] },
+          "cpuThreads": { "type": "integer", "minimum": 1, "maximum": 32 },
+          "numWorkers": { "type": "integer", "minimum": 1, "maximum": 4 }
+        }
+      }
+    },
+    {
       "id": "groq.chat",
       "kind": "llm",
       "displayNameKey": "provider.llm.groq",
       "version": "1.0.0",
-      "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsTools": true },
+      "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsTools": true, "secretFields": ["apiKey"] },
       "configSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -59,7 +78,21 @@
       "displayNameKey": "provider.tts.vieneu",
       "version": "1.0.0",
       "manifest": { "locales": ["vi-VN"], "supportsStreaming": true, "supportsCancel": true },
-      "configSchema": { "type": "object", "additionalProperties": false, "required": ["modelPath", "sampleRate"], "properties": { "modelPath": { "type": "string", "minLength": 1 }, "sampleRate": { "type": "integer", "minimum": 1 } } }
+      "configSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["backboneRepo", "sampleRate"],
+        "properties": {
+          "backboneRepo": { "type": "string", "minLength": 1 },
+          "modelPath": { "type": "string", "minLength": 1 },
+          "mode": { "type": "string", "enum": ["v3turbo"] },
+          "backend": { "type": "string", "enum": ["onnx", "auto"] },
+          "precision": { "type": "string", "enum": ["int8", "fp32"] },
+          "sampleRate": { "type": "integer", "minimum": 1, "maximum": 48000 },
+          "sourceSampleRate": { "type": "integer", "minimum": 1, "maximum": 48000 },
+          "threads": { "type": "integer", "minimum": 0, "maximum": 32 }
+        }
+      }
     },
     {
       "id": "veetee.tts.fixture-tone",

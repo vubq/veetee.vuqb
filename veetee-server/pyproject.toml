@@ -11,10 +11,19 @@ dependencies = [
   "aiohttp>=3.9,<4",
   "httpx>=0.27,<1",
   "opuslib>=3.0,<4",
+  "cryptography>=42,<47",
 ]
 
 [project.optional-dependencies]
 test = ["pytest>=8", "pytest-asyncio>=0.23"]
+local-tts = ["vieneu>=3.2.4,<4"]
+local-asr = ["faster-whisper>=1.2.1,<2"]
+local-asr-cuda = [
+  "faster-whisper>=1.2.1,<2",
+  "nvidia-cublas-cu12>=12,<13",
+  "nvidia-cuda-nvrtc-cu12>=12,<13",
+  "nvidia-cudnn-cu12>=9,<10",
+]
 
 [project.scripts]
 veetee-server = "veetee_server.main:main"

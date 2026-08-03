@@ -13,6 +13,7 @@
 **/*.tsbuildinfo
 **/build*/
 /veetee-firmware/sdkconfig
+/veetee-firmware/managed_components/
 
 # Local environment and secrets
 .env

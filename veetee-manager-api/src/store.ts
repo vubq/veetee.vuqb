@@ -164,9 +164,11 @@ export class InMemoryStore implements Store {
     const installation = this.installations.find((item) => item.id === value.installationId)
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
     validateJsonObject(value.config, installation.configSchema)
-    for (const referenceId of value.secretRefs ?? []) if (!this.secretReferences.has(referenceId) || this.secretReferences.get(referenceId)?.ownerId !== ownerId || this.secretReferences.get(referenceId)?.status !== 'available') throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
+    const secretRefs = [...(value.secretRefs ?? [])]
+    validateSecretBindings(installation, secretRefs)
+    for (const referenceId of secretRefs) if (!this.secretReferences.has(referenceId) || this.secretReferences.get(referenceId)?.ownerId !== ownerId || this.secretReferences.get(referenceId)?.status !== 'available') throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
     const now = new Date().toISOString()
-    const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name, revision: 1, config: structuredClone(value.config), secretRefs: value.secretRefs ?? [], etag: etag({ ...value.config, revision: 1 }), updatedAt: now }
+    const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name, revision: 1, config: structuredClone(value.config), secretRefs, etag: etag({ ...value.config, revision: 1 }), updatedAt: now }
     this.providerConfigs.set(item.id, item)
     this.providerConfigSecretRefs.set(item.id, new Set(item.secretRefs))
     return structuredClone(item)
@@ -180,8 +182,10 @@ export class InMemoryStore implements Store {
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
     const config = value.config ?? current.config
     validateJsonObject(config, installation.configSchema)
-    for (const referenceId of value.secretRefs ?? current.secretRefs) if (!this.secretReferences.has(referenceId) || this.secretReferences.get(referenceId)?.ownerId !== ownerId || this.secretReferences.get(referenceId)?.status !== 'available') throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
-    const next: ProviderConfig = { ...current, ...value, config: structuredClone(config), revision: current.revision + 1, etag: etag({ ...config, revision: current.revision + 1 }), updatedAt: new Date().toISOString() }
+    const secretRefs = [...(value.secretRefs ?? current.secretRefs)]
+    validateSecretBindings(installation, secretRefs)
+    for (const referenceId of secretRefs) if (!this.secretReferences.has(referenceId) || this.secretReferences.get(referenceId)?.ownerId !== ownerId || this.secretReferences.get(referenceId)?.status !== 'available') throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
+    const next: ProviderConfig = { ...current, ...value, config: structuredClone(config), secretRefs, revision: current.revision + 1, etag: etag({ ...config, revision: current.revision + 1 }), updatedAt: new Date().toISOString() }
     this.providerConfigs.set(id, next)
     const historicalRefs = this.providerConfigSecretRefs.get(id) ?? new Set<string>()
     for (const referenceId of next.secretRefs) historicalRefs.add(referenceId)
@@ -262,7 +266,7 @@ export class InMemoryStore implements Store {
       const selected = selectedId ? this.providerConfigs.get(selectedId) : undefined
       const installation = selected ? this.installations.find((item) => item.id === selected.installationId) : undefined
       if (!selected || !installation) throw problem('CONFIG_NOT_PUBLISHABLE', `Provider selection is not configured: ${kind}`, 422)
-      resolvedProviders[kind] = { providerId: installation.id, version: installation.version, config: selected.config }
+      resolvedProviders[kind] = { providerId: installation.id, version: installation.version, config: selected.config, secretRefs: [...selected.secretRefs] }
     }
     const snapshot: RuntimeSnapshot = {
       schemaVersion: 1,
@@ -383,4 +387,12 @@ function validateJsonObject(value: Record<string, unknown>, schema: Record<strin
     for (const key of Object.keys(value)) if (!allowed.has(key)) throw problem('CONFIG_INVALID', `Unknown provider field: ${key}`, 422)
   }
   for (const required of (schema.required as string[] | undefined) ?? []) if (!(required in value)) throw problem('CONFIG_INVALID', `Missing provider field: ${required}`, 422)
+}
+
+export function validateSecretBindings(installation: ProviderInstallation, refs: string[]): void {
+  const fields = Array.isArray(installation.manifest.secretFields) ? installation.manifest.secretFields : []
+  if (refs.length !== fields.length) {
+    if (fields.length > 0) throw problem('SECRET_INVALID', `${installation.id} requires exactly ${fields.length} secretRef`, 422)
+    if (refs.length > 0) throw problem('SECRET_INVALID', `${installation.id} does not declare secret fields`, 422)
+  }
 }

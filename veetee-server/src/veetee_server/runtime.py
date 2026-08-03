@@ -13,6 +13,7 @@ import httpx
 
 from .config import ConfigurationError, RuntimeSnapshot, ServerConfig, load_snapshot
 from .providers import ProviderError, ProviderRegistry
+from .secrets import EncryptedFileSecretResolver
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,9 +23,16 @@ class RuntimeView:
 
 
 class RuntimeConfigManager:
-    def __init__(self, config: ServerConfig, *, secret_file: Path | None = None) -> None:
+    def __init__(
+        self,
+        config: ServerConfig,
+        *,
+        secret_file: Path | None = None,
+        secret_resolver: EncryptedFileSecretResolver | None = None,
+    ) -> None:
         self.config = config
         self.secret_file = secret_file
+        self.secret_resolver = secret_resolver
         self._view: RuntimeView | None = None
         self._etag: str | None = None
         self._lock = asyncio.Lock()
@@ -113,7 +121,7 @@ class RuntimeConfigManager:
     async def _activate(self, snapshot: RuntimeSnapshot) -> bool:
         async with self._lock:
             try:
-                registry = ProviderRegistry(snapshot, secret_file=self.secret_file)
+                registry = ProviderRegistry(snapshot, secret_file=self.secret_file, secret_resolver=self.secret_resolver)
                 view = RuntimeView(snapshot=snapshot, registry=registry)
             except (ConfigurationError, ProviderError):
                 self.activation_failures += 1

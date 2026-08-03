@@ -1,0 +1,211 @@
+#include "veetee_audio.h"
+
+#include <string.h>
+
+#include "driver/i2s_common.h"
+#include "esp_audio_enc.h"
+#include "esp_err.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "encoder/impl/esp_opus_enc.h"
+#include "decoder/impl/esp_opus_dec.h"
+
+#define TAG "veetee-audio"
+#define VT_AUDIO_DMA_DESC_NUM 8
+#define VT_AUDIO_DMA_FRAME_NUM 240
+#define VT_AUDIO_PCM_SHIFT 12
+
+static int frame_duration_to_encoder(int duration_ms) {
+    switch (duration_ms) {
+    case 20: return ESP_OPUS_ENC_FRAME_DURATION_20_MS;
+    case 40: return ESP_OPUS_ENC_FRAME_DURATION_40_MS;
+    case 60: return ESP_OPUS_ENC_FRAME_DURATION_60_MS;
+    case 80: return ESP_OPUS_ENC_FRAME_DURATION_80_MS;
+    case 100: return ESP_OPUS_ENC_FRAME_DURATION_100_MS;
+    case 120: return ESP_OPUS_ENC_FRAME_DURATION_120_MS;
+    default: return -1;
+    }
+}
+
+static int check_config(const vt_audio_config_t *config) {
+    if (config == NULL || config->input_sample_rate <= 0 || config->output_sample_rate <= 0 ||
+        config->frame_duration_ms <= 0 || config->speaker_bclk_gpio < 0 || config->speaker_ws_gpio < 0 ||
+        config->speaker_dout_gpio < 0 || config->microphone_bclk_gpio < 0 || config->microphone_ws_gpio < 0 ||
+        config->microphone_din_gpio < 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (frame_duration_to_encoder(config->frame_duration_ms) < 0) return ESP_ERR_INVALID_ARG;
+    return ESP_OK;
+}
+
+static i2s_std_config_t std_config(int sample_rate, int bclk, int ws, int dout, int din) {
+    i2s_std_config_t value = {
+        .clk_cfg = {
+            .sample_rate_hz = (uint32_t)sample_rate,
+            .clk_src = I2S_CLK_SRC_DEFAULT,
+            .mclk_multiple = I2S_MCLK_MULTIPLE_256,
+        },
+        .slot_cfg = {
+            .data_bit_width = I2S_DATA_BIT_WIDTH_32BIT,
+            .slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO,
+            .slot_mode = I2S_SLOT_MODE_MONO,
+            .slot_mask = I2S_STD_SLOT_LEFT,
+            .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
+            .ws_pol = false,
+            .bit_shift = true,
+#if defined(I2S_HW_VERSION_2)
+            .left_align = true,
+            .big_endian = false,
+            .bit_order_lsb = false,
+#endif
+        },
+        .gpio_cfg = {
+            .mclk = I2S_GPIO_UNUSED,
+            .bclk = bclk,
+            .ws = ws,
+            .dout = dout,
+            .din = din,
+            .invert_flags = { .mclk_inv = false, .bclk_inv = false, .ws_inv = false },
+        },
+    };
+    return value;
+}
+
+int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
+    if (audio == NULL || check_config(config) != ESP_OK) return ESP_ERR_INVALID_ARG;
+    memset(audio, 0, sizeof(*audio));
+    audio->input_frame_samples = config->input_sample_rate * config->frame_duration_ms / 1000;
+    audio->output_frame_samples = config->output_sample_rate * config->frame_duration_ms / 1000;
+    audio->input_frame_bytes = audio->input_frame_samples * (int)sizeof(int16_t);
+    audio->output_frame_bytes = audio->output_frame_samples * (int)sizeof(int16_t);
+
+    i2s_chan_config_t channel_config = {
+        .id = 0,
+        .role = I2S_ROLE_MASTER,
+        .dma_desc_num = VT_AUDIO_DMA_DESC_NUM,
+        .dma_frame_num = VT_AUDIO_DMA_FRAME_NUM,
+        .auto_clear_after_cb = true,
+        .auto_clear_before_cb = false,
+        .intr_priority = 0,
+    };
+    esp_err_t error = i2s_new_channel(&channel_config, &audio->tx_handle, NULL);
+    if (error != ESP_OK) return error;
+    i2s_std_config_t tx_config = std_config(config->output_sample_rate, config->speaker_bclk_gpio,
+                                            config->speaker_ws_gpio, config->speaker_dout_gpio, I2S_GPIO_UNUSED);
+    error = i2s_channel_init_std_mode(audio->tx_handle, &tx_config);
+    if (error != ESP_OK) return error;
+
+    channel_config.id = 1;
+    error = i2s_new_channel(&channel_config, NULL, &audio->rx_handle);
+    if (error != ESP_OK) return error;
+    i2s_std_config_t rx_config = std_config(config->input_sample_rate, config->microphone_bclk_gpio,
+                                            config->microphone_ws_gpio, I2S_GPIO_UNUSED, config->microphone_din_gpio);
+    error = i2s_channel_init_std_mode(audio->rx_handle, &rx_config);
+    if (error != ESP_OK) return error;
+
+    esp_opus_enc_config_t encoder_config = {
+        .sample_rate = config->input_sample_rate,
+        .channel = 1,
+        .bits_per_sample = 16,
+        .bitrate = ESP_OPUS_BITRATE_AUTO,
+        .frame_duration = (esp_opus_enc_frame_duration_t)frame_duration_to_encoder(config->frame_duration_ms),
+        .application_mode = ESP_OPUS_ENC_APPLICATION_LOWDELAY,
+        .complexity = 5,
+        .enable_fec = false,
+        .enable_dtx = false,
+        .enable_vbr = true,
+    };
+    if (esp_opus_enc_open(&encoder_config, sizeof(encoder_config), &audio->encoder) != ESP_AUDIO_ERR_OK) {
+        ESP_LOGE(TAG, "Opus encoder init failed");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    esp_opus_dec_cfg_t decoder_config = {
+        .sample_rate = (uint32_t)config->output_sample_rate,
+        .channel = 1,
+        .frame_duration = (esp_opus_dec_frame_duration_t)frame_duration_to_encoder(config->frame_duration_ms),
+        .self_delimited = false,
+    };
+    if (esp_opus_dec_open(&decoder_config, sizeof(decoder_config), &audio->decoder) != ESP_AUDIO_ERR_OK) {
+        ESP_LOGE(TAG, "Opus decoder init failed");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    int encoder_frame_bytes = 0;
+    int encoder_out_bytes = 0;
+    if (esp_opus_enc_get_frame_size(audio->encoder, &encoder_frame_bytes, &encoder_out_bytes) != ESP_AUDIO_ERR_OK ||
+        encoder_frame_bytes != audio->input_frame_bytes) {
+        ESP_LOGE(TAG, "unexpected Opus frame size input=%d expected=%d", encoder_frame_bytes, audio->input_frame_bytes);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (encoder_out_bytes <= 0) return ESP_ERR_INVALID_SIZE;
+    audio->output_frame_bytes = audio->output_frame_samples * (int)sizeof(int16_t);
+    return ESP_OK;
+}
+
+int vt_audio_start(vt_audio_t *audio) {
+    if (audio == NULL || audio->tx_handle == NULL || audio->rx_handle == NULL) return ESP_ERR_INVALID_ARG;
+    esp_err_t error = i2s_channel_enable(audio->tx_handle);
+    if (error != ESP_OK) return error;
+    error = i2s_channel_enable(audio->rx_handle);
+    if (error != ESP_OK) return error;
+    audio->started = true;
+    return ESP_OK;
+}
+
+int vt_audio_stop(vt_audio_t *audio) {
+    if (audio == NULL) return ESP_ERR_INVALID_ARG;
+    if (audio->rx_handle != NULL) (void)i2s_channel_disable(audio->rx_handle);
+    if (audio->tx_handle != NULL) (void)i2s_channel_disable(audio->tx_handle);
+    audio->started = false;
+    return ESP_OK;
+}
+
+int vt_audio_read_pcm(vt_audio_t *audio, int16_t *samples, size_t sample_capacity, size_t *sample_count) {
+    if (audio == NULL || samples == NULL || sample_count == NULL || !audio->started ||
+        sample_capacity < (size_t)audio->input_frame_samples) return ESP_ERR_INVALID_ARG;
+    int32_t raw[audio->input_frame_samples];
+    size_t bytes_read = 0;
+    esp_err_t error = i2s_channel_read(audio->rx_handle, raw, sizeof(raw), &bytes_read, pdMS_TO_TICKS(250));
+    if (error != ESP_OK) return error;
+    size_t count = bytes_read / sizeof(int32_t);
+    for (size_t index = 0; index < count; ++index) {
+        int32_t value = raw[index] >> VT_AUDIO_PCM_SHIFT;
+        if (value > INT16_MAX) value = INT16_MAX;
+        if (value < INT16_MIN) value = INT16_MIN;
+        samples[index] = (int16_t)value;
+    }
+    *sample_count = count;
+    return ESP_OK;
+}
+
+int vt_audio_encode(vt_audio_t *audio, const int16_t *samples, size_t sample_count, uint8_t *opus, size_t opus_capacity, size_t *opus_size) {
+    if (audio == NULL || samples == NULL || opus == NULL || opus_size == NULL || audio->encoder == NULL ||
+        sample_count != (size_t)audio->input_frame_samples || opus_capacity == 0) return ESP_ERR_INVALID_ARG;
+    esp_audio_enc_in_frame_t input = { .buffer = (uint8_t *)samples, .len = (uint32_t)(sample_count * sizeof(int16_t)) };
+    esp_audio_enc_out_frame_t output = { .buffer = opus, .len = (uint32_t)opus_capacity, .encoded_bytes = 0 };
+    esp_audio_err_t error = esp_opus_enc_process(audio->encoder, &input, &output);
+    if (error != ESP_AUDIO_ERR_OK || output.encoded_bytes == 0 || output.encoded_bytes > opus_capacity) return ESP_ERR_INVALID_SIZE;
+    *opus_size = output.encoded_bytes;
+    return ESP_OK;
+}
+
+int vt_audio_decode_and_play(vt_audio_t *audio, const uint8_t *opus, size_t opus_size) {
+    if (audio == NULL || opus == NULL || opus_size == 0 || audio->decoder == NULL || !audio->started) return ESP_ERR_INVALID_ARG;
+    int16_t pcm[audio->output_frame_samples];
+    esp_audio_dec_in_raw_t input = { .buffer = (uint8_t *)opus, .len = (uint32_t)opus_size, .consumed = 0 };
+    esp_audio_dec_out_frame_t output = { .buffer = (uint8_t *)pcm, .len = sizeof(pcm), .needed_size = 0, .decoded_size = 0 };
+    esp_audio_dec_info_t info = {0};
+    esp_audio_err_t error = esp_opus_dec_decode(audio->decoder, &input, &output, &info);
+    if (error != ESP_AUDIO_ERR_OK || output.decoded_size == 0) return ESP_ERR_INVALID_SIZE;
+    size_t samples = output.decoded_size / sizeof(int16_t);
+    int32_t expanded[samples];
+    for (size_t index = 0; index < samples; ++index) expanded[index] = (int32_t)pcm[index] << VT_AUDIO_PCM_SHIFT;
+    size_t bytes_written = 0;
+    error = i2s_channel_write(audio->tx_handle, expanded, samples * sizeof(int32_t), &bytes_written, pdMS_TO_TICKS(250));
+    return error == ESP_OK && bytes_written == samples * sizeof(int32_t) ? ESP_OK : ESP_FAIL;
+}
+
+void vt_audio_reset(vt_audio_t *audio) {
+    if (audio == NULL) return;
+    if (audio->encoder != NULL) (void)esp_opus_enc_reset(audio->encoder);
+    if (audio->decoder != NULL) (void)esp_opus_dec_reset(audio->decoder);
+}

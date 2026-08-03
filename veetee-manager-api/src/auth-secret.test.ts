@@ -88,10 +88,22 @@ test('secret reference API returns metadata only and supports ETag mutation', as
       installationId: 'groq.chat', name: 'Groq bound', config: { endpoint: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant', maxTokens: 64 }, secretRefs: [value.id],
     } })
     assert.equal(provider.statusCode, 201)
+    const assistants = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    const assistant = assistants.json().items[0] as { id: string; etag: string }
+    const selected = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/assistants/${assistant.id}/model-memory/provider`,
+      headers: { 'if-match': assistant.etag },
+      payload: { kind: 'llm', mode: 'selected', providerConfigId: provider.json().id },
+    })
+    assert.equal(selected.statusCode, 200)
+    const published = await app.inject({ method: 'POST', url: `/api/v1/assistants/${assistant.id}/publish`, headers: { 'if-match': selected.headers.etag } })
+    assert.equal(published.statusCode, 200)
+    assert.deepEqual(published.json().snapshot.providers.llm.secretRefs, [value.id])
     const blocked = await app.inject({ method: 'DELETE', url: `/api/v1/secret-references/${value.id}`, headers: { 'if-match': updated.headers.etag } })
     assert.equal(blocked.statusCode, 409)
     const unbound = await app.inject({ method: 'PATCH', url: `/api/v1/provider-configs/${provider.json().id}`, headers: { 'if-match': provider.headers.etag }, payload: { secretRefs: [] } })
-    assert.equal(unbound.statusCode, 200)
+    assert.equal(unbound.statusCode, 422)
     const blockedByHistory = await app.inject({ method: 'DELETE', url: `/api/v1/secret-references/${value.id}`, headers: { 'if-match': updated.headers.etag } })
     assert.equal(blockedByHistory.statusCode, 409)
     const orphan = await app.inject({ method: 'POST', url: '/api/v1/secret-references', payload: { name: 'Orphan', store: 'encrypted-local', secretValue: 'orphan-secret' } })

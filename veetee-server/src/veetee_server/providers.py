@@ -8,19 +8,24 @@ operation, not a code branch or runtime fallback.
 from __future__ import annotations
 
 import asyncio
+import ctypes
 from dataclasses import dataclass
 import importlib
 import json
 import math
 import os
 from pathlib import Path
+import queue as thread_queue
 import struct
+import sys
+import threading
 from typing import Any, AsyncIterator, Protocol
 
 import httpx
 import opuslib
 
 from .config import ConfigurationError, RuntimeSnapshot
+from .secrets import EncryptedFileSecretResolver, SecretResolutionError
 
 
 class ProviderError(RuntimeError):
@@ -129,11 +134,19 @@ class PhoWhisperASR:
             module = importlib.import_module("faster_whisper")
         except ImportError as exc:
             raise ProviderError("ASR_DEPENDENCY_MISSING", "faster-whisper is not installed") from exc
-        self._model = module.WhisperModel(
-            model_path,
-            device=config.get("device", "cuda"),
-            compute_type=config.get("computeType", "float16"),
-        )
+        device = str(config.get("device", "cuda"))
+        if device.lower().startswith("cuda"):
+            _preload_cuda_runtime()
+        try:
+            self._model = module.WhisperModel(
+                model_path,
+                device=device,
+                compute_type=config.get("computeType", "float16"),
+                cpu_threads=_positive_int(config, "cpuThreads", fallback=4),
+                num_workers=_positive_int(config, "numWorkers", fallback=1),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError("ASR_MODEL_LOAD_FAILED", "PhoWhisper model could not be loaded") from exc
         self._chunks: list[bytes] = []
         self._sample_rate = _positive_int(config, "sampleRate", fallback=16000)
 
@@ -176,16 +189,35 @@ class FixtureLLM:
 
 
 class GroqLLM:
-    def __init__(self, config: dict[str, Any], secret_file: Path | None) -> None:
-        if secret_file is None:
-            raise ProviderError("LLM_SECRET_MISSING", "Groq provider requires one secret file")
+    def __init__(
+        self,
+        config: dict[str, Any],
+        secret_file: Path | None,
+        secret_resolver: EncryptedFileSecretResolver | None,
+        secret_refs: list[str],
+    ) -> None:
+        if secret_file is None and secret_resolver is None:
+            raise ProviderError("LLM_SECRET_MISSING", "Groq provider requires one secret reference")
+        if len(secret_refs) > 1:
+            raise ConfigurationError("Groq provider accepts exactly one secretRef")
         self._model = _required_string(config, "model")
         self._endpoint = _required_string(config, "endpoint")
         self._temperature = float(config.get("temperature", 0.3))
         self._max_tokens = int(config.get("maxTokens", 512))
         self._secret_file = secret_file
+        self._secret_resolver = secret_resolver
+        self._secret_ref = secret_refs[0] if secret_refs else None
 
     def _key(self) -> str:
+        if self._secret_ref and self._secret_resolver:
+            try:
+                return self._secret_resolver.resolve(self._secret_ref)
+            except SecretResolutionError as exc:
+                raise ProviderError("LLM_SECRET_RESOLVE_FAILED", "Groq secretRef could not be resolved") from exc
+        if self._secret_ref and not self._secret_resolver:
+            raise ProviderError("LLM_SECRET_RESOLVER_MISSING", "Groq secretRef resolver is not configured")
+        if self._secret_file is None:
+            raise ProviderError("LLM_SECRET_MISSING", "Groq provider requires one secret reference")
         try:
             lines = self._secret_file.read_text(encoding="utf-8").splitlines()
         except OSError as exc:
@@ -262,28 +294,119 @@ class FixtureToneTTS:
 
 
 class VieNeuTTS:
-    """Optional VieNeu adapter loaded only when its package is installed."""
+    """Config-driven VieNeu v3 Turbo adapter with bounded streaming."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         try:
             self._module = importlib.import_module("vieneu")
         except ImportError as exc:
             raise ProviderError("TTS_DEPENDENCY_MISSING", "VieNeu package is not installed") from exc
-        self._model = _required_string(config, "modelPath")
+        model = config.get("backboneRepo", config.get("modelPath"))
+        if not isinstance(model, str) or not model.strip():
+            raise ConfigurationError("VieNeu provider requires config.backboneRepo")
+        self._model = model.strip()
+        self._mode = str(config.get("mode", "v3turbo"))
         self._sample_rate = _positive_int(config, "sampleRate", fallback=24000)
+        self._source_sample_rate = _positive_int(config, "sourceSampleRate", fallback=48000)
+        self._factory_config = self._factory_kwargs(config)
+        self._engine: Any | None = None
+        self._engine_lock = asyncio.Lock()
+
+    @staticmethod
+    def _factory_kwargs(config: dict[str, Any]) -> dict[str, Any]:
+        names = {
+            "modelSubfolder": "model_subfolder",
+            "mossTokenizer": "moss_tokenizer",
+            "device": "device",
+            "dtype": "dtype",
+            "backend": "backend",
+            "onnxRepo": "onnx_repo",
+            "onnxDir": "onnx_dir",
+            "precision": "precision",
+            "onnxSubfolder": "onnx_subfolder",
+            "threads": "threads",
+            "maxBatchSize": "max_batch_size",
+        }
+        result = {target: config[key] for key, target in names.items() if key in config}
+        return result
+
+    async def _get_engine(self) -> Any:
+        if self._engine is not None:
+            return self._engine
+        async with self._engine_lock:
+            if self._engine is None:
+                kwargs = {"mode": self._mode, "backbone_repo": self._model, **self._factory_config}
+                try:
+                    self._engine = await asyncio.to_thread(self._module.Vieneu, **kwargs)
+                except Exception as exc:  # noqa: BLE001
+                    raise ProviderError("TTS_MODEL_LOAD_FAILED", "VieNeu model could not be loaded") from exc
+        return self._engine
 
     async def stream(self, text: str, *, locale: str, voice: dict[str, Any]) -> AsyncIterator[AudioChunk]:
-        engine = getattr(self._module, "load", None)
-        if engine is None:
-            raise ProviderError("TTS_CAPABILITY_MISSING", "VieNeu package has no configured streaming loader")
-        generator = await asyncio.to_thread(engine, self._model)
-        result = generator.infer_stream(text=text, voice=voice.get("voiceId"), language=locale)
-        for chunk in result:
-            if isinstance(chunk, tuple):
-                rate, pcm = chunk
-            else:
-                rate, pcm = self._sample_rate, chunk
-            yield AudioChunk(bytes(pcm), int(rate), final=False)
+        del locale  # VieNeu's Vietnamese model infers language from configured text/voice.
+        engine = await self._get_engine()
+        voice_id = voice.get("voiceId")
+        if voice_id is not None and not isinstance(voice_id, (str, dict)):
+            raise ProviderError("TTS_VOICE_INVALID", "voiceId must be a string or object")
+        options: dict[str, Any] = {}
+        for key in ("style", "temperature", "topK", "topP", "maxNewFrames", "maxChars", "repetitionPenalty"):
+            if key in voice:
+                options[{"topK": "top_k", "topP": "top_p", "maxNewFrames": "max_new_frames", "maxChars": "max_chars", "repetitionPenalty": "repetition_penalty"}.get(key, key)] = voice[key]
+        events: thread_queue.Queue[tuple[str, Any]] = thread_queue.Queue(maxsize=4)
+        cancelled = threading.Event()
+
+        def worker() -> None:
+            def put_event(kind: str, value: Any) -> None:
+                while not cancelled.is_set():
+                    try:
+                        events.put((kind, value), timeout=0.2)
+                        return
+                    except thread_queue.Full:
+                        continue
+
+            try:
+                result = engine.infer_stream(text, voice=voice_id, **options)
+                for chunk in result:
+                    if cancelled.is_set():
+                        break
+                    put_event("chunk", chunk)
+                put_event("done", None)
+            except Exception as exc:  # noqa: BLE001
+                put_event("error", exc)
+
+        worker_task = asyncio.create_task(asyncio.to_thread(worker), name="vieneu-stream-worker")
+        try:
+            while True:
+                try:
+                    kind, value = await asyncio.to_thread(events.get, True, 0.2)
+                except thread_queue.Empty:
+                    continue
+                if kind == "done":
+                    break
+                if kind == "error":
+                    raise ProviderError("TTS_SYNTHESIS_FAILED", "VieNeu synthesis failed") from value
+                import numpy as np
+
+                if isinstance(value, tuple) and len(value) == 2:
+                    rate, value = value
+                else:
+                    rate = getattr(engine, "sample_rate", self._source_sample_rate)
+                samples = np.asarray(value, dtype=np.float32).reshape(-1)
+                if samples.size == 0:
+                    continue
+                if int(rate) != self._sample_rate:
+                    try:
+                        import soxr
+
+                        samples = soxr.resample(samples, int(rate), self._sample_rate)
+                    except Exception as exc:  # noqa: BLE001
+                        raise ProviderError("TTS_RESAMPLE_FAILED", "cannot resample VieNeu audio") from exc
+                pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+                yield AudioChunk(pcm, self._sample_rate, final=False)
+        finally:
+            cancelled.set()
+            if not worker_task.done():
+                worker_task.cancel()
         yield AudioChunk(b"", self._sample_rate, final=True)
 
 
@@ -309,9 +432,16 @@ class OpusCodec:
 
 
 class ProviderRegistry:
-    def __init__(self, snapshot: RuntimeSnapshot, *, secret_file: Path | None = None) -> None:
+    def __init__(
+        self,
+        snapshot: RuntimeSnapshot,
+        *,
+        secret_file: Path | None = None,
+        secret_resolver: EncryptedFileSecretResolver | None = None,
+    ) -> None:
         self.snapshot = snapshot
         self.secret_file = secret_file
+        self.secret_resolver = secret_resolver
         self.vad = self._vad(snapshot.provider("vad"))
         self.asr = self._asr(snapshot.provider("asr"))
         self.llm = self._llm(snapshot.provider("llm"))
@@ -343,7 +473,10 @@ class ProviderRegistry:
         if provider_id == "veetee.llm.fixture":
             return FixtureLLM(config)
         if provider_id == "groq.chat":
-            return GroqLLM(config, self.secret_file)
+            raw_refs = item.get("secretRefs", [])
+            if not isinstance(raw_refs, list) or not all(isinstance(value, str) and value for value in raw_refs):
+                raise ConfigurationError("Groq provider secretRefs must be a non-empty string array")
+            return GroqLLM(config, self.secret_file, self.secret_resolver, list(raw_refs))
         raise ProviderError("LLM_PROVIDER_UNAVAILABLE", f"selected LLM provider unavailable: {provider_id}")
 
     def _tts(self, item: dict[str, Any]) -> TTSProvider:
@@ -360,6 +493,34 @@ def _required_string(config: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ConfigurationError(f"provider config requires {key}")
     return value
+
+
+def _preload_cuda_runtime() -> None:
+    """Make pip-installed CUDA 12 libraries visible to CTranslate2.
+
+    CTranslate2 resolves CUDA libraries with ``dlopen`` and does not inspect
+    Python's site-packages tree. Loading the optional wheels globally keeps the
+    runtime self-contained without requiring the operator to mutate the host's
+    shell profile. Missing wheels are intentionally ignored so a later provider
+    error remains typed and actionable.
+    """
+
+    site_roots = [Path(path) for path in sys.path if path]
+    library_specs = (
+        ("nvidia/cublas/lib", "libcublas.so"),
+        ("nvidia/cuda_nvrtc/lib", "libnvrtc.so"),
+        ("nvidia/cudnn/lib", "libcudnn.so"),
+    )
+    for relative_dir, prefix in library_specs:
+        candidates: list[Path] = []
+        for root in site_roots:
+            candidates.extend(sorted((root / relative_dir).glob(f"{prefix}.*")))
+        for candidate in candidates:
+            try:
+                ctypes.CDLL(str(candidate), mode=ctypes.RTLD_GLOBAL)
+                break
+            except OSError:
+                continue
 
 
 def _positive_int(config: dict[str, Any], key: str, fallback: int | None = None) -> int:

@@ -1,0 +1,101 @@
+menu "Veetee firmware"
+
+config VEETEE_BOARD_PROFILE
+    string "Verified board profile identifier"
+    default ""
+    help
+        Identifier resolved from the operator-supplied board manifest. An empty
+        value keeps the firmware in bring-up mode and must not be flashed to a
+        physical board.
+
+config VEETEE_PROTOCOL_PROFILE
+    int "WebSocket protocol profile"
+    range 1 3
+    default 3
+    help
+        3 is the product default. 1 and 2 are explicit compatibility profiles.
+
+config VEETEE_WS_URI
+    string "Veetee WebSocket URI"
+    default ""
+    help
+        Runtime endpoint. Keep empty until an operator provisions a LAN/TLS
+        endpoint; the firmware must not invent a host address.
+
+config VEETEE_WIFI_SSID
+    string "Optional station SSID for first provisioning"
+    default ""
+    help
+        Used only when the NVS station profile has no SSID. Keep empty to
+        preserve the existing NVS profile and never log this value.
+
+config VEETEE_WIFI_PASSWORD
+    string "Optional station password for first provisioning"
+    default ""
+    help
+        Used only with VEETEE_WIFI_SSID when the NVS profile is empty. This is
+        a local build input and must not be committed or printed in logs.
+
+config VEETEE_WIFI_OVERRIDE_NVS
+    bool "Override saved NVS station profile"
+    default n
+    help
+        Use only for an explicit local provisioning test. When disabled, a
+        non-empty NVS SSID always wins over build-time values.
+
+config VEETEE_ENABLE_HARDWARE
+    bool "Enable verified board audio and PTT hardware"
+    default n
+    help
+        Enable only after the board profile has been verified. Host builds do
+        not use this option.
+
+config VEETEE_PTT_GPIO
+    int "Push-to-talk GPIO"
+    default -1
+
+config VEETEE_PTT_ACTIVE_LEVEL
+    int "Push-to-talk active level"
+    range 0 1
+    default 0
+
+config VEETEE_MIC_BCLK_GPIO
+    int "Microphone I2S BCLK GPIO"
+    default -1
+
+config VEETEE_MIC_WS_GPIO
+    int "Microphone I2S WS GPIO"
+    default -1
+
+config VEETEE_MIC_DIN_GPIO
+    int "Microphone I2S DIN GPIO"
+    default -1
+
+config VEETEE_SPK_BCLK_GPIO
+    int "Speaker I2S BCLK GPIO"
+    default -1
+
+config VEETEE_SPK_WS_GPIO
+    int "Speaker I2S WS GPIO"
+    default -1
+
+config VEETEE_SPK_DOUT_GPIO
+    int "Speaker I2S DOUT GPIO"
+    default -1
+
+config VEETEE_MIC_SAMPLE_RATE
+    int "Microphone sample rate"
+    range 8000 48000
+    default 16000
+
+config VEETEE_SPK_SAMPLE_RATE
+    int "Speaker sample rate"
+    range 8000 48000
+    default 24000
+
+config VEETEE_AUDIO_FRAME_DURATION_MS
+    int "Opus frame duration"
+    range 20 120
+    default 60
+
+endmenu

@@ -10,6 +10,10 @@ WebSocket v3. Không chứa provider fallback, prompt/business literal hoặc GP
 cd veetee-server
 python3 -m venv .venv
 ./.venv/bin/pip install -e '.[test]'
+# Chỉ khi snapshot đã chọn VieNeu thật (M0 physical/model gate):
+./.venv/bin/pip install -e '.[local-tts]'
+# PhoWhisper-small CTranslate2; thêm local-asr-cuda để dùng CUDA 12 trên host:
+./.venv/bin/pip install -e '.[local-asr-cuda]'
 VEETEE_CONFIG_SOURCE=fixture \
 VEETEE_CONFIG_FIXTURE_FILE=config/fixtures/m0.json \
 VEETEE_GROQ_SECRET_FILE=../secrets/groq.keys \
@@ -18,7 +22,16 @@ VEETEE_GROQ_SECRET_FILE=../secrets/groq.keys \
 
 Các giá trị vận hành đọc từ environment hoặc snapshot. Fixture mặc định dùng
 provider deterministic để contract test không gọi API ngoài. Groq/VieNeu thật chỉ
-được activate bằng snapshot/provider manifest và dependency đã cài.
+được activate bằng snapshot/provider manifest và dependency đã cài. Adapter VieNeu
+dùng `vieneu.Vieneu(...).infer_stream(...)`, lazy-load model ở lần synthesis đầu,
+resample audio native 48 kHz về downlink rate đã negotiate (24 kHz mặc định), và
+không ghi model/audio vào log.
+
+PhoWhisper adapter dùng `faster-whisper` với `modelPath`, `device` và
+`computeType` từ runtime snapshot. Khi chọn CUDA, adapter tự preload các CUDA
+runtime wheel trong virtualenv nếu có; thiếu runtime tạo provider error có mã,
+không âm thầm chuyển sang provider khác. `local-asr-cuda` là optional extra vì
+CUDA wheels khá lớn và không cần cho fixture/CPU-only bring-up.
 
 Health:
 

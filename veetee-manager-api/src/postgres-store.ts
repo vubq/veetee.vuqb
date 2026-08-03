@@ -14,6 +14,7 @@ import { openDatabase, readDatabaseUrl, type DatabaseHandle } from './db/client.
 import {
   etag,
   problem,
+  validateSecretBindings,
   type Assistant,
   type ManagerSession,
   type ModelMemoryView,
@@ -85,6 +86,7 @@ export class PostgresStore implements Store {
     const installation = this.findInstallation(value.installationId)
     validateJsonObject(value.config, installation.configSchema)
     const secretRefs = [...(value.secretRefs ?? [])]
+    validateSecretBindings(installation, secretRefs)
     await this.assertSecretRefs(ownerId, secretRefs)
     const id = randomUUID()
     const now = new Date()
@@ -110,6 +112,7 @@ export class PostgresStore implements Store {
     const config = value.config ?? asJsonObject(current.config)
     validateJsonObject(config, installation.configSchema)
     const secretRefs = [...(value.secretRefs ?? asSecretRefs(current.secretRefs))]
+    validateSecretBindings(installation, secretRefs)
     await this.assertSecretRefs(ownerId, secretRefs)
     const revision = identity.currentRevision + 1
     const nextEtag = etag({ ...config, revision })
@@ -247,7 +250,7 @@ export class PostgresStore implements Store {
         const [providerRevision] = provider ? await tx.select().from(providerConfigRevisionTable).where(and(eq(providerConfigRevisionTable.providerConfigId, provider.id), eq(providerConfigRevisionTable.revision, provider.currentRevision))).limit(1) : []
         const installation = provider ? this.installations.find((item) => item.id === provider.installationId) : undefined
         if (!provider || !providerRevision || !installation) throw problem('CONFIG_NOT_PUBLISHABLE', `Provider selection is not configured: ${kind}`, 422)
-        resolvedProviders[kind] = { providerId: installation.id, version: installation.version, providerConfigId: provider.id, configRevision: providerRevision.revision, config: asJsonObject(providerRevision.config) }
+        resolvedProviders[kind] = { providerId: installation.id, version: installation.version, providerConfigId: provider.id, configRevision: providerRevision.revision, config: asJsonObject(providerRevision.config), secretRefs: asSecretRefs(providerRevision.secretRefs) }
       }
       const snapshot: RuntimeSnapshot = {
         schemaVersion: 1,

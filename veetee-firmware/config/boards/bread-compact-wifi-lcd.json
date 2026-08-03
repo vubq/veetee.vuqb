@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "profileId": "bread-compact-wifi-lcd",
+  "verifiedHardware": {
+    "chip": "esp32-s3",
+    "flashMb": 16,
+    "psramMb": 8,
+    "sku": "bread-compact-wifi-lcd",
+    "evidence": "serial inventory on the operator-connected board; no NVS erase"
+  },
+  "display": {
+    "controller": "st7789",
+    "width": 240,
+    "height": 280,
+    "offsetX": 0,
+    "offsetY": 20,
+    "invertColor": true,
+    "rgbOrder": "rgb",
+    "spi": {
+      "host": 3,
+      "mosi": 47,
+      "sclk": 21,
+      "dc": 40,
+      "rst": 45,
+      "cs": 41,
+      "backlight": 42
+    }
+  },
+  "audio": {
+    "topology": "simplex-i2s",
+    "inputSampleRate": 16000,
+    "outputSampleRate": 24000,
+    "frameDurationMs": 60,
+    "mic": { "bclk": 5, "ws": 4, "din": 6 },
+    "speaker": { "bclk": 15, "ws": 16, "dout": 7 },
+    "i2sDataBits": 32,
+    "pcmBits": 16
+  },
+  "controls": {
+    "ptt": { "gpio": 0, "activeLevel": 0 }
+  },
+  "network": {
+    "reuseExistingStationCredentials": true,
+    "endpointProvisioning": "kconfig-or-nvs"
+  }
+}

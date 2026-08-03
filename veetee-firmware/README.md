@@ -1,9 +1,9 @@
 # Veetee Firmware
 
-ESP-IDF/FreeRTOS firmware boundary cho ESP32-S3. Mốc hiện tại có protocol
-framing v1/v2/v3, state machine, bounded queue/task và config safety gate. Chưa có
-GPIO/audio codec/network driver vì exact BOM/pin map của board thật chưa được
-xác minh; không đoán pin và không flash board.
+ESP-IDF/FreeRTOS firmware slice cho ESP32-S3. Mốc hiện tại có protocol framing
+v1/v2/v3, I2S PCM, Opus frame encode/decode, Wi-Fi station, direct WebSocket v3,
+PTT state flow và bounded queue/task. Board profile/pin map nằm trong
+`config/boards/`; credentials chỉ là local `sdkconfig` bị ignore.
 
 ## Host protocol tests
 
@@ -23,6 +23,7 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-Build không chứng minh physical acceptance. Flash chỉ được cho phép khi
-`config/boards/<verified-profile>.json` có schematic/BOM/pin map đã được chủ dự
-án xác nhận và runtime snapshot đã publish qua Manager Web.
+Build không chứng minh physical acceptance. Khi chủ dự án đã cho phép thử board,
+flash bằng `idf.py -p /dev/ttyACM0 flash` mà không chạy `erase_flash`; NVS/Wi-Fi
+được giữ nguyên. Serial log chỉ là host/network evidence, còn người dùng phải
+xác nhận LCD, nút PTT, mic và speaker.
