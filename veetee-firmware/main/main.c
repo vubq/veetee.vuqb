@@ -61,6 +61,7 @@ typedef struct {
     EventGroupHandle_t wifi_events;
     volatile bool capture_active;
     volatile bool stop_requested;
+    volatile bool wifi_stop_requested;
     char device_id[32];
     char client_id[96];
 } vt_app_t;
@@ -281,16 +282,23 @@ static void network_task(void *context) {
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     vt_app_t *app = (vt_app_t *)arg;
+    if (app == NULL) return;
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        (void)esp_wifi_connect();
+        if (!app->wifi_stop_requested) (void)esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         xEventGroupClearBits(app->wifi_events, VT_WIFI_CONNECTED_BIT);
         const wifi_event_sta_disconnected_t *disconnected = (const wifi_event_sta_disconnected_t *)event_data;
-        ESP_LOGW(TAG, "WiFi disconnected reason=%u; retrying", disconnected == NULL ? 0U : (unsigned)disconnected->reason);
-        (void)esp_wifi_connect();
+        if (app->wifi_stop_requested) {
+            ESP_LOGW(TAG, "WiFi disconnected reason=%u; station stopped, preserve NVS and provision credentials before retry",
+                     disconnected == NULL ? 0U : (unsigned)disconnected->reason);
+        } else {
+            ESP_LOGW(TAG, "WiFi disconnected reason=%u; retrying", disconnected == NULL ? 0U : (unsigned)disconnected->reason);
+            (void)esp_wifi_connect();
+        }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         const ip_event_got_ip_t *got_ip = (const ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "WiFi ready ip=" IPSTR, IP2STR(&got_ip->ip_info.ip));
+        app->wifi_stop_requested = false;
         xEventGroupSetBits(app->wifi_events, VT_WIFI_CONNECTED_BIT);
     }
 }
@@ -321,7 +329,13 @@ static int wifi_start(vt_app_t *app) {
     }
     ESP_ERROR_CHECK(esp_wifi_start());
     EventBits_t bits = xEventGroupWaitBits(app->wifi_events, VT_WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
-    return (bits & VT_WIFI_CONNECTED_BIT) != 0 ? ESP_OK : ESP_ERR_TIMEOUT;
+    if ((bits & VT_WIFI_CONNECTED_BIT) != 0) return ESP_OK;
+    /* Initial provisioning failure is operator-visible and terminal for this
+       network task. Do not keep reconnecting in the background or erase NVS. */
+    app->wifi_stop_requested = true;
+    (void)esp_wifi_disconnect();
+    (void)esp_wifi_stop();
+    return ESP_ERR_TIMEOUT;
 }
 
 static int device_identity(vt_app_t *app) {
