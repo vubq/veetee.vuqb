@@ -65,6 +65,10 @@ export interface DevicePresenceResult {
   lastSeenAt: string
 }
 
+export interface RetentionPurgeResult {
+  conversations: number
+}
+
 export interface PairingChallenge {
   id: string
   deviceId: string
@@ -276,6 +280,7 @@ export interface Store {
   pairDevice(ownerId: string, value: { assistantId: string; verificationCode: string; displayName?: string }): Promise<Device>
   getRetentionPolicy(ownerId: string): Promise<RetentionPolicy>
   updateRetentionPolicy(ownerId: string, value: Pick<RetentionPolicy, 'captureTranscript' | 'transcriptDays' | 'captureAudio' | 'audioDays'>, ifMatch: string): Promise<RetentionPolicy>
+  purgeExpiredConversations(now?: Date): Promise<RetentionPurgeResult>
   ingestConversationTurn(value: ConversationTurnInput): Promise<ConversationDetail>
   listConversations(ownerId: string, assistantId: string, limit: number): Promise<ConversationSummary[]>
   getConversation(ownerId: string, id: string): Promise<ConversationDetail | undefined>
@@ -600,6 +605,18 @@ export class InMemoryStore implements Store {
     return structuredClone(next)
   }
 
+  async purgeExpiredConversations(now: Date = new Date()): Promise<RetentionPurgeResult> {
+    const cutoff = now.getTime()
+    let conversations = 0
+    for (const [id, record] of this.conversations) {
+      if (record.summary.retentionUntil && Date.parse(record.summary.retentionUntil) <= cutoff) {
+        this.conversations.delete(id)
+        conversations += 1
+      }
+    }
+    return { conversations }
+  }
+
   async ingestConversationTurn(value: ConversationTurnInput): Promise<ConversationDetail> {
     const assistant = this.assistants.get(value.assistantId)
     if (!assistant) throw problem('NOT_FOUND', 'Assistant not found', 404)
@@ -654,7 +671,7 @@ export class InMemoryStore implements Store {
   }
 
   async listConversations(ownerId: string, assistantId: string, limit: number): Promise<ConversationSummary[]> {
-    this.purgeExpired()
+    await this.purgeExpiredConversations()
     return [...this.conversations.values()]
       .filter((item) => item.ownerId === ownerId && item.summary.assistantId === assistantId)
       .sort((left, right) => Date.parse(right.summary.startedAt) - Date.parse(left.summary.startedAt))
@@ -663,7 +680,7 @@ export class InMemoryStore implements Store {
   }
 
   async getConversation(ownerId: string, id: string): Promise<ConversationDetail | undefined> {
-    this.purgeExpired()
+    await this.purgeExpiredConversations()
     const record = this.conversations.get(id)
     if (!record || record.ownerId !== ownerId) return undefined
     return this.conversationDetail(record, await this.getRetentionPolicy(ownerId))
@@ -671,11 +688,6 @@ export class InMemoryStore implements Store {
 
   private conversationDetail(record: { ownerId: string; summary: ConversationSummary; turns: ConversationTurn[] }, policy: RetentionPolicy): ConversationDetail {
     return { summary: structuredClone(record.summary), turns: structuredClone(record.turns).sort((left, right) => left.sequence - right.sequence), retention: structuredClone(policy) }
-  }
-
-  private purgeExpired(): void {
-    const now = Date.now()
-    for (const [id, record] of this.conversations) if (record.summary.retentionUntil && Date.parse(record.summary.retentionUntil) <= now) this.conversations.delete(id)
   }
 
   private kind(id: string): ProviderKind | undefined { return this.installations.find((item) => item.id === id)?.kind }

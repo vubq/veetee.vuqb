@@ -162,6 +162,10 @@ const devicePresenceResponseSchema = {
     onlineState: { type: 'string', enum: ['online', 'offline'] }, lastSeenAt: { type: 'string' },
   },
 } as const
+const retentionPurgeResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['purgedConversations', 'executedAt'],
+  properties: { purgedConversations: { type: 'integer', minimum: 0 }, executedAt: { type: 'string' } },
+} as const
 const retentionPolicyResponseSchema = {
   type: 'object', additionalProperties: false, required: ['ownerId', 'captureTranscript', 'transcriptDays', 'captureAudio', 'audioDays', 'effectiveAt', 'revision', 'etag'],
   properties: { ownerId: { type: 'string' }, captureTranscript: { type: 'boolean' }, transcriptDays: { type: ['integer', 'null'] }, captureAudio: { type: 'boolean' }, audioDays: { type: ['integer', 'null'] }, effectiveAt: { type: 'string' }, revision: { type: 'integer' }, etag: { type: 'string' } },
@@ -220,6 +224,19 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   const machineAuthRequired = Boolean(machineToken) || (env.VEETEE_DATABASE_MODE === 'postgres' && env.VEETEE_ALLOW_INSECURE_LOCAL_CONFIG !== true)
   if (machineAuthRequired && !machineToken) throw new Error('VEETEE_MACHINE_TOKEN_FILE is required for machine endpoints')
   const allowedOrigins = env.VEETEE_ALLOWED_ORIGINS.split(',').map((item) => item.trim()).filter(Boolean)
+  let retentionTask: Promise<{ purgedConversations: number; executedAt: string }> | null = null
+  const runRetention = (): Promise<{ purgedConversations: number; executedAt: string }> => {
+    if (retentionTask) return retentionTask
+    retentionTask = (async () => {
+      const result = await store.purgeExpiredConversations()
+      const executedAt = new Date().toISOString()
+      app.log.info({ purgedConversations: result.conversations }, 'retention purge completed')
+      return { purgedConversations: result.conversations, executedAt }
+    })().finally(() => { retentionTask = null })
+    return retentionTask
+  }
+  const retentionTimer = setInterval(() => { void runRetention().catch((error) => app.log.error({ err: error }, 'retention purge failed')) }, (env.VEETEE_RETENTION_INTERVAL_SECONDS ?? 3600) * 1000)
+  retentionTimer.unref?.()
 
   await app.register(sensible)
   await app.register(cookie)
@@ -507,12 +524,18 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   })
   app.post<{ Body: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string; onlineState: 'online' | 'offline' } }>('/internal/v1/devices/presence', { schema: {
     body: devicePresenceBodySchema,
-    response: { 202: devicePresenceResponseSchema },
+    response: { 202: devicePresenceResponseSchema, 401: problemBodySchema },
   } }, async (request, reply) => {
     if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
     try {
       const result = await store.reportDevicePresence(request.body)
       return reply.code(202).send(result)
+    } catch (error) { return sendProblem(reply, error) }
+  })
+  app.post('/internal/v1/retention/purge', { schema: { response: { 202: retentionPurgeResponseSchema, 401: problemBodySchema } } }, async (request, reply) => {
+    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    try {
+      return reply.code(202).send(await runRetention())
     } catch (error) { return sendProblem(reply, error) }
   })
   app.post<{ Body: ConversationTurnInput }>('/internal/v1/conversations/turns', { schema: {
@@ -543,7 +566,12 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     app.log.error({ err: error }, 'unhandled request error')
     return reply.code(500).send({ code: 'INTERNAL_ERROR' })
   })
-  if (store.close) app.addHook('onClose', async () => { await store.close?.() })
+  app.addHook('onClose', async () => {
+    clearInterval(retentionTimer)
+    if (retentionTask) await retentionTask.catch(() => undefined)
+    await store.close?.()
+  })
+  void runRetention().catch((error) => app.log.error({ err: error }, 'initial retention purge failed'))
   return app
 }
 

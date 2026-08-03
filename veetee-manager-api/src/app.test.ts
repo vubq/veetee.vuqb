@@ -223,6 +223,28 @@ test('configured machine bearer is required for internal endpoints', async () =>
   }
 })
 
+test('retention purge job removes expired conversation data', async () => {
+  const app = await buildApp({ env: { ...env, VEETEE_RETENTION_INTERVAL_SECONDS: 60 } })
+  await app.ready()
+  try {
+    const assistantId = (await app.inject({ method: 'GET', url: '/api/v1/assistants' })).json().items[0].id as string
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    const ingested = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: {
+      conversationId, assistantId, locale: 'vi-VN', configRevision: 1,
+      conversationStartedAt: '2020-01-01T00:00:00.000Z', conversationEndedAt: '2020-01-01T00:00:03.000Z', conversationStatus: 'completed',
+      turnId: 'expired-turn', sequence: 1, state: 'completed', startedAt: '2020-01-01T00:00:01.000Z', endedAt: '2020-01-01T00:00:03.000Z', finishReason: 'complete',
+      timings: {}, transcript: [], toolCalls: [],
+    } })
+    assert.equal(ingested.statusCode, 202)
+    const purge = await app.inject({ method: 'POST', url: '/internal/v1/retention/purge' })
+    assert.equal(purge.statusCode, 202)
+    assert.equal(purge.json().purgedConversations, 1)
+    assert.equal((await app.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}` })).statusCode, 404)
+  } finally {
+    await app.close()
+  }
+})
+
 test('OpenAPI is generated from every registered route', async () => {
   const app = await buildApp({ env })
   await app.ready()
@@ -241,7 +263,7 @@ test('OpenAPI is generated from every registered route', async () => {
       '/api/v1/provider-configs', '/api/v1/provider-configs/{id}', '/api/v1/voices', '/api/v1/assistants',
       '/api/v1/assistants/{id}', '/api/v1/assistants/{id}/role-config', '/api/v1/assistants/{id}/model-memory',
       '/api/v1/assistants/{id}/model-memory/provider', '/api/v1/assistants/{id}/model-memory/memory',
-      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/internal/v1/devices/pairing-challenges', '/internal/v1/devices/presence',
+      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/internal/v1/devices/pairing-challenges', '/internal/v1/devices/presence', '/internal/v1/retention/purge',
       '/internal/v1/runtime-config',
     ]
     for (const path of requiredPaths) assert.ok(document.paths[path], `missing OpenAPI path ${path}`)

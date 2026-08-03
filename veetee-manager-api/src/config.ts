@@ -19,6 +19,7 @@ const schema = Type.Object({
   VEETEE_LOGIN_WINDOW_SECONDS: Type.Optional(Type.Integer({ minimum: 10, maximum: 86400, default: 300 })),
   VEETEE_LOGIN_LOCKOUT_SECONDS: Type.Optional(Type.Integer({ minimum: 1, maximum: 86400, default: 60 })),
   VEETEE_LOGIN_MAX_BUCKETS: Type.Optional(Type.Integer({ minimum: 16, maximum: 100000, default: 4096 })),
+  VEETEE_RETENTION_INTERVAL_SECONDS: Type.Optional(Type.Integer({ minimum: 60, maximum: 86400, default: 3600 })),
   VEETEE_SECRET_STORE_FILE: Type.Optional(Type.String()),
   VEETEE_SECRET_MASTER_KEY_FILE: Type.Optional(Type.String()),
   VEETEE_MACHINE_TOKEN_FILE: Type.Optional(Type.String()),

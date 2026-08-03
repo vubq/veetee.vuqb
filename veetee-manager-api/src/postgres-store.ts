@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, isNotNull, lt, lte, or, sql } from 'drizzle-orm'
 import {
   assistantRevisionTable,
   assistantTable,
@@ -38,6 +38,7 @@ import {
   type ProviderInstallation,
   type ProviderKind,
   type RetentionPolicy,
+  type RetentionPurgeResult,
   type RuntimePublication,
   type RuntimeSnapshot,
   type SecretReference,
@@ -459,6 +460,13 @@ export class PostgresStore implements Store {
     const [updated] = await this.handle.db.insert(retentionPolicyTable).values({ ownerId, captureTranscript: value.captureTranscript, transcriptDays: value.transcriptDays, captureAudio: value.captureAudio, audioDays: value.audioDays, effectiveAt, revision, etag: nextEtag }).onConflictDoUpdate({ target: retentionPolicyTable.ownerId, set: { captureTranscript: value.captureTranscript, transcriptDays: value.transcriptDays, captureAudio: value.captureAudio, audioDays: value.audioDays, effectiveAt, revision, etag: nextEtag } }).returning()
     if (!updated) throw new Error('retention policy update returned no row')
     return this.mapRetentionPolicy(updated)
+  }
+
+  async purgeExpiredConversations(now: Date = new Date()): Promise<RetentionPurgeResult> {
+    const deleted = await this.handle.db.delete(conversationTable)
+      .where(and(isNotNull(conversationTable.retentionUntil), lte(conversationTable.retentionUntil, now)))
+      .returning({ id: conversationTable.id })
+    return { conversations: deleted.length }
   }
 
   async ingestConversationTurn(value: ConversationTurnInput): Promise<ConversationDetail> {
