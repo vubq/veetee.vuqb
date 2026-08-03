@@ -8,6 +8,7 @@ import VtIconButton from '@/ui/primitives/VtIconButton.vue'
 import VtMenu, { type VtMenuItem } from '@/ui/primitives/VtMenu.vue'
 
 const router = useRouter()
+const isApiMode = Boolean(import.meta.env.VITE_MANAGER_API_URL)
 const mobileItems: VtMenuItem[] = [
   { id: 'assistants', label: 'Trợ lý' },
   { id: 'components', label: 'Thư viện giao diện' },
@@ -75,7 +76,7 @@ function navigate(id: string) {
 
       <div class="top-meta">
         <VtBadge tone="primary">
-          {{ import.meta.env.VITE_MANAGER_API_URL ? 'Manager API' : 'UI preview' }}
+          {{ isApiMode ? 'Manager API' : 'UI preview' }}
         </VtBadge>
         <span class="mock-marker"><VtIcon
           :icon="RotateCcw"
