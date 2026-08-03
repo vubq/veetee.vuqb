@@ -387,6 +387,18 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                        service: string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -412,17 +424,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -437,6 +438,20 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        status: string;
+                        service: string;
+                        revision: number;
+                        etag: string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -466,13 +481,14 @@ export interface operations {
                 };
             };
             /** @description Default Response */
-            default: {
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        [key: string]: unknown;
+                        status: string;
+                        reason: string;
                     };
                 };
             };
@@ -494,6 +510,22 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        user: {
+                            id: string;
+                            email: string;
+                        };
+                        sessionExpiresAt?: null | string;
+                        csrfToken?: null | string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -505,6 +537,17 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
+                    };
+                };
+            };
+            /** @description Default Response */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
                     };
                 };
             };
@@ -522,17 +565,6 @@ export interface operations {
                     };
                 };
             };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
         };
     };
     getApiV1AuthMe: {
@@ -544,6 +576,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        user: {
+                            id: string;
+                            email: string;
+                        };
+                        sessionExpiresAt?: null | string;
+                        csrfToken?: null | string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -558,17 +606,14 @@ export interface operations {
                     };
                 };
             };
-            /** @description Authentication required */
+            /** @description Default Response */
             401: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/problem+json": {
-                        type?: string;
-                        code: string;
-                        title?: string;
-                        detail?: string;
+                    "application/json": {
+                        [key: string]: unknown;
                     };
                 };
             };
@@ -597,17 +642,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -700,6 +734,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            ownerId: string;
+                            name: string;
+                            /** @enum {string} */
+                            store: "encrypted-local";
+                            locatorMasked: string;
+                            version: number;
+                            metadataRevision: number;
+                            /** @enum {string} */
+                            status: "available" | "unavailable" | "revoked";
+                            lastRotatedAt: null | string;
+                            etag: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -753,17 +812,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -788,6 +836,29 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        ownerId: string;
+                        name: string;
+                        /** @enum {string} */
+                        store: "encrypted-local";
+                        locatorMasked: string;
+                        version: number;
+                        metadataRevision: number;
+                        /** @enum {string} */
+                        status: "available" | "unavailable" | "revoked";
+                        lastRotatedAt: null | string;
+                        etag: string;
+                        updatedAt: string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -841,17 +912,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -955,6 +1015,29 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        ownerId: string;
+                        name: string;
+                        /** @enum {string} */
+                        store: "encrypted-local";
+                        locatorMasked: string;
+                        version: number;
+                        metadataRevision: number;
+                        /** @enum {string} */
+                        status: "available" | "unavailable" | "revoked";
+                        lastRotatedAt: null | string;
+                        etag: string;
+                        updatedAt: string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1008,17 +1091,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1033,6 +1105,29 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            /** @enum {string} */
+                            kind: "vad" | "asr" | "llm" | "tts" | "intent" | "memory";
+                            displayNameKey: string;
+                            version: string;
+                            manifest: {
+                                [key: string]: unknown;
+                            };
+                            configSchema: {
+                                [key: string]: unknown;
+                            };
+                        }[];
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1086,17 +1181,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1111,6 +1195,26 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            name: string;
+                            providerName: string;
+                            locale: string;
+                            description: string;
+                            previewDurationMs: number;
+                            available: boolean;
+                        }[];
+                        total?: number;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1164,17 +1268,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1189,6 +1282,29 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            ownerId: string;
+                            installationId: string;
+                            name: string;
+                            revision: number;
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            secretRefs: string[];
+                            etag: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1242,17 +1358,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1278,6 +1383,27 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        ownerId: string;
+                        installationId: string;
+                        name: string;
+                        revision: number;
+                        config: {
+                            [key: string]: unknown;
+                        };
+                        secretRefs: string[];
+                        etag: string;
+                        updatedAt: string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1331,17 +1457,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1368,6 +1483,27 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        ownerId: string;
+                        installationId: string;
+                        name: string;
+                        revision: number;
+                        config: {
+                            [key: string]: unknown;
+                        };
+                        secretRefs: string[];
+                        etag: string;
+                        updatedAt: string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1421,17 +1557,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1446,6 +1571,33 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            ownerId: string;
+                            name: string;
+                            role: {
+                                [key: string]: unknown;
+                            };
+                            providerSelections: {
+                                [key: string]: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            draftRevision: number;
+                            publishedRevision: null | number;
+                            etag: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1499,17 +1651,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1530,6 +1671,31 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        ownerId: string;
+                        name: string;
+                        role: {
+                            [key: string]: unknown;
+                        };
+                        providerSelections: {
+                            [key: string]: {
+                                [key: string]: unknown;
+                            };
+                        };
+                        draftRevision: number;
+                        publishedRevision: null | number;
+                        etag: string;
+                        updatedAt: string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1583,17 +1749,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1610,6 +1765,31 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        ownerId: string;
+                        name: string;
+                        role: {
+                            [key: string]: unknown;
+                        };
+                        providerSelections: {
+                            [key: string]: {
+                                [key: string]: unknown;
+                            };
+                        };
+                        draftRevision: number;
+                        publishedRevision: null | number;
+                        etag: string;
+                        updatedAt: string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1663,17 +1843,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1690,6 +1859,17 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1743,17 +1923,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1791,6 +1960,17 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1844,17 +2024,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1871,6 +2040,43 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        assistantId: string;
+                        selections: {
+                            kind: string;
+                            /** @enum {string} */
+                            mode: "selected" | "disabled";
+                            providerConfigId?: string;
+                        }[];
+                        availableConfigs: {
+                            id: string;
+                            kind: string;
+                            name: string;
+                            providerName: string;
+                            /** @enum {string} */
+                            availability: "ready" | "unavailable" | "disabled";
+                            supportedLocales: string[];
+                        }[];
+                        memory: {
+                            enabled: boolean;
+                            itemCount: number;
+                        };
+                        memoryItems: {
+                            id: string;
+                            kind: string;
+                            content: string;
+                            enabled: boolean;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -1924,17 +2130,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -1961,6 +2156,43 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        assistantId: string;
+                        selections: {
+                            kind: string;
+                            /** @enum {string} */
+                            mode: "selected" | "disabled";
+                            providerConfigId?: string;
+                        }[];
+                        availableConfigs: {
+                            id: string;
+                            kind: string;
+                            name: string;
+                            providerName: string;
+                            /** @enum {string} */
+                            availability: "ready" | "unavailable" | "disabled";
+                            supportedLocales: string[];
+                        }[];
+                        memory: {
+                            enabled: boolean;
+                            itemCount: number;
+                        };
+                        memoryItems: {
+                            id: string;
+                            kind: string;
+                            content: string;
+                            enabled: boolean;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -2014,17 +2246,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -2047,6 +2268,43 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        assistantId: string;
+                        selections: {
+                            kind: string;
+                            /** @enum {string} */
+                            mode: "selected" | "disabled";
+                            providerConfigId?: string;
+                        }[];
+                        availableConfigs: {
+                            id: string;
+                            kind: string;
+                            name: string;
+                            providerName: string;
+                            /** @enum {string} */
+                            availability: "ready" | "unavailable" | "disabled";
+                            supportedLocales: string[];
+                        }[];
+                        memory: {
+                            enabled: boolean;
+                            itemCount: number;
+                        };
+                        memoryItems: {
+                            id: string;
+                            kind: string;
+                            content: string;
+                            enabled: boolean;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -2100,17 +2358,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -2127,6 +2374,41 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        snapshot: {
+                            schemaVersion: number;
+                            revision: number;
+                            assistantId: string;
+                            locale: string;
+                            basePrompt: string;
+                            personality: {
+                                [key: string]: unknown;
+                            };
+                            speech: {
+                                [key: string]: unknown;
+                            };
+                            providers: {
+                                [key: string]: {
+                                    [key: string]: unknown;
+                                };
+                            };
+                            wire: {
+                                [key: string]: unknown;
+                            };
+                        } & {
+                            [key: string]: unknown;
+                        };
+                        etag: string;
+                        updatedAt: string;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -2180,17 +2462,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -2207,6 +2478,19 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            [key: string]: unknown;
+                        }[];
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -2260,17 +2544,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };
@@ -2363,6 +2636,37 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        schemaVersion: number;
+                        revision: number;
+                        assistantId: string;
+                        locale: string;
+                        basePrompt: string;
+                        personality: {
+                            [key: string]: unknown;
+                        };
+                        speech: {
+                            [key: string]: unknown;
+                        };
+                        providers: {
+                            [key: string]: {
+                                [key: string]: unknown;
+                            };
+                        };
+                        wire: {
+                            [key: string]: unknown;
+                        };
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
             /** @description Invalid request */
             400: {
                 headers: {
@@ -2416,17 +2720,6 @@ export interface operations {
                         code: string;
                         title?: string;
                         detail?: string;
-                    };
-                };
-            };
-            /** @description Default Response */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
                     };
                 };
             };

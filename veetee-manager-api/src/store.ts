@@ -354,7 +354,14 @@ export class InMemoryStore implements Store {
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Secret reference not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Secret reference changed', 409)
     const metadataRevision = current.metadataRevision + 1
-    const next: SecretReference = { ...current, ...value, metadataRevision, etag: etag({ name: value.name ?? current.name, locatorMasked: value.locatorMasked ?? current.locatorMasked, metadataRevision }), updatedAt: new Date().toISOString() }
+    const next: SecretReference = {
+      ...current,
+      ...(value.name === undefined ? {} : { name: value.name }),
+      ...(value.locatorMasked === undefined ? {} : { locatorMasked: value.locatorMasked }),
+      metadataRevision,
+      etag: etag({ name: value.name ?? current.name, locatorMasked: value.locatorMasked ?? current.locatorMasked, metadataRevision }),
+      updatedAt: new Date().toISOString(),
+    }
     this.secretReferences.set(id, next)
     return structuredClone(next)
   }

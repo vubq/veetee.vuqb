@@ -50,6 +50,85 @@ const secretReferenceBodySchema = {
   },
 } as const
 
+const userResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'email'],
+  properties: { id: { type: 'string' }, email: { type: 'string' } },
+} as const
+const authResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['user'],
+  properties: {
+    user: userResponseSchema,
+    sessionExpiresAt: { type: ['string', 'null'] },
+    csrfToken: { type: ['string', 'null'] },
+  },
+} as const
+const secretReferenceResponseSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['id', 'ownerId', 'name', 'store', 'locatorMasked', 'version', 'metadataRevision', 'status', 'lastRotatedAt', 'etag', 'updatedAt'],
+  properties: {
+    id: { type: 'string' }, ownerId: { type: 'string' }, name: { type: 'string' },
+    store: { type: 'string', const: 'encrypted-local' }, locatorMasked: { type: 'string' },
+    version: { type: 'integer' }, metadataRevision: { type: 'integer' },
+    status: { type: 'string', enum: ['available', 'unavailable', 'revoked'] },
+    lastRotatedAt: { type: ['string', 'null'] }, etag: { type: 'string' }, updatedAt: { type: 'string' },
+  },
+} as const
+const providerInstallationResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'kind', 'displayNameKey', 'version', 'manifest', 'configSchema'],
+  properties: {
+    id: { type: 'string' }, kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] },
+    displayNameKey: { type: 'string' }, version: { type: 'string' }, manifest: { type: 'object', additionalProperties: true }, configSchema: { type: 'object', additionalProperties: true },
+  },
+} as const
+const providerConfigResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'installationId', 'name', 'revision', 'config', 'secretRefs', 'etag', 'updatedAt'],
+  properties: {
+    id: { type: 'string' }, ownerId: { type: 'string' }, installationId: { type: 'string' }, name: { type: 'string' },
+    revision: { type: 'integer' }, config: { type: 'object', additionalProperties: true }, secretRefs: { type: 'array', items: { type: 'string' } },
+    etag: { type: 'string' }, updatedAt: { type: 'string' },
+  },
+} as const
+const assistantResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'name', 'role', 'providerSelections', 'draftRevision', 'publishedRevision', 'etag', 'updatedAt'],
+  properties: {
+    id: { type: 'string' }, ownerId: { type: 'string' }, name: { type: 'string' }, role: { type: 'object', additionalProperties: true },
+    providerSelections: { type: 'object', additionalProperties: { type: 'object', additionalProperties: true } },
+    draftRevision: { type: 'integer' }, publishedRevision: { type: ['integer', 'null'] }, etag: { type: 'string' }, updatedAt: { type: 'string' },
+  },
+} as const
+const runtimeSnapshotResponseSchema = {
+  type: 'object', additionalProperties: true, required: ['schemaVersion', 'revision', 'assistantId', 'locale', 'basePrompt', 'personality', 'speech', 'providers', 'wire'],
+  properties: {
+    schemaVersion: { type: 'integer' }, revision: { type: 'integer' }, assistantId: { type: 'string' }, locale: { type: 'string' }, basePrompt: { type: 'string' },
+    personality: { type: 'object', additionalProperties: true }, speech: { type: 'object', additionalProperties: true }, providers: { type: 'object', additionalProperties: { type: 'object', additionalProperties: true } }, wire: { type: 'object', additionalProperties: true },
+  },
+} as const
+const runtimePublicationResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['snapshot', 'etag', 'updatedAt'],
+  properties: { snapshot: runtimeSnapshotResponseSchema, etag: { type: 'string' }, updatedAt: { type: 'string' } },
+} as const
+const modelMemoryResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['assistantId', 'selections', 'availableConfigs', 'memory', 'memoryItems'],
+  properties: {
+    assistantId: { type: 'string' },
+    selections: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'mode'], properties: { kind: { type: 'string' }, mode: { type: 'string', enum: ['selected', 'disabled'] }, providerConfigId: { type: 'string' } } } },
+    availableConfigs: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'kind', 'name', 'providerName', 'availability', 'supportedLocales'], properties: { id: { type: 'string' }, kind: { type: 'string' }, name: { type: 'string' }, providerName: { type: 'string' }, availability: { type: 'string', enum: ['ready', 'unavailable', 'disabled'] }, supportedLocales: { type: 'array', items: { type: 'string' } } } } },
+    memory: { type: 'object', additionalProperties: false, required: ['enabled', 'itemCount'], properties: { enabled: { type: 'boolean' }, itemCount: { type: 'integer' } } },
+    memoryItems: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'kind', 'content', 'enabled', 'updatedAt'], properties: { id: { type: 'string' }, kind: { type: 'string' }, content: { type: 'string' }, enabled: { type: 'boolean' }, updatedAt: { type: 'string' } } } },
+  },
+} as const
+const voiceResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'name', 'providerName', 'locale', 'description', 'previewDurationMs', 'available'],
+  properties: { id: { type: 'string' }, name: { type: 'string' }, providerName: { type: 'string' }, locale: { type: 'string' }, description: { type: 'string' }, previewDurationMs: { type: 'integer' }, available: { type: 'boolean' } },
+} as const
+const listResponse = (item: Record<string, unknown>, withTotal = false) => ({
+  type: 'object', additionalProperties: false, required: ['items'],
+  properties: { items: { type: 'array', items: item }, ...(withTotal ? { total: { type: 'integer' } } : {}) },
+})
+const problemBodySchema = {
+  type: 'object', additionalProperties: true,
+} as const
+
 export async function buildApp(overrides?: { env?: Environment; store?: Store; authSecret?: string; secretStore?: SecretValueStore }): Promise<FastifyInstance> {
   const env = overrides?.env ?? readEnvironment()
   const store = overrides?.store ?? await createStore(env)
@@ -144,14 +223,14 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     }
   })
 
-  app.get('/health/live', async () => ({ status: 'ok', service: 'veetee-manager-api' }))
-  app.get('/health/ready', async (_request, reply) => {
+  app.get('/health/live', { schema: { response: { 200: { type: 'object', additionalProperties: false, required: ['status', 'service'], properties: { status: { type: 'string' }, service: { type: 'string' } } } } } }, async () => ({ status: 'ok', service: 'veetee-manager-api' }))
+  app.get('/health/ready', { schema: { response: { 200: { type: 'object', additionalProperties: false, required: ['status', 'service', 'revision', 'etag'], properties: { status: { type: 'string' }, service: { type: 'string' }, revision: { type: 'integer' }, etag: { type: 'string' } } }, 503: { type: 'object', additionalProperties: false, required: ['status', 'reason'], properties: { status: { type: 'string' }, reason: { type: 'string' } } } } } }, async (_request, reply) => {
     const publication = await store.runtime()
     if (!publication) return reply.code(503).send({ status: 'not_ready', reason: 'runtime_snapshot_unpublished' })
     return { status: 'ready', service: 'veetee-manager-api', revision: publication.snapshot.revision, etag: publication.etag }
   })
 
-  app.post<{ Body: { email: string; password: string } }>('/api/v1/auth/login', { schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'password'], properties: { email: { type: 'string', minLength: 3 }, password: { type: 'string', minLength: 1 } } } } }, async (request, reply) => {
+  app.post<{ Body: { email: string; password: string } }>('/api/v1/auth/login', { schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'password'], properties: { email: { type: 'string', minLength: 3 }, password: { type: 'string', minLength: 1 } } }, response: { 200: authResponseSchema, 401: problemBodySchema } } }, async (request, reply) => {
     if (env.VEETEE_AUTH_MODE === 'disabled') return { user: { id: 'local-owner', email: request.body.email } }
     if (!env.VEETEE_OWNER_EMAIL || !env.VEETEE_OWNER_PASSWORD_HASH || !authSecret || request.body.email !== env.VEETEE_OWNER_EMAIL || !(await argon2.verify(env.VEETEE_OWNER_PASSWORD_HASH, request.body.password))) return reply.code(401).send({ code: 'INVALID_CREDENTIALS' })
     const token = cryptoRandomToken()
@@ -162,7 +241,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     reply.setCookie('veetee_session', token, { httpOnly: true, sameSite: 'lax', secure: env.VEETEE_ALLOW_INSECURE_LOCAL_CONFIG !== true, path: '/', maxAge: ttlSeconds })
     return { user: { id: 'local-owner', email: env.VEETEE_OWNER_EMAIL }, sessionExpiresAt: expiresAt.toISOString(), csrfToken }
   })
-  app.get('/api/v1/auth/me', async (request, reply) => {
+  app.get('/api/v1/auth/me', { schema: { response: { 200: authResponseSchema, 401: problemBodySchema } } }, async (request, reply) => {
     const current = request as OwnerRequest
     if (env.VEETEE_AUTH_MODE === 'disabled') return { user: { id: 'local-owner', email: env.VEETEE_OWNER_EMAIL ?? '' }, sessionExpiresAt: null, csrfToken: null }
     if (!current.ownerId || !current.csrfToken || !current.sessionExpiresAt) return reply.code(401).send({ code: 'UNAUTHORIZED' })
@@ -175,8 +254,8 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     return reply.code(204).send()
   })
 
-  app.get('/api/v1/secret-references', async (request) => ({ items: await store.listSecretReferences(owner(request)) }))
-  app.post<{ Body: { name: string; store: 'encrypted-local'; locator?: string; secretValue?: string } }>('/api/v1/secret-references', { schema: { body: secretReferenceBodySchema } }, async (request, reply) => {
+  app.get('/api/v1/secret-references', { schema: { response: { 200: listResponse(secretReferenceResponseSchema) } } }, async (request) => ({ items: await store.listSecretReferences(owner(request)) }))
+  app.post<{ Body: { name: string; store: 'encrypted-local'; locator?: string; secretValue?: string } }>('/api/v1/secret-references', { schema: { body: secretReferenceBodySchema, response: { 201: secretReferenceResponseSchema } } }, async (request, reply) => {
     if (request.body.store !== 'encrypted-local') return reply.code(422).send({ code: 'SECRET_STORE_INVALID' })
     const id = randomUUID()
     let version = 1
@@ -197,7 +276,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       return sendProblem(reply, error)
     }
   })
-  app.patch<{ Params: { id: string }; Body: { name?: string; locator?: string } }>('/api/v1/secret-references/:id', { schema: { body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, locator: { type: 'string', maxLength: 256 } } } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; locator?: string } }>('/api/v1/secret-references/:id', { schema: { body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, locator: { type: 'string', maxLength: 256 } } }, response: { 200: secretReferenceResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
     try {
@@ -215,69 +294,69 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     } catch (error) { return sendProblem(reply, error) }
   })
 
-  app.get('/api/v1/provider-installations', async () => ({ items: await store.listInstallations() }))
-  app.get<{ Querystring: { locale?: string } }>('/api/v1/voices', async (request) => {
+  app.get('/api/v1/provider-installations', { schema: { response: { 200: listResponse(providerInstallationResponseSchema) } } }, async () => ({ items: await store.listInstallations() }))
+  app.get<{ Querystring: { locale?: string } }>('/api/v1/voices', { schema: { response: { 200: listResponse(voiceResponseSchema, true) } } }, async (request) => {
     const installations = await store.listInstallations()
     const tts = installations.filter((item) => item.kind === 'tts')
     return { items: tts.filter((item) => !request.query.locale || item.manifest.locales === undefined || (item.manifest.locales as unknown[]).includes('*') || (item.manifest.locales as unknown[]).includes(request.query.locale)).map((item) => ({ id: item.id, name: item.displayNameKey, providerName: item.displayNameKey, locale: request.query.locale ?? '*', description: item.displayNameKey, previewDurationMs: 0, available: true })), total: tts.length }
   })
-  app.get<{ Querystring: { kind?: ProviderKind } }>('/api/v1/provider-configs', async (request: FastifyRequest<{ Querystring: { kind?: ProviderKind } }>) => ({ items: await store.listProviderConfigs(owner(request), request.query.kind) }))
-  app.post<{ Body: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] } }>('/api/v1/provider-configs', { schema: { body: providerBodySchema } }, async (request, reply) => {
+  app.get<{ Querystring: { kind?: ProviderKind } }>('/api/v1/provider-configs', { schema: { response: { 200: listResponse(providerConfigResponseSchema) } } }, async (request: FastifyRequest<{ Querystring: { kind?: ProviderKind } }>) => ({ items: await store.listProviderConfigs(owner(request), request.query.kind) }))
+  app.post<{ Body: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] } }>('/api/v1/provider-configs', { schema: { body: providerBodySchema, response: { 201: providerConfigResponseSchema } } }, async (request, reply) => {
     try {
       const value = await store.createProviderConfig(owner(request), request.body)
       return reply.code(201).header('ETag', value.etag).send(value)
     } catch (error) { return sendProblem(reply, error) }
   })
-  app.patch<{ Params: { id: string }; Body: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] } }>('/api/v1/provider-configs/:id', { schema: { body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, config: { type: 'object', additionalProperties: {} }, secretRefs: { type: 'array', items: { type: 'string' } } } } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] } }>('/api/v1/provider-configs/:id', { schema: { body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, config: { type: 'object', additionalProperties: {} }, secretRefs: { type: 'array', items: { type: 'string' } } } }, response: { 200: providerConfigResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
     try { const value = await store.updateProviderConfig(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
   })
 
-  app.get('/api/v1/assistants', async (request) => ({ items: await store.listAssistants(owner(request)) }))
-  app.post<{ Body: { name: string } }>('/api/v1/assistants', { schema: { body: assistantBodySchema } }, async (request, reply) => reply.code(201).send(await store.createAssistant(owner(request), request.body.name)))
-  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id', async (request, reply) => {
+  app.get('/api/v1/assistants', { schema: { response: { 200: listResponse(assistantResponseSchema) } } }, async (request) => ({ items: await store.listAssistants(owner(request)) }))
+  app.post<{ Body: { name: string } }>('/api/v1/assistants', { schema: { body: assistantBodySchema, response: { 201: assistantResponseSchema } } }, async (request, reply) => reply.code(201).send(await store.createAssistant(owner(request), request.body.name)))
+  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id', { schema: { response: { 200: assistantResponseSchema } } }, async (request, reply) => {
     const item = await store.getAssistant(owner(request), request.params.id)
     if (!item) return reply.code(404).send({ code: 'NOT_FOUND' })
     return reply.header('ETag', item.etag).send(item)
   })
-  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/role-config', async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/role-config', { schema: { response: { 200: { type: 'object', additionalProperties: true } } } }, async (request, reply) => {
     const item = await store.getAssistant(owner(request), request.params.id)
     if (!item) return reply.code(404).send({ code: 'NOT_FOUND' })
     return reply.header('ETag', item.etag).send(item.role)
   })
-  app.patch<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/v1/assistants/:id/role-config', { schema: { body: roleBodySchema } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/v1/assistants/:id/role-config', { schema: { body: roleBodySchema, response: { 200: { type: 'object', additionalProperties: true } } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
     try { const item = await store.updateRole(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', item.etag).send(item.role) } catch (error) { return sendProblem(reply, error) }
   })
-  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/model-memory', async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/model-memory', { schema: { response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
     try {
       const item = await store.getAssistant(owner(request), request.params.id)
       if (!item) return reply.code(404).send({ code: 'NOT_FOUND' })
       return reply.header('ETag', item.etag).send(await store.getModelMemory(owner(request), request.params.id))
     } catch (error) { return sendProblem(reply, error) }
   })
-  app.patch<{ Params: { id: string }; Body: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string } }>('/api/v1/assistants/:id/model-memory/provider', { schema: { body: { type: 'object', additionalProperties: false, required: ['kind', 'mode'], properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, mode: { type: 'string', enum: ['selected', 'disabled'] }, providerConfigId: { type: 'string' } } } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string } }>('/api/v1/assistants/:id/model-memory/provider', { schema: { body: { type: 'object', additionalProperties: false, required: ['kind', 'mode'], properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, mode: { type: 'string', enum: ['selected', 'disabled'] }, providerConfigId: { type: 'string' } } }, response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
     try { const value = await store.updateProviderSelection(owner(request), request.params.id, request.body, ifMatch); const assistant = await store.getAssistant(owner(request), request.params.id); return reply.header('ETag', assistant?.etag ?? '').send(value) } catch (error) { return sendProblem(reply, error) }
   })
-  app.patch<{ Params: { id: string }; Body: { enabled: boolean } }>('/api/v1/assistants/:id/model-memory/memory', { schema: { body: { type: 'object', additionalProperties: false, required: ['enabled'], properties: { enabled: { type: 'boolean' } } } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { enabled: boolean } }>('/api/v1/assistants/:id/model-memory/memory', { schema: { body: { type: 'object', additionalProperties: false, required: ['enabled'], properties: { enabled: { type: 'boolean' } } }, response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
     try { const value = await store.setMemoryEnabled(owner(request), request.params.id, request.body.enabled, ifMatch); const assistant = await store.getAssistant(owner(request), request.params.id); return reply.header('ETag', assistant?.etag ?? '').send(value) } catch (error) { return sendProblem(reply, error) }
   })
-  app.post<{ Params: { id: string } }>('/api/v1/assistants/:id/publish', async (request, reply) => {
+  app.post<{ Params: { id: string } }>('/api/v1/assistants/:id/publish', { schema: { response: { 200: runtimePublicationResponseSchema } } }, async (request, reply) => {
     try { const publication = await store.publish(owner(request), request.params.id, typeof request.headers['if-match'] === 'string' ? request.headers['if-match'] : undefined); return reply.header('ETag', publication.etag).send(publication) } catch (error) { return sendProblem(reply, error) }
   })
-  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/devices', async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/devices', { schema: { response: { 200: listResponse({ type: 'object', additionalProperties: true }) } } }, async (request, reply) => {
     if (!(await store.getAssistant(owner(request), request.params.id))) return reply.code(404).send({ code: 'NOT_FOUND' })
     return { items: [], total: 0 }
   })
   app.post('/api/v1/devices/pair', async (_request, reply) => reply.code(501).send({ code: 'DEVICE_PAIRING_NOT_READY', detail: 'Device pairing is reserved for the hardware milestone.' }))
 
-  app.get<{ Querystring: { assistantId?: string } }>('/internal/v1/runtime-config', async (request, reply) => {
+  app.get<{ Querystring: { assistantId?: string } }>('/internal/v1/runtime-config', { schema: { response: { 200: runtimeSnapshotResponseSchema } } }, async (request, reply) => {
     if (!authorizeMachine(request.headers.authorization, machineToken)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
     const publication = await store.runtime(request.query.assistantId)
     if (!publication) return reply.code(409).send({ code: 'NO_PUBLISHED_CONFIG' })
