@@ -1,0 +1,386 @@
+#!/usr/bin/env python3
+"""Event-driven, opt-in physical wake-word test harness.
+
+The harness deliberately does not open a microphone, flash the board, toggle
+RTS/DTR, or send serial commands.  It starts an IDF monitor with --no-reset,
+plays a configured wake clip, waits for configured serial markers, and only
+then plays the utterance clip.  A separate explicit --allow-audio flag is
+required before any player process is started.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections import deque
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import threading
+import time
+from typing import Any
+from urllib.error import URLError
+from urllib.request import Request, urlopen
+
+
+class HarnessError(RuntimeError):
+    """A user-actionable scenario or runtime error."""
+
+
+@dataclass(frozen=True)
+class Stage:
+    name: str
+    marker: str
+    timeout_seconds: float
+
+
+@dataclass(frozen=True)
+class Scenario:
+    source: Path
+    monitor_command: tuple[str, ...]
+    project_dir: Path
+    serial_port: str
+    monitor_baud: int
+    player_command: tuple[str, ...]
+    health_url: str | None
+    wake_clip: Path
+    utterance_clip: Path
+    stages: tuple[Stage, ...]
+    utterance_after: str
+    startup_wait_seconds: float
+
+
+def _string(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise HarnessError(f"{field} must be a non-empty string")
+    return value.strip()
+
+
+def _command(value: Any, field: str, *, require_file_placeholder: bool = False) -> tuple[str, ...]:
+    if not isinstance(value, list) or not value or any(not isinstance(item, str) or not item for item in value):
+        raise HarnessError(f"{field} must be a non-empty argv array")
+    command = tuple(value)
+    if require_file_placeholder and "{file}" not in command:
+        raise HarnessError(f"{field} must contain the literal {{file}} placeholder")
+    return command
+
+
+def _number(value: Any, field: str, *, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not minimum <= float(value) <= maximum:
+        raise HarnessError(f"{field} must be between {minimum} and {maximum}")
+    return float(value)
+
+
+def _path(value: Any, *, base: Path, field: str) -> Path:
+    raw = os.path.expandvars(os.path.expanduser(_string(value, field)))
+    path = Path(raw)
+    return (path if path.is_absolute() else base / path).resolve()
+
+
+def load_scenario(path: Path) -> Scenario:
+    source = path.expanduser().resolve()
+    try:
+        document = json.loads(source.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise HarnessError(f"cannot read scenario {source}: {error}") from error
+    except json.JSONDecodeError as error:
+        raise HarnessError(f"invalid JSON in {source}: {error}") from error
+    if not isinstance(document, dict):
+        raise HarnessError("scenario root must be an object")
+
+    monitor = document.get("monitor")
+    player = document.get("player")
+    clips = document.get("clips")
+    events = document.get("events")
+    if not isinstance(monitor, dict) or not isinstance(player, dict) or not isinstance(clips, dict) or not isinstance(events, list):
+        raise HarnessError("scenario requires monitor, player, clips and events")
+
+    stages: list[Stage] = []
+    for index, item in enumerate(events):
+        if not isinstance(item, dict):
+            raise HarnessError(f"events[{index}] must be an object")
+        stages.append(Stage(
+            name=_string(item.get("name"), f"events[{index}].name"),
+            marker=_string(item.get("marker"), f"events[{index}].marker"),
+            timeout_seconds=_number(item.get("timeoutSeconds", 30), f"events[{index}].timeoutSeconds", minimum=0.1, maximum=3600),
+        ))
+    if not stages:
+        raise HarnessError("events must contain at least one stage")
+    names = [stage.name for stage in stages]
+    if len(set(names)) != len(names):
+        raise HarnessError("events names must be unique")
+
+    base = source.parent
+    project_dir = _path(monitor.get("projectDir", "../../veetee-firmware"), base=base, field="monitor.projectDir")
+    return Scenario(
+        source=source,
+        monitor_command=_command(monitor.get("command", ["idf.py"]), "monitor.command"),
+        project_dir=project_dir,
+        serial_port=_string(monitor.get("serialPort", "/dev/ttyACM0"), "monitor.serialPort"),
+        monitor_baud=int(_number(monitor.get("baud", 115200), "monitor.baud", minimum=1200, maximum=4_000_000)),
+        player_command=_command(player.get("command", ["pw-play", "{file}"]), "player.command", require_file_placeholder=True),
+        health_url=_string(monitor["healthUrl"], "monitor.healthUrl") if monitor.get("healthUrl") is not None else None,
+        wake_clip=_path(clips.get("wake"), base=base, field="clips.wake"),
+        utterance_clip=_path(clips.get("utterance"), base=base, field="clips.utterance"),
+        stages=tuple(stages),
+        utterance_after=_string(document.get("utteranceAfter", stages[0].name), "utteranceAfter"),
+        startup_wait_seconds=_number(monitor.get("startupWaitSeconds", 1), "monitor.startupWaitSeconds", minimum=0, maximum=30),
+    )
+
+
+def _render_player(command: tuple[str, ...], clip: Path) -> list[str]:
+    return [item.replace("{file}", str(clip)) for item in command]
+
+
+def _check_clip(path: Path, field: str, *, required: bool) -> str | None:
+    if path.is_file() and path.stat().st_size > 0:
+        return None
+    message = f"{field} does not point to a non-empty file: {path}"
+    if required:
+        raise HarnessError(message)
+    return message
+
+
+def _health(url: str) -> dict[str, Any]:
+    request = Request(url, headers={"Accept": "application/json"})
+    try:
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, URLError, json.JSONDecodeError) as error:
+        raise HarnessError(f"health check failed for {url}: {error}") from error
+    if not isinstance(payload, dict) or payload.get("status") != "ready":
+        raise HarnessError(f"health check is not ready: {payload!r}")
+    return payload
+
+
+class Monitor:
+    def __init__(self, scenario: Scenario, *, verbose: bool) -> None:
+        command = [
+            *scenario.monitor_command,
+            "-C", str(scenario.project_dir),
+            "-p", scenario.serial_port,
+            "monitor",
+            "--no-reset",
+            "--monitor-baud", str(scenario.monitor_baud),
+        ]
+        self.command = command
+        self.verbose = verbose
+        self.process: subprocess.Popen[str] | None = None
+        self.lines: deque[tuple[float, str]] = deque(maxlen=120)
+        self._queue: deque[tuple[float, str]] = deque()
+        self._condition = threading.Condition()
+        self._reader: threading.Thread | None = None
+
+    def start(self) -> None:
+        try:
+            self.process = subprocess.Popen(
+                self.command,
+                cwd=str(self.project_dir),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                start_new_session=True,
+            )
+        except OSError as error:
+            raise HarnessError(f"could not start monitor {' '.join(self.command)}: {error}") from error
+        assert self.process.stdout is not None
+        self._reader = threading.Thread(target=self._read, args=(self.process.stdout,), name="veetee-serial-reader", daemon=True)
+        self._reader.start()
+
+    def _read(self, stream: Any) -> None:
+        for raw in stream:
+            line = raw.rstrip("\r\n")
+            timestamp = time.monotonic()
+            with self._condition:
+                self.lines.append((timestamp, line))
+                self._queue.append((timestamp, line))
+                self._condition.notify_all()
+            if self.verbose:
+                print(f"serial: {line}", flush=True)
+
+    def wait_for(self, marker: str, timeout_seconds: float) -> tuple[float, str]:
+        deadline = time.monotonic() + timeout_seconds
+        with self._condition:
+            while True:
+                for index, (timestamp, line) in enumerate(self._queue):
+                    if marker in line:
+                        del self._queue[index]
+                        return timestamp, line
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    tail = len(self.lines)
+                    raise HarnessError(f"serial marker timed out: {marker!r} ({tail} lines observed)")
+                if self.process is not None and self.process.poll() is not None and not self._queue:
+                    raise HarnessError(f"serial monitor exited with status {self.process.returncode} before marker {marker!r}")
+                self._condition.wait(timeout=remaining)
+
+    def stop(self) -> None:
+        process = self.process
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            process.wait(timeout=2)
+
+
+def _start_player(command: tuple[str, ...], clip: Path, *, allow_audio: bool) -> subprocess.Popen[bytes]:
+    if not allow_audio:
+        raise HarnessError("audio playback is disabled; pass --allow-audio only after owner approval")
+    rendered = _render_player(command, clip)
+    try:
+        return subprocess.Popen(rendered, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
+    except OSError as error:
+        raise HarnessError(f"could not start audio player {' '.join(rendered)}: {error}") from error
+
+
+def _wait_player(process: subprocess.Popen[bytes], clip: Path, timeout_seconds: float = 300) -> None:
+    try:
+        result = process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as error:
+        _terminate_process(process)
+        raise HarnessError(f"audio player did not finish within {timeout_seconds:g}s: {clip}") from error
+    if result != 0:
+        stderr = process.stderr.read().decode("utf-8", errors="replace").strip() if process.stderr else ""
+        detail = f": {stderr}" if stderr else ""
+        raise HarnessError(f"audio player exited with status {result} for {clip}{detail}")
+
+
+def _terminate_process(process: subprocess.Popen[Any] | None) -> None:
+    if process is None or process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=3)
+    except (OSError, subprocess.TimeoutExpired):
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+
+
+def _event(name: str, started: float, **fields: Any) -> dict[str, Any]:
+    return {
+        "event": name,
+        "at": datetime.now(timezone.utc).isoformat(),
+        "elapsedMs": round((time.monotonic() - started) * 1000, 1),
+        **fields,
+    }
+
+
+def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) -> list[dict[str, Any]]:
+    missing = [message for message in (
+        _check_clip(scenario.wake_clip, "clips.wake", required=not dry_run),
+        _check_clip(scenario.utterance_clip, "clips.utterance", required=not dry_run),
+    ) if message]
+    monitor_command = [
+        *scenario.monitor_command,
+        "-C", str(scenario.project_dir), "-p", scenario.serial_port,
+        "monitor", "--no-reset", "--monitor-baud", str(scenario.monitor_baud),
+    ]
+    player_wake = _render_player(scenario.player_command, scenario.wake_clip)
+    player_utterance = _render_player(scenario.player_command, scenario.utterance_clip)
+    if dry_run:
+        print(json.dumps({
+            "dryRun": True,
+            "scenario": str(scenario.source),
+            "monitor": monitor_command,
+            "playerWake": player_wake,
+            "playerUtterance": player_utterance,
+            "missingClips": missing,
+            "events": [stage.__dict__ for stage in scenario.stages],
+            "utteranceAfter": scenario.utterance_after,
+        }, ensure_ascii=False, indent=2))
+        return []
+
+    if not allow_audio:
+        raise HarnessError("refusing to play audio without explicit --allow-audio")
+    if not scenario.project_dir.is_dir():
+        raise HarnessError(f"monitor project directory does not exist: {scenario.project_dir}")
+    if scenario.utterance_after not in {stage.name for stage in scenario.stages}:
+        raise HarnessError(f"utteranceAfter does not name an events stage: {scenario.utterance_after}")
+    if scenario.health_url:
+        health = _health(scenario.health_url)
+        print(json.dumps({"event": "health_ready", "health": health}, ensure_ascii=False), flush=True)
+
+    started = time.monotonic()
+    monitor = Monitor(scenario, verbose=verbose)
+    results: list[dict[str, Any]] = []
+    wake_player: subprocess.Popen[bytes] | None = None
+    utterance_player: subprocess.Popen[bytes] | None = None
+    try:
+        monitor.start()
+        if scenario.startup_wait_seconds:
+            time.sleep(scenario.startup_wait_seconds)
+        wake_player = _start_player(scenario.player_command, scenario.wake_clip, allow_audio=True)
+        utterance_played = False
+        for stage in scenario.stages:
+            timestamp, line = monitor.wait_for(stage.marker, stage.timeout_seconds)
+            result = _event(stage.name, started, marker=stage.marker, serialElapsedMs=round((timestamp - started) * 1000, 1))
+            results.append(result)
+            print(json.dumps(result, ensure_ascii=False), flush=True)
+            if stage.name == scenario.utterance_after and not utterance_played:
+                assert wake_player is not None
+                _wait_player(wake_player, scenario.wake_clip)
+                wake_player = None
+                utterance_player = _start_player(scenario.player_command, scenario.utterance_clip, allow_audio=True)
+                _wait_player(utterance_player, scenario.utterance_clip)
+                utterance_player = None
+                utterance_played = True
+            del line
+        if wake_player is not None:
+            _wait_player(wake_player, scenario.wake_clip)
+            wake_player = None
+        if not utterance_played:
+            utterance_player = _start_player(scenario.player_command, scenario.utterance_clip, allow_audio=True)
+            _wait_player(utterance_player, scenario.utterance_clip)
+            utterance_player = None
+        return results
+    except subprocess.TimeoutExpired as error:
+        raise HarnessError(f"audio player did not finish: {error}") from error
+    finally:
+        _terminate_process(utterance_player)
+        _terminate_process(wake_player)
+        monitor.stop()
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scenario", type=Path, required=True, help="JSON scenario; keep local audio paths outside Git")
+    parser.add_argument("--allow-audio", action="store_true", help="required safety acknowledgement before starting any player")
+    parser.add_argument("--dry-run", action="store_true", help="validate and print commands without starting monitor or player")
+    parser.add_argument("--verbose", action="store_true", help="print raw serial monitor lines")
+    parser.add_argument("--report", type=Path, help="write matched event JSON to this path")
+    args = parser.parse_args(argv)
+
+    try:
+        scenario = load_scenario(args.scenario)
+        results = run(scenario, allow_audio=args.allow_audio, dry_run=args.dry_run, verbose=args.verbose)
+        if args.report and not args.dry_run:
+            args.report.expanduser().resolve().write_text(json.dumps({"scenario": str(scenario.source), "events": results}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return 0
+    except KeyboardInterrupt:
+        print("interrupted; monitor/player cleanup requested", file=sys.stderr)
+        return 130
+    except HarnessError as error:
+        print(f"wake-test: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

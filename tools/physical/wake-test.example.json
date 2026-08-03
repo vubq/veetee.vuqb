@@ -1,0 +1,24 @@
+{
+  "monitor": {
+    "command": ["idf.py"],
+    "projectDir": "../../veetee-firmware",
+    "serialPort": "/dev/ttyACM0",
+    "baud": 115200,
+    "healthUrl": "http://127.0.0.1:18100/health/ready",
+    "startupWaitSeconds": 1
+  },
+  "player": {
+    "command": ["pw-play", "{file}"]
+  },
+  "clips": {
+    "wake": "./local-wake-computer.wav",
+    "utterance": "./local-utterance-vi.wav"
+  },
+  "utteranceAfter": "capture_started",
+  "events": [
+    {"name": "wake_detected", "marker": "wake detected", "timeoutSeconds": 15},
+    {"name": "capture_started", "marker": "wake start", "timeoutSeconds": 8},
+    {"name": "assistant_speaking", "marker": "state=speaking", "timeoutSeconds": 45},
+    {"name": "wake_rearmed", "marker": "wake capture complete", "timeoutSeconds": 90}
+  ]
+}
