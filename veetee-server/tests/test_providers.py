@@ -31,6 +31,8 @@ async def test_vieneu_adapter_is_lazy_and_resamples_stream(monkeypatch):
             "mode": "v3turbo",
             "backend": "onnx",
             "precision": "int8",
+            "onnxDir": "/models/vieneu/onnx_int8",
+            "codecDir": "/models/moss-onnx",
             "sampleRate": 24_000,
             "sourceSampleRate": 48_000,
         }
@@ -41,6 +43,8 @@ async def test_vieneu_adapter_is_lazy_and_resamples_stream(monkeypatch):
 
     assert calls[0][0] == "factory"
     assert calls[0][1]["backbone_repo"] == "test/backbone"
+    assert calls[0][1]["onnx_dir"] == "/models/vieneu/onnx_int8"
+    assert calls[0][1]["codec_dir"] == "/models/moss-onnx"
     assert calls[1][1] == "Thanh Bình"
     assert all(isinstance(chunk, AudioChunk) for chunk in chunks)
     assert all(chunk.sample_rate == 24_000 for chunk in chunks)

@@ -261,6 +261,11 @@ Snapshot là contract immutable mà Voice Server tiêu thụ. Hình dạng tối
   "basePrompt": "...",
   "personality": { "id": "uuid", "revision": 3 },
   "speech": { "voiceId": "uuid", "rate": 1, "pitch": 0, "style": "natural" },
+  "progress": { "enabled": true, "acknowledgementId": "processing", "deadlineMs": 900 },
+  "segmentation": { "minimumCharacters": 1, "maximumCharacters": 180 },
+  "bargeIn": { "minSpeechFrames": 2 },
+  "toolPolicy": { "maxRounds": 3, "timeoutMs": 30000 },
+  "tools": [],
   "providers": {
     "vad": { "providerConfigId": "uuid", "configRevision": 2 },
     "asr": { "providerConfigId": "uuid", "configRevision": 4 },
@@ -276,9 +281,12 @@ Snapshot là contract immutable mà Voice Server tiêu thụ. Hình dạng tối
 personality template và assistant override. Thứ tự merge phải được version hóa;
 không nối prompt theo điều kiện hardcode trong request handler.
 
-Progress acknowledgement cho tác vụ lâu là configuration theo locale/personality,
-ví dụ policy chứa threshold và translation/prompt key. Không hardcode câu “đợi
-chút” vào pipeline hoặc UI.
+Các field policy (`progress`, `segmentation`, `bargeIn`, `toolPolicy`) và
+`tools` là optional additive fields của role snapshot. Manager giữ nguyên chúng
+qua draft/publish để Voice Server áp dụng atomically; peer/phiên bản cũ không
+hiểu field thì bỏ qua. Progress acknowledgement cho tác vụ lâu là configuration
+theo locale/personality, ví dụ policy chứa threshold và translation/prompt key.
+Không hardcode câu “đợi chút” vào pipeline hoặc UI.
 
 ### 4.4 Provider invariant: một lựa chọn, không fallback
 
@@ -486,8 +494,8 @@ chỉ liệt kê lỗi domain bổ sung.
 | `GET /assistants/{assistantId}` | User:R | none | `200 AssistantDetail` + `ETag` | `404` | Safe. |
 | `PATCH /assistants/{assistantId}` | User:W | `{name?}` | `200 Assistant` + new `ETag` | `409 REVISION_CONFLICT` hoặc `NAME_CONFLICT` | `IM` required; patch idempotent for same value. |
 | `DELETE /assistants/{assistantId}` | Owner | none | `204` | `409 DEVICES_STILL_LINKED` | `IM` required; repeat is `204`. |
-| `GET /assistants/{assistantId}/role-config` | User:R | none | `200 {locale,voice,basePrompt,personality,speech,responseStyle}` + `ETag` | `404` | Safe. |
-| `PATCH /assistants/{assistantId}/role-config` | User:W | Partial role config | `200 RoleConfig` + new `ETag` | `409`; `422 VOICE_UNSUPPORTED` hoặc `LOCALE_UNSUPPORTED` | `IM` required. |
+| `GET /assistants/{assistantId}/role-config` | User:R | none | `200 {locale,voice,basePrompt,personality,speech,progress,segmentation,bargeIn,toolPolicy,tools}` + `ETag` | `404` | Safe. |
+| `PATCH /assistants/{assistantId}/role-config` | User:W | Partial role config; policy/tool fields are schema-validated JSON | `200 RoleConfig` + new `ETag` | `409`; `422 VOICE_UNSUPPORTED` hoặc `LOCALE_UNSUPPORTED` | `IM` required. |
 | `GET /assistants/{assistantId}/revisions` | User:R | `limit,cursor` | `200 Page<RevisionSummary>` | `404` | `C`. |
 | `GET /assistants/{assistantId}/revisions/{revision}` | User:R | none | `200 redacted snapshot` | `404` | Secret refs only. |
 | `POST /assistants/{assistantId}/publish` | User:W | none | `200 PublishedRevision` + `ETag` | `409`; `422 CONFIG_NOT_PUBLISHABLE` | `IM` + `IK` required. |

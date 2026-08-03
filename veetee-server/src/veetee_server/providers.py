@@ -322,6 +322,8 @@ class VieNeuTTS:
             "backend": "backend",
             "onnxRepo": "onnx_repo",
             "onnxDir": "onnx_dir",
+            "codecRepo": "codec_repo",
+            "codecDir": "codec_dir",
             "precision": "precision",
             "onnxSubfolder": "onnx_subfolder",
             "threads": "threads",

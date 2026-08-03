@@ -42,7 +42,8 @@
           "device": { "type": "string", "enum": ["cuda", "cpu"] },
           "computeType": { "type": "string", "enum": ["float16", "int8_float16", "int8" ] },
           "cpuThreads": { "type": "integer", "minimum": 1, "maximum": 32 },
-          "numWorkers": { "type": "integer", "minimum": 1, "maximum": 4 }
+          "numWorkers": { "type": "integer", "minimum": 1, "maximum": 4 },
+          "sampleRate": { "type": "integer", "minimum": 1, "maximum": 48000 }
         }
       }
     },
@@ -90,7 +91,15 @@
           "precision": { "type": "string", "enum": ["int8", "fp32"] },
           "sampleRate": { "type": "integer", "minimum": 1, "maximum": 48000 },
           "sourceSampleRate": { "type": "integer", "minimum": 1, "maximum": 48000 },
-          "threads": { "type": "integer", "minimum": 0, "maximum": 32 }
+          "threads": { "type": "integer", "minimum": 0, "maximum": 32 },
+          "modelSubfolder": { "type": "string", "minLength": 1 },
+          "mossTokenizer": { "type": "string", "minLength": 1 },
+          "onnxRepo": { "type": "string", "minLength": 1 },
+          "onnxDir": { "type": "string", "minLength": 1 },
+          "codecRepo": { "type": "string", "minLength": 1 },
+          "codecDir": { "type": "string", "minLength": 1 },
+          "onnxSubfolder": { "type": "string", "minLength": 1 },
+          "maxBatchSize": { "type": "integer", "minimum": 1, "maximum": 128 }
         }
       }
     },

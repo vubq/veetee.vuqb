@@ -25,6 +25,8 @@ import {
   type RuntimeSnapshot,
   type SecretReference,
   type Store,
+  roleExtras,
+  roleFromSnapshot,
 } from './store.js'
 
 type JsonObject = Record<string, unknown>
@@ -253,6 +255,7 @@ export class PostgresStore implements Store {
         resolvedProviders[kind] = { providerId: installation.id, version: installation.version, providerConfigId: provider.id, configRevision: providerRevision.revision, config: asJsonObject(providerRevision.config), secretRefs: asSecretRefs(providerRevision.secretRefs) }
       }
       const snapshot: RuntimeSnapshot = {
+        ...roleExtras(role),
         schemaVersion: 1,
         revision: identity.draftRevision,
         assistantId: id,
@@ -358,7 +361,7 @@ export class PostgresStore implements Store {
     const id = isUuid(initial.assistantId) ? initial.assistantId : randomUUID()
     const snapshot = { ...structuredClone(initial), assistantId: id }
     const now = new Date()
-    const role: JsonObject = { locale: snapshot.locale, basePrompt: snapshot.basePrompt, personality: snapshot.personality, speech: snapshot.speech }
+    const role: JsonObject = roleFromSnapshot(snapshot)
     const providerSelections = asProviderSelections(snapshot.providers)
     const revisionEtag = etag(snapshot)
     await this.handle.db.transaction(async (tx) => {

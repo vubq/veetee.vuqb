@@ -34,7 +34,15 @@ test('manager API publishes config through immutable ETag flow', async () => {
     assert.ok(assistant.etag)
 
     const role = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistant.id}/role-config` })
-    const nextRole = { ...role.json(), personality: { name: 'focused', prompt: 'Use the configured style.' } }
+    const nextRole = {
+      ...role.json(),
+      personality: { name: 'focused', prompt: 'Use the configured style.' },
+      progress: { enabled: true, acknowledgementId: 'processing', deadlineMs: 900 },
+      segmentation: { minimumCharacters: 2, maximumCharacters: 120 },
+      bargeIn: { minSpeechFrames: 2 },
+      toolPolicy: { maxRounds: 2, timeoutMs: 5000 },
+      tools: [{ name: 'device.led.set', description: 'Set the RGB LED.' }],
+    }
     const update = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/role-config`, headers: { 'if-match': role.headers.etag }, payload: nextRole })
     assert.equal(update.statusCode, 200)
 
@@ -43,6 +51,11 @@ test('manager API publishes config through immutable ETag flow', async () => {
     const runtime = await app.inject({ method: 'GET', url: '/internal/v1/runtime-config' })
     assert.equal(runtime.statusCode, 200)
     assert.equal(runtime.json().personality.name, 'focused')
+    assert.equal(runtime.json().progress.deadlineMs, 900)
+    assert.equal(runtime.json().segmentation.maximumCharacters, 120)
+    assert.equal(runtime.json().bargeIn.minSpeechFrames, 2)
+    assert.equal(runtime.json().toolPolicy.maxRounds, 2)
+    assert.equal(runtime.json().tools[0].name, 'device.led.set')
 
     const notModified = await app.inject({ method: 'GET', url: '/internal/v1/runtime-config', headers: { 'if-none-match': runtime.headers.etag } })
     assert.equal(notModified.statusCode, 304)

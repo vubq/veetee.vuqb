@@ -22,6 +22,12 @@ const roleBodySchema = {
     basePrompt: { type: 'string', minLength: 1, maxLength: 16000 },
     personality: { type: 'object' },
     speech: { type: 'object' },
+    progress: { type: 'object', maxProperties: 32 },
+    segmentation: { type: 'object', maxProperties: 32 },
+    bargeIn: { type: 'object', maxProperties: 32 },
+    toolPolicy: { type: 'object', maxProperties: 32 },
+    tools: { type: 'array', maxItems: 128, items: { type: 'object' } },
+    memoryEnabled: { type: 'boolean' },
   },
 } as const
 const providerBodySchema = {

@@ -287,6 +287,11 @@ Adapter requirements:
 - Preset voice + `tu_nhien` baseline. Voice cloning/emotion vẫn deferred.
 - Model card gọi v3 Turbo early access/preview: pin revision, không auto-update, bắt buộc soak/listening gate.
 
+Manifest của Veetee cho phép `onnxDir`/`codecDir` (và các `*Repo` tương ứng)
+để operator trỏ trực tiếp vào artifact đã cache trên host. Đây là field cấu hình
+được validate, không phải đường dẫn nằm trong source; khi không khai báo, adapter
+dùng repo ID đã pin và Hugging Face cache theo policy deployment.
+
 ### 9.6 Intent — config-pattern system intents
 
 Selected optional provider là generic normalized pattern matcher:

@@ -49,6 +49,33 @@ export interface RuntimeSnapshot {
   [key: string]: unknown
 }
 
+/*
+ * A snapshot carries both the runtime envelope and assistant-owned policy. Keep
+ * the envelope keys out of `role`, but preserve every additive policy field so
+ * a Manager publish cannot silently drop progress/tool/latency configuration.
+ * New policy fields therefore pass through without a code change in this store;
+ * the route schema remains the boundary that decides what the owner may edit.
+ */
+const SNAPSHOT_ENVELOPE_KEYS = new Set([
+  'schemaVersion', 'revision', 'assistantId', 'locale', 'basePrompt',
+  'personality', 'speech', 'providers', 'wire',
+])
+
+export function roleFromSnapshot(snapshot: RuntimeSnapshot): Record<string, unknown> {
+  const extras = Object.fromEntries(Object.entries(snapshot).filter(([key]) => !SNAPSHOT_ENVELOPE_KEYS.has(key)))
+  return {
+    ...extras,
+    locale: snapshot.locale,
+    basePrompt: snapshot.basePrompt,
+    personality: structuredClone(snapshot.personality),
+    speech: structuredClone(snapshot.speech),
+  }
+}
+
+export function roleExtras(role: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(role).filter(([key]) => !SNAPSHOT_ENVELOPE_KEYS.has(key)))
+}
+
 export interface RuntimePublication {
   snapshot: RuntimeSnapshot
   etag: string
@@ -129,12 +156,7 @@ export class InMemoryStore implements Store {
         id: initial.assistantId,
         ownerId: 'local-owner',
         name: 'Veetee',
-        role: {
-          locale: initial.locale,
-          basePrompt: initial.basePrompt,
-          personality: initial.personality,
-          speech: initial.speech,
-        },
+        role: roleFromSnapshot(initial),
         providerSelections: initial.providers,
         draftRevision: initial.revision,
         publishedRevision: initial.revision,
@@ -269,6 +291,7 @@ export class InMemoryStore implements Store {
       resolvedProviders[kind] = { providerId: installation.id, version: installation.version, config: selected.config, secretRefs: [...selected.secretRefs] }
     }
     const snapshot: RuntimeSnapshot = {
+      ...roleExtras(current.role),
       schemaVersion: 1,
       revision,
       assistantId: current.id,
