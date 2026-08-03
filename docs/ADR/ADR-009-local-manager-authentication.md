@@ -96,6 +96,8 @@ Chọn **A** cho M2 baseline:
 - [x] Missing/wrong Origin hoặc CSRF header trên unsafe route trả `403` trước mutation.
 - [x] Logout vô hiệu session cũ ngay; password-change/credential-version bump còn pending.
 - [ ] Concurrent replay cùng session không tạo duplicate write nhờ API idempotency.
+- [x] Login baseline có bounded process-local throttle theo IP + normalized identity,
+  lockout và `Retry-After`; distributed/proxy limit vẫn là promotion gate riêng.
 - [x] Session login sống qua API restart trong PostgreSQL integration test.
 - [x] Secret canary không xuất hiện trong response; log/audit canary suite còn pending.
 - [ ] Machine bearer không gọi user route và user cookie không gọi machine route.

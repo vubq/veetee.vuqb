@@ -31,7 +31,9 @@ reference metadata, không lưu plaintext trong PostgreSQL.
 Khi bật `VEETEE_AUTH_MODE=local`, cung cấp `VEETEE_AUTH_SECRET_FILE`, owner
 email/password hash và `VEETEE_ALLOWED_ORIGINS`. Login trả cookie opaque
 `HttpOnly` cùng CSRF token chỉ trong response/ memory; request unsafe phải gửi
-exact `Origin` và `X-Veetee-CSRF`. Encrypted local secret store dùng thêm
+exact `Origin` và `X-Veetee-CSRF`. Login failures được throttle theo IP +
+normalized identity bằng các `VEETEE_LOGIN_*` limits; khi đạt ngưỡng API trả
+`429 LOGIN_THROTTLED` và `Retry-After`. Encrypted local secret store dùng thêm
 `VEETEE_SECRET_MASTER_KEY_FILE` và `VEETEE_SECRET_STORE_FILE`; UI không bao giờ
 nhận lại secret value.
 

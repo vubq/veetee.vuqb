@@ -9,6 +9,7 @@ import argon2 from 'argon2'
 import { readEnvironment, type Environment } from './config.js'
 import { EncryptedFileSecretStore, type SecretValueStore } from './secret-store.js'
 import { InMemoryStore, loadInitialSnapshot, parseCatalog, type ProviderKind, type Store } from './store.js'
+import { LoginThrottle, normalizeLoginIdentity } from './auth-throttle.js'
 
 type OwnerRequest = FastifyRequest & { ownerId?: string; sessionToken?: string; csrfToken?: string; sessionExpiresAt?: string }
 
@@ -160,6 +161,12 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   const app = Fastify({
     logger: { level: env.VEETEE_LOG_LEVEL, redact: ['req.headers.authorization', '*.password', '*.secret', '*.apiKey', '*.verificationCode'] },
   })
+  const loginThrottle = new LoginThrottle({
+    maxAttempts: env.VEETEE_LOGIN_MAX_ATTEMPTS ?? 5,
+    windowMs: (env.VEETEE_LOGIN_WINDOW_SECONDS ?? 300) * 1000,
+    lockoutMs: (env.VEETEE_LOGIN_LOCKOUT_SECONDS ?? 60) * 1000,
+    maxBuckets: env.VEETEE_LOGIN_MAX_BUCKETS ?? 4096,
+  })
   const machineToken = env.VEETEE_MACHINE_TOKEN_FILE ? (await readFile(env.VEETEE_MACHINE_TOKEN_FILE, 'utf8')).trim() : undefined
   const allowedOrigins = env.VEETEE_ALLOWED_ORIGINS.split(',').map((item) => item.trim()).filter(Boolean)
 
@@ -199,6 +206,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       const response = {
         '400': problemResponse('Invalid request'),
         '500': problemResponse('Unexpected server error'),
+        ...(url === '/api/v1/auth/login' ? { '429': problemResponse('Login throttled') } : {}),
         ...(security ? {
           '401': problemResponse('Authentication required'),
           '403': problemResponse('Forbidden'),
@@ -252,9 +260,22 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     return { status: 'ready', service: 'veetee-manager-api', revision: publication.snapshot.revision, etag: publication.etag }
   })
 
-  app.post<{ Body: { email: string; password: string } }>('/api/v1/auth/login', { schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'password'], properties: { email: { type: 'string', minLength: 3 }, password: { type: 'string', minLength: 1 } } }, response: { 200: authResponseSchema, 401: problemBodySchema } } }, async (request, reply) => {
+  app.post<{ Body: { email: string; password: string } }>('/api/v1/auth/login', { schema: { body: { type: 'object', additionalProperties: false, required: ['email', 'password'], properties: { email: { type: 'string', minLength: 3 }, password: { type: 'string', minLength: 1 } } }, response: { 200: authResponseSchema, 401: problemBodySchema, 429: problemBodySchema } } }, async (request, reply) => {
     if (env.VEETEE_AUTH_MODE === 'disabled') return { user: { id: 'local-owner', email: request.body.email } }
-    if (!env.VEETEE_OWNER_EMAIL || !env.VEETEE_OWNER_PASSWORD_HASH || !authSecret || request.body.email !== env.VEETEE_OWNER_EMAIL || !(await argon2.verify(env.VEETEE_OWNER_PASSWORD_HASH, request.body.password))) return reply.code(401).send({ code: 'INVALID_CREDENTIALS' })
+    const identity = normalizeLoginIdentity(request.body.email)
+    const current = loginThrottle.check(request.ip, identity)
+    if (!current.allowed) return reply.code(429).header('Retry-After', current.retryAfterSeconds).send({ code: 'LOGIN_THROTTLED' })
+    const identityMatches = Boolean(env.VEETEE_OWNER_EMAIL) && identity === normalizeLoginIdentity(env.VEETEE_OWNER_EMAIL ?? '')
+    let passwordMatches = false
+    if (env.VEETEE_OWNER_PASSWORD_HASH) {
+      try { passwordMatches = await argon2.verify(env.VEETEE_OWNER_PASSWORD_HASH, request.body.password) } catch { passwordMatches = false }
+    }
+    if (!env.VEETEE_OWNER_PASSWORD_HASH || !authSecret || !identityMatches || !passwordMatches) {
+      const failed = loginThrottle.recordFailure(request.ip, identity)
+      if (!failed.allowed) return reply.code(429).header('Retry-After', failed.retryAfterSeconds).send({ code: 'LOGIN_THROTTLED' })
+      return reply.code(401).send({ code: 'INVALID_CREDENTIALS' })
+    }
+    loginThrottle.recordSuccess(request.ip, identity)
     const token = cryptoRandomToken()
     const csrfToken = deriveCsrfToken(authSecret, token)
     const ttlSeconds = env.VEETEE_SESSION_TTL_SECONDS ?? 86400

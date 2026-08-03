@@ -568,6 +568,17 @@ export interface operations {
                     };
                 };
             };
+            /** @description Default Response */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
             /** @description Unexpected server error */
             500: {
                 headers: {

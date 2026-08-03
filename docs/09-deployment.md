@@ -141,6 +141,10 @@ Service requirements:
 | `VEETEE_SECRET_MASTER_KEY_FILE` | khi encrypted-local active | Owner-read master material cho encrypted secret file; không lưu trong DB/browser. |
 | `VEETEE_SECRET_STORE_FILE` | khi encrypted-local active | Ciphertext-only local secret file, atomic write, permission 0600. |
 | `VEETEE_SESSION_TTL_SECONDS` | no | Absolute session TTL đã validate; cleanup/revoke ở PostgreSQL. |
+| `VEETEE_LOGIN_MAX_ATTEMPTS` | no | Số lần login sai tối đa trong một cửa sổ; mặc định 5. |
+| `VEETEE_LOGIN_WINDOW_SECONDS` | no | Cửa sổ throttle login; mặc định 300 giây. |
+| `VEETEE_LOGIN_LOCKOUT_SECONDS` | no | Thời gian khóa sau khi đạt ngưỡng; mặc định 60 giây. |
+| `VEETEE_LOGIN_MAX_BUCKETS` | no | Giới hạn bucket throttle trong process; mặc định 4096. |
 | `VEETEE_MACHINE_AUTH_SECRET_FILE` | yes | Tách khỏi user auth. |
 | `VEETEE_OBJECT_DIR` | yes | Audio/assets root, path tuyệt đối. |
 | `VEETEE_PUBLIC_BASE_URL` | yes | URL qua proxy, không suy từ untrusted Host. |

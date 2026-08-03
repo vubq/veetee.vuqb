@@ -49,6 +49,22 @@ test('local auth uses opaque cookie, /me CSRF token and exact Origin gate', asyn
   } finally { await app.close() }
 })
 
+test('local auth throttles repeated invalid credentials without revealing account state', async () => {
+  const env: Environment = { ...baseEnv, VEETEE_LOGIN_MAX_ATTEMPTS: 2, VEETEE_LOGIN_LOCKOUT_SECONDS: 30 }
+  const app = await buildApp({ env, authSecret: 'unit-auth-secret' })
+  await app.ready()
+  try {
+    const first = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { email: 'owner@example.test', password: 'wrong' } })
+    const unknown = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { email: 'unknown@example.test', password: 'wrong' } })
+    assert.equal(first.statusCode, 401)
+    assert.equal(unknown.statusCode, 429)
+    assert.equal(unknown.json().code, 'LOGIN_THROTTLED')
+    assert.ok(Number(unknown.headers['retry-after']) >= 1)
+    const validWhileLocked = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { email: 'owner@example.test', password: 'unit-password' } })
+    assert.equal(validWhileLocked.statusCode, 429)
+  } finally { await app.close() }
+})
+
 test('encrypted local secret store never writes plaintext', async () => {
   const directory = await mkdtemp(resolve(tmpdir(), 'veetee-secret-test-'))
   const path = resolve(directory, 'secrets.json')
