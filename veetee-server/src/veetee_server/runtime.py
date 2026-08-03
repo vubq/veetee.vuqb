@@ -74,15 +74,20 @@ class RuntimeConfigManager:
             assert self.config.fixture_file is not None
             return load_snapshot(self.config.fixture_file)
         assert self.config.manager_api_url is not None
-        assert self.config.machine_token_file is not None
-        try:
-            token = self.config.machine_token_file.read_text(encoding="utf-8").strip()
-        except OSError as exc:
-            raise ConfigurationError("cannot read machine token file") from exc
-        if not token:
-            raise ConfigurationError("machine token file is empty")
+        token = None
+        if self.config.machine_token_file is not None:
+            try:
+                token = self.config.machine_token_file.read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                raise ConfigurationError("cannot read machine token file") from exc
+            if not token:
+                raise ConfigurationError("machine token file is empty")
+        elif not self.config.allow_insecure_local_config:
+            raise ConfigurationError("machine token is required outside explicit local config mode")
         path = self.config.manager_api_url + self.config.manager_runtime_path.rstrip("/")
         headers = {"Authorization": f"Bearer {token}"}
+        if token is None:
+            headers.pop("Authorization")
         if self._etag:
             headers["If-None-Match"] = self._etag
         async with httpx.AsyncClient(timeout=5) as client:

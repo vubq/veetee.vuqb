@@ -66,6 +66,11 @@ export interface AssistantGateway {
     expectedEtag: string,
   ): Promise<GatewayResult<Versioned<RoleConfig>, RoleSaveProblem>>
 
+  publishAssistant(
+    assistantId: string,
+    expectedEtag: string,
+  ): Promise<GatewayResult<{ revision: number }, RoleSaveProblem>>
+
   listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>>
 
   previewVoice(

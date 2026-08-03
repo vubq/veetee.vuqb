@@ -13,7 +13,8 @@
         "VEETEE_PROVIDER_CATALOG_FILE": "${VEETEE_ROOT}/veetee-manager-api/config/provider-catalog.json",
         "VEETEE_ALLOWED_ORIGINS": "http://127.0.0.1:18081",
         "VEETEE_AUTH_MODE": "disabled",
-        "VEETEE_LOG_LEVEL": "info"
+        "VEETEE_LOG_LEVEL": "info",
+        "VEETEE_ALLOW_INSECURE_LOCAL_CONFIG": "true"
       },
       "healthUrl": "http://127.0.0.1:18001/health/ready",
       "readyTimeoutSeconds": 30,
@@ -24,15 +25,16 @@
       "command": ["${VEETEE_ROOT}/veetee-server/.venv/bin/python", "-m", "veetee_server"],
       "cwd": "${VEETEE_ROOT}/veetee-server",
       "environment": {
-        "VEETEE_CONFIG_SOURCE": "fixture",
-        "VEETEE_CONFIG_FIXTURE_FILE": "${VEETEE_ROOT}/veetee-server/config/fixtures/m0.json",
+        "VEETEE_CONFIG_SOURCE": "manager",
+        "VEETEE_MANAGER_API_URL": "http://127.0.0.1:18001",
+        "VEETEE_ALLOW_INSECURE_LOCAL_CONFIG": "true",
         "VEETEE_VOICE_HOST": "127.0.0.1",
         "VEETEE_VOICE_PORT": "18000",
         "VEETEE_GROQ_SECRET_FILE": "${VEETEE_ROOT}/secrets/groq.keys"
       },
       "healthUrl": "http://127.0.0.1:18000/health/ready",
       "readyTimeoutSeconds": 20,
-      "dependencies": []
+      "dependencies": ["veetee-manager-api"]
     },
     {
       "name": "manager-web-preview",

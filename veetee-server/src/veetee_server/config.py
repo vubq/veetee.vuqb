@@ -23,6 +23,7 @@ class ServerConfig:
     fixture_file: Path | None
     manager_api_url: str | None
     machine_token_file: Path | None
+    allow_insecure_local_config: bool
     manager_runtime_path: str
     config_poll_ms: int
     log_level: str
@@ -40,7 +41,8 @@ class ServerConfig:
             raise ConfigurationError("VEETEE_CONFIG_FIXTURE_FILE is required for fixture source")
         if source == "manager" and not manager_url:
             raise ConfigurationError("VEETEE_MANAGER_API_URL is required for manager source")
-        if source == "manager" and not token_file:
+        allow_insecure = os.getenv("VEETEE_ALLOW_INSECURE_LOCAL_CONFIG", "false").strip().lower() in {"1", "true", "yes"}
+        if source == "manager" and not token_file and not allow_insecure:
             raise ConfigurationError("VEETEE_MACHINE_TOKEN_FILE is required for manager source")
         port = _positive_int("VEETEE_VOICE_PORT", os.getenv("VEETEE_VOICE_PORT", "8000"))
         poll_ms = _positive_int("VEETEE_CONFIG_POLL_MS", os.getenv("VEETEE_CONFIG_POLL_MS", "2000"))
@@ -52,6 +54,7 @@ class ServerConfig:
             fixture_file=Path(fixture).expanduser() if fixture else None,
             manager_api_url=manager_url.rstrip("/") if manager_url else None,
             machine_token_file=Path(token_file).expanduser() if token_file else None,
+            allow_insecure_local_config=allow_insecure,
             manager_runtime_path=_normalise_path(os.getenv("VEETEE_MANAGER_RUNTIME_PATH", "/internal/v1/runtime-config")),
             config_poll_ms=poll_ms,
             log_level=os.getenv("VEETEE_LOG_LEVEL", "INFO").upper(),

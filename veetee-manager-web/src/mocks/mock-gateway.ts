@@ -313,6 +313,28 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     return this.success(clone(next), request)
   }
 
+  async publishAssistant(
+    assistantId: string,
+    expectedEtag: string,
+  ): Promise<GatewayResult<{ revision: number }, RoleSaveProblem>> {
+    const request = await this.begin('mutation')
+    const current = this.state.roleConfigs[assistantId]
+    if (!current) return this.failure(this.notFound('assistant', assistantId, request.requestId), request)
+    if (current.etag !== expectedEtag) {
+      const problem: RevisionConflictProblem<RoleConfig, RoleConfigDraft> = {
+        type: 'revision-conflict', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict', requestId: request.requestId, retryable: false,
+        currentRevision: current.revision, currentEtag: current.etag, current: clone(current.value), localDraft: clone(current.value),
+      }
+      return this.failure(problem, request)
+    }
+    const assistant = this.state.assistants[assistantId]
+    if (assistant) {
+      assistant.value.configurationState = 'published'
+      assistant.value.publishedRevision = current.revision
+    }
+    return this.success({ revision: current.revision }, request)
+  }
+
   async listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>> {
     const request = await this.begin('read')
     const items = this.state.voices

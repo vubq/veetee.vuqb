@@ -27,6 +27,7 @@ const draft = ref<RoleConfigDraft>()
 const voices = ref<VoiceProfile[]>([])
 const loading = ref(true)
 const saving = ref(false)
+const publishing = ref(false)
 const customRole = ref(true)
 const conflict = ref<RevisionConflictProblem<RoleConfig, RoleConfigDraft>>()
 const copying = ref(false)
@@ -97,6 +98,19 @@ async function save() {
   }
   const message = result.problem.type === 'offline' ? 'Đang ngoại tuyến; draft vẫn được giữ trên màn hình.' : 'Hãy kiểm tra lại các trường cấu hình.'
   notify('Không thể lưu bản nháp', { tone: 'error', message, assertive: true })
+}
+
+async function publish() {
+  if (!resource.value || dirty.value) return
+  publishing.value = true
+  const result = await gateway.publishAssistant(props.assistantId, resource.value.etag)
+  publishing.value = false
+  if (result.ok) {
+    await load()
+    notify('Đã áp dụng cấu hình', { tone: 'success', message: `Revision runtime #${result.data.revision} đã được publish.` })
+  } else {
+    notify('Không thể áp dụng cấu hình', { tone: 'error', message: 'Revision hiện tại không còn mới; hãy tải lại trước khi publish.', assertive: true })
+  }
 }
 
 function reloadConflict() {
@@ -298,6 +312,15 @@ onMounted(load)
             :size="14"
           />
         </template>Lưu bản nháp
+      </VtButton>
+      <VtButton
+        type="button"
+        variant="secondary"
+        :disabled="dirty || saving || publishing"
+        :loading="publishing"
+        @click="publish"
+      >
+        Áp dụng runtime
       </VtButton>
     </footer>
   </form>

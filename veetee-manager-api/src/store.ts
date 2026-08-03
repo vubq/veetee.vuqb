@@ -106,6 +106,13 @@ export class InMemoryStore implements Store {
         updatedAt: new Date().toISOString(),
       }
       this.assistants.set(assistant.id, assistant)
+      for (const [kind, value] of Object.entries(initial.providers)) {
+        if (!value || value.mode === 'disabled' || typeof value.providerId !== 'string' || !value.config || typeof value.config !== 'object') continue
+        const installation = this.installations.find((item) => item.id === value.providerId)
+        if (!installation) continue
+        this.providerConfigs.set(value.providerId, { id: value.providerId, ownerId: 'local-owner', installationId: value.providerId, name: installation.displayNameKey, revision: 1, config: structuredClone(value.config as Record<string, unknown>), secretRefs: [], etag: etag(value.config), updatedAt: assistant.updatedAt })
+        void kind
+      }
       this.publication = { snapshot: initial, etag: etag(initial), updatedAt: assistant.updatedAt }
     }
   }
@@ -198,6 +205,22 @@ export class InMemoryStore implements Store {
     if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Assistant changed', 409)
     if (!current.role.locale || !current.role.basePrompt) throw problem('CONFIG_NOT_PUBLISHABLE', 'Role configuration is incomplete', 422)
     const revision = (current.publishedRevision ?? 0) + 1
+    const resolvedProviders: Record<string, Record<string, unknown>> = {}
+    for (const [kind, value] of Object.entries(current.providerSelections)) {
+      if (!value || value.mode === 'disabled') {
+        resolvedProviders[kind] = { mode: 'disabled' }
+        continue
+      }
+      if (typeof value.providerId === 'string' && value.config && typeof value.config === 'object') {
+        resolvedProviders[kind] = value
+        continue
+      }
+      const selectedId = typeof value.providerConfigId === 'string' ? value.providerConfigId : undefined
+      const selected = selectedId ? this.providerConfigs.get(selectedId) : undefined
+      const installation = selected ? this.installations.find((item) => item.id === selected.installationId) : undefined
+      if (!selected || !installation) throw problem('CONFIG_NOT_PUBLISHABLE', `Provider selection is not configured: ${kind}`, 422)
+      resolvedProviders[kind] = { providerId: installation.id, version: installation.version, config: selected.config }
+    }
     const snapshot: RuntimeSnapshot = {
       schemaVersion: 1,
       revision,
@@ -206,7 +229,7 @@ export class InMemoryStore implements Store {
       basePrompt: String(current.role.basePrompt),
       personality: (current.role.personality as Record<string, unknown> | undefined) ?? {},
       speech: (current.role.speech as Record<string, unknown> | undefined) ?? {},
-      providers: current.providerSelections,
+      providers: resolvedProviders,
       wire: { profile: 'ws-v3', uplinkSampleRate: 16000, downlinkSampleRate: 24000, frameDurationMs: 60 },
     }
     current.publishedRevision = revision
@@ -232,7 +255,7 @@ export class InMemoryStore implements Store {
     return {
       assistantId: current.id,
       selections,
-      availableConfigs: this.installations.map((item) => ({ id: item.id, kind: item.kind, name: item.displayNameKey, providerName: item.displayNameKey, availability: 'ready' as const, supportedLocales: Array.isArray(item.manifest.locales) ? item.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] })),
+      availableConfigs: [...this.providerConfigs.values()].filter((item) => item.ownerId === current.ownerId).map((item) => { const installation = this.installations.find((candidate) => candidate.id === item.installationId); return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayNameKey ?? item.installationId, availability: 'ready' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] } }),
       memory: { enabled: current.role.memoryEnabled !== false, itemCount: 0 },
       memoryItems: [],
     }

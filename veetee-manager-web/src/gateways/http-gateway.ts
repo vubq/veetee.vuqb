@@ -68,6 +68,13 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     return this.success({ value: roleConfig(assistantId, result.body as Record<string, unknown>), revision: 1, etag: result.response.headers.get('etag') ?? expectedEtag })
   }
 
+  async publishAssistant(assistantId: string, expectedEtag: string): Promise<GatewayResult<{ revision: number }, never>> {
+    const result = await this.request(`/api/v1/assistants/${assistantId}/publish`, { method: 'POST', headers: { 'If-Match': expectedEtag } })
+    if (!result.response.ok) return this.failure(result)
+    const body = result.body as { snapshot?: { revision?: number } }
+    return this.success({ revision: Number(body.snapshot?.revision ?? 0) })
+  }
+
   async listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>> {
     const result = await this.request(`/api/v1/voices?locale=${encodeURIComponent(locale)}`)
     if (!result.response.ok) return this.failure(result)
