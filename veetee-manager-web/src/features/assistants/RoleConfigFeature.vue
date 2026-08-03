@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Play, Save } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
 import type { RevisionConflictProblem, RoleConfig, RoleConfigDraft, Versioned, VoiceProfile } from '@/domain'
@@ -8,6 +8,7 @@ import { managerGatewayKey } from '@/gateways'
 import FormSection from '@/ui/patterns/FormSection.vue'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
 import VtButton from '@/ui/primitives/VtButton.vue'
+import VtCard from '@/ui/primitives/VtCard.vue'
 import VtFormField from '@/ui/primitives/VtFormField.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
 import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
@@ -31,6 +32,12 @@ const publishing = ref(false)
 const customRole = ref(true)
 const conflict = ref<RevisionConflictProblem<RoleConfig, RoleConfigDraft>>()
 const copying = ref(false)
+const loadState = ref<'loading' | 'ready' | 'error' | 'offline'>('loading')
+const loadError = ref('')
+const actionError = ref('')
+const stateHeading = ref<HTMLElement | null>(null)
+const actionErrorHeading = ref<HTMLElement | null>(null)
+let loadGeneration = 0
 
 function toDraft(config: RoleConfig): RoleConfigDraft {
   return {
@@ -60,15 +67,50 @@ const rateOptions: VtSelectOption[] = [{ value: '0.9', label: 'Chậm · 0,9×' 
 const pitchOptions: VtSelectOption[] = [{ value: '-1', label: 'Trầm nhẹ' }, { value: '0', label: 'Tự nhiên' }, { value: '1', label: 'Cao nhẹ' }]
 
 async function load() {
+  const generation = ++loadGeneration
   loading.value = true
-  const [configResult, voicesResult] = await Promise.all([gateway.getRoleConfig(props.assistantId), gateway.listVoices('vi-VN')])
-  if (configResult.ok) {
+  loadState.value = 'loading'
+  loadError.value = ''
+  try {
+    const [configResult, voicesResult] = await Promise.all([
+      gateway.getRoleConfig(props.assistantId),
+      gateway.listVoices('vi-VN'),
+    ])
+    if (generation !== loadGeneration) return
+    if (!configResult.ok || !voicesResult.ok) {
+      const offline = configResult.meta.offline || voicesResult.meta.offline
+      loadState.value = offline ? 'offline' : 'error'
+      loadError.value = !configResult.ok && !voicesResult.ok
+        ? 'Không tải được role config và danh sách giọng nói từ Manager API.'
+        : !configResult.ok
+          ? 'Không tải được role config từ Manager API.'
+          : 'Không tải được danh sách giọng nói; form tạm thời bị khóa để tránh chọn voice chưa đồng bộ.'
+      await focusStateHeading()
+      return
+    }
     resource.value = configResult.data
     draft.value = toDraft(configResult.data.value)
+    voices.value = voicesResult.data.items
     emit('revision', configResult.data.revision, false)
+    loadState.value = 'ready'
+  } catch {
+    if (generation !== loadGeneration) return
+    loadState.value = 'offline'
+    loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+    await focusStateHeading()
+  } finally {
+    if (generation === loadGeneration) loading.value = false
   }
-  if (voicesResult.ok) voices.value = voicesResult.data.items
-  loading.value = false
+}
+
+async function focusStateHeading() {
+  await nextTick()
+  stateHeading.value?.focus()
+}
+
+async function focusActionError() {
+  await nextTick()
+  actionErrorHeading.value?.focus()
 }
 
 function markDirty() { if (resource.value) emit('revision', resource.value.revision, true) }
@@ -82,34 +124,56 @@ async function previewVoice() {
 
 async function save() {
   if (!draft.value || !resource.value) return
+  actionError.value = ''
   saving.value = true
-  const result = await gateway.saveRoleConfig(props.assistantId, { ...draft.value, speech: { ...draft.value.speech } }, resource.value.etag)
-  saving.value = false
-  if (result.ok) {
-    resource.value = result.data
-    draft.value = toDraft(result.data.value)
-    emit('revision', result.data.revision, false)
-    notify('Đã lưu bản nháp', { tone: 'success', message: `Revision mới là #${result.data.revision}.` })
-    return
+  try {
+    const result = await gateway.saveRoleConfig(props.assistantId, { ...draft.value, speech: { ...draft.value.speech } }, resource.value.etag)
+    if (result.ok) {
+      resource.value = result.data
+      draft.value = toDraft(result.data.value)
+      emit('revision', result.data.revision, false)
+      notify('Đã lưu bản nháp', { tone: 'success', message: `Revision mới là #${result.data.revision}.` })
+      return
+    }
+    if (result.problem.type === 'revision-conflict') {
+      conflict.value = result.problem
+      return
+    }
+    actionError.value = result.meta.offline
+      ? 'Đang ngoại tuyến; draft vẫn được giữ trên màn hình.'
+      : 'Không thể lưu bản nháp; draft vẫn được giữ để bạn sửa hoặc thử lại.'
+    notify('Không thể lưu bản nháp', { tone: 'error', message: actionError.value, assertive: true })
+    await focusActionError()
+  } catch {
+    actionError.value = 'Không kết nối được Manager API; draft vẫn được giữ trên màn hình.'
+    notify('Không thể lưu bản nháp', { tone: 'error', message: actionError.value, assertive: true })
+    await focusActionError()
   }
-  if (result.problem.type === 'revision-conflict') {
-    conflict.value = result.problem
-    return
-  }
-  const message = result.problem.type === 'offline' ? 'Đang ngoại tuyến; draft vẫn được giữ trên màn hình.' : 'Hãy kiểm tra lại các trường cấu hình.'
-  notify('Không thể lưu bản nháp', { tone: 'error', message, assertive: true })
+  finally { saving.value = false }
 }
 
 async function publish() {
   if (!resource.value || dirty.value) return
+  actionError.value = ''
   publishing.value = true
-  const result = await gateway.publishAssistant(props.assistantId, resource.value.etag)
-  publishing.value = false
-  if (result.ok) {
-    await load()
-    notify('Đã áp dụng cấu hình', { tone: 'success', message: `Revision runtime #${result.data.revision} đã được publish.` })
-  } else {
-    notify('Không thể áp dụng cấu hình', { tone: 'error', message: 'Revision hiện tại không còn mới; hãy tải lại trước khi publish.', assertive: true })
+  try {
+    const result = await gateway.publishAssistant(props.assistantId, resource.value.etag)
+    if (result.ok) {
+      await load()
+      notify('Đã áp dụng cấu hình', { tone: 'success', message: `Revision runtime #${result.data.revision} đã được publish.` })
+    } else {
+      actionError.value = result.meta.offline
+        ? 'Đang ngoại tuyến; chưa thể áp dụng cấu hình.'
+        : 'Revision hiện tại không còn mới; hãy tải lại trước khi publish.'
+      notify('Không thể áp dụng cấu hình', { tone: 'error', message: actionError.value, assertive: true })
+      await focusActionError()
+    }
+  } catch {
+    actionError.value = 'Không kết nối được Manager API; cấu hình chưa được publish.'
+    notify('Không thể áp dụng cấu hình', { tone: 'error', message: actionError.value, assertive: true })
+    await focusActionError()
+  } finally {
+    publishing.value = false
   }
 }
 
@@ -139,14 +203,38 @@ onMounted(load)
 
 <template>
   <div
-    v-if="loading"
+    v-if="loadState === 'loading'"
     class="role-loading"
+    role="status"
+    aria-live="polite"
+    aria-label="Đang tải role config"
   >
     <VtSkeleton height="52px" /><VtSkeleton height="180px" /><VtSkeleton height="150px" />
   </div>
+  <VtCard
+    v-else-if="loadState === 'error' || loadState === 'offline'"
+    class="role-state role-state-error"
+    role="alert"
+  >
+    <h2
+      ref="stateHeading"
+      tabindex="-1"
+    >
+      {{ loadState === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được role config' }}
+    </h2>
+    <p>{{ loadError }}</p>
+    <VtButton
+      variant="secondary"
+      :loading="loading"
+      @click="load"
+    >
+      Thử lại
+    </VtButton>
+  </VtCard>
   <form
-    v-else-if="draft"
+    v-else-if="loadState === 'ready' && draft"
     class="role-form"
+    :aria-busy="saving || publishing"
     @submit.prevent="save"
     @input="markDirty"
     @change="markDirty"
@@ -289,6 +377,15 @@ onMounted(load)
     </FormSection>
 
     <footer class="form-actions">
+      <p
+        v-if="actionError"
+        ref="actionErrorHeading"
+        class="action-error"
+        role="alert"
+        tabindex="-1"
+      >
+        {{ actionError }}
+      </p>
       <span
         class="dirty-status"
         :class="{ dirty }"
@@ -338,6 +435,10 @@ onMounted(load)
 
 <style scoped>
 .role-loading, .role-form { display: grid; gap: 14px; }
+.role-state { display: grid; justify-items: center; gap: 4px; color: var(--vt-text-muted); padding: 24px; text-align: center; }
+.role-state h2 { margin: 0; color: var(--vt-text); font-size: 14px; }
+.role-state p { max-width: 460px; margin: 3px auto 10px; font-size: 11px; line-height: 1.5; }
+.role-state h2:focus-visible, .action-error:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--vt-focus); border-radius: 3px; }
 .two-columns { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr); gap: 10px; }
 .three-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .voice-preview { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; border-top: 1px solid var(--vt-border); padding-top: 11px; }
@@ -345,5 +446,6 @@ onMounted(load)
 .form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--vt-border); padding-top: 14px; }
 .dirty-status { margin-right: auto; color: var(--vt-success); font-size: 10px; }
 .dirty-status.dirty { color: var(--vt-warning); }
+.action-error { flex: 1; margin: 0; color: var(--vt-danger); font-size: 10px; line-height: 1.45; }
 @media (max-width: 660px) { .two-columns, .three-columns { grid-template-columns: 1fr; } .form-actions { flex-wrap: wrap; } .dirty-status { width: 100%; } }
 </style>

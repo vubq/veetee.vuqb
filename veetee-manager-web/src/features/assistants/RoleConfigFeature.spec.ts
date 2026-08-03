@@ -1,0 +1,118 @@
+import { fireEvent, render, waitFor } from '@testing-library/vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import type { GatewayFailure, GatewaySuccess } from '@/domain'
+import { managerGatewayKey, type ManagerGateway } from '@/gateways'
+import { createRoleConfigFixtures, createVoiceFixtures, ASSISTANT_IDS } from '@/mocks/fixtures/assistants'
+
+import RoleConfigFeature from './RoleConfigFeature.vue'
+
+const assistantId = ASSISTANT_IDS.may
+const roleResource = createRoleConfigFixtures()[assistantId]
+if (!roleResource) throw new Error('role fixture missing')
+const resource = roleResource
+const voices = createVoiceFixtures()
+
+function meta(offline = false) {
+  return {
+    requestId: 'request-role-test',
+    completedAt: new Date(0).toISOString(),
+    delayMs: 0,
+    freshness: offline ? 'stale' as const : 'fresh' as const,
+    offline,
+  }
+}
+
+function success<T>(data: T, offline = false): GatewaySuccess<T> {
+  return { ok: true, data, meta: meta(offline) }
+}
+
+function failure(offline = false): GatewayFailure<never> {
+  return {
+    ok: false,
+    problem: {
+      type: offline ? 'offline' : 'not-found',
+      code: offline ? 'OFFLINE_MUTATION_BLOCKED' : 'RESOURCE_NOT_FOUND',
+      messageKey: offline ? 'problem.offline.mutationBlocked' : 'problem.assistant.notFound',
+      requestId: 'request-role-test',
+      retryable: offline,
+      ...(offline ? {} : { resource: 'assistant', resourceId: assistantId }),
+    } as never,
+    meta: meta(offline),
+  }
+}
+
+function gateway(overrides: Partial<ManagerGateway> = {}): ManagerGateway {
+  return {
+    getRoleConfig: vi.fn(async () => success(resource)),
+    listVoices: vi.fn(async () => success({ items: voices, total: voices.length })),
+    saveRoleConfig: vi.fn(async () => success(resource)),
+    publishAssistant: vi.fn(async () => success({ revision: resource.revision + 1 })),
+    ...overrides,
+  } as unknown as ManagerGateway
+}
+
+function renderFeature(managerGateway: ManagerGateway) {
+  return render(RoleConfigFeature, {
+    props: { assistantId },
+    global: {
+      provide: { [managerGatewayKey as symbol]: managerGateway },
+      stubs: { RouterLink: { template: '<a><slot /></a>' } },
+    },
+  })
+}
+
+afterEach(() => vi.restoreAllMocks())
+
+describe('RoleConfigFeature read states', () => {
+  it('shows a retryable error when role config cannot be read', async () => {
+    const view = renderFeature(gateway({ getRoleConfig: vi.fn(async () => failure()) }))
+
+    const heading = await view.findByRole('heading', { name: 'Không tải được role config' })
+    expect(view.getByText('Không tải được role config từ Manager API.')).toBeTruthy()
+    expect(view.getByRole('button', { name: 'Thử lại' })).toBeTruthy()
+    await waitFor(() => expect(document.activeElement).toBe(heading))
+  })
+
+  it('does not expose a partial form when voice catalog read fails', async () => {
+    const view = renderFeature(gateway({ listVoices: vi.fn(async () => failure()) }))
+
+    await view.findByRole('heading', { name: 'Không tải được role config' })
+    expect(view.getByText('Không tải được danh sách giọng nói; form tạm thời bị khóa để tránh chọn voice chưa đồng bộ.')).toBeTruthy()
+    expect(view.queryByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })).toBeNull()
+  })
+
+  it('retries a transient read failure and restores the role form', async () => {
+    const getRoleConfig = vi.fn()
+      .mockResolvedValueOnce(failure())
+      .mockResolvedValueOnce(success(resource))
+    const view = renderFeature(gateway({ getRoleConfig }))
+
+    await view.findByRole('button', { name: 'Thử lại' })
+    await fireEvent.click(view.getByRole('button', { name: 'Thử lại' }))
+
+    expect(await view.findByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })).toBeTruthy()
+    expect(getRoleConfig).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('RoleConfigFeature mutations', () => {
+  it('keeps the draft and exposes an offline save error', async () => {
+    const view = renderFeature(gateway({ saveRoleConfig: vi.fn(async () => failure(true)) }))
+    const prompt = await view.findByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })
+    await fireEvent.update(prompt, 'Draft role phải được giữ khi offline.')
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
+
+    expect(await view.findByText('Đang ngoại tuyến; draft vẫn được giữ trên màn hình.')).toBeTruthy()
+    expect((prompt as HTMLTextAreaElement).value).toContain('Draft role')
+  })
+
+  it('surfaces a publish error without losing the loaded form', async () => {
+    const view = renderFeature(gateway({ publishAssistant: vi.fn(async () => failure()) }))
+    await view.findByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })
+    await fireEvent.click(view.getByRole('button', { name: 'Áp dụng runtime' }))
+
+    expect(await view.findByText('Revision hiện tại không còn mới; hãy tải lại trước khi publish.')).toBeTruthy()
+    expect(view.getByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })).toBeTruthy()
+  })
+})
