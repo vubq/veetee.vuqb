@@ -76,3 +76,38 @@ test('provider config is schema-driven and rejects unknown fields', async () => 
     await app.close()
   }
 })
+
+test('OpenAPI is generated from every registered route', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const response = await app.inject({ method: 'GET', url: '/openapi.json' })
+    assert.equal(response.statusCode, 200)
+    const document = response.json() as {
+      openapi: string
+      paths: Record<string, Record<string, { operationId?: string; responses?: Record<string, unknown> }>>
+      components?: { securitySchemes?: Record<string, unknown> }
+    }
+    assert.equal(document.openapi, '3.1.0')
+    const requiredPaths = [
+      '/health/live', '/health/ready', '/api/v1/auth/login', '/api/v1/auth/me', '/api/v1/auth/logout',
+      '/api/v1/secret-references', '/api/v1/secret-references/{id}', '/api/v1/provider-installations',
+      '/api/v1/provider-configs', '/api/v1/provider-configs/{id}', '/api/v1/voices', '/api/v1/assistants',
+      '/api/v1/assistants/{id}', '/api/v1/assistants/{id}/role-config', '/api/v1/assistants/{id}/model-memory',
+      '/api/v1/assistants/{id}/model-memory/provider', '/api/v1/assistants/{id}/model-memory/memory',
+      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair',
+      '/internal/v1/runtime-config',
+    ]
+    for (const path of requiredPaths) assert.ok(document.paths[path], `missing OpenAPI path ${path}`)
+    for (const [path, methods] of Object.entries(document.paths)) {
+      for (const [method, operation] of Object.entries(methods)) {
+        assert.ok(operation.operationId, `missing operationId for ${method} ${path}`)
+        assert.ok(operation.responses && Object.keys(operation.responses).length > 0, `missing responses for ${method} ${path}`)
+      }
+    }
+    assert.ok(document.components?.securitySchemes?.veeteeSession)
+    assert.ok(document.components?.securitySchemes?.machineBearer)
+  } finally {
+    await app.close()
+  }
+})

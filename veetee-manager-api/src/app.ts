@@ -4,6 +4,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
 import sensible from '@fastify/sensible'
+import swagger from '@fastify/swagger'
 import argon2 from 'argon2'
 import { readEnvironment, type Environment } from './config.js'
 import { EncryptedFileSecretStore, type SecretValueStore } from './secret-store.js'
@@ -64,6 +65,49 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   await app.register(sensible)
   await app.register(cookie)
   await app.register(cors, { origin: allowedOrigins, credentials: true })
+  await app.register(swagger, {
+    openapi: {
+      openapi: '3.1.0',
+      info: {
+        title: 'Veetee Manager API',
+        version: '0.1.0',
+        description: 'Control-plane API for assistant, provider and device configuration.',
+      },
+      servers: [{ url: '{baseUrl}', variables: { baseUrl: { default: 'http://127.0.0.1:8001' } } }],
+      tags: [
+        { name: 'auth', description: 'Owner session lifecycle' },
+        { name: 'providers', description: 'Provider catalog and configuration' },
+        { name: 'assistants', description: 'Assistant draft and publication configuration' },
+        { name: 'devices', description: 'Device pairing and assistant bindings' },
+        { name: 'runtime', description: 'Machine-only published snapshot access' },
+        { name: 'health', description: 'Process readiness probes' },
+      ],
+      components: {
+        securitySchemes: {
+          veeteeSession: { type: 'apiKey', in: 'cookie', name: 'veetee_session' },
+          machineBearer: { type: 'http', scheme: 'bearer' },
+        },
+      },
+    },
+    transform: ({ schema, url, route }) => {
+      const method = (Array.isArray(route.method) ? route.method[0] : route.method) ?? 'GET'
+      const operationId = schema?.operationId ?? operationIdFor(method, url)
+      const tag = tagFor(url)
+      const response = schema?.response ?? { default: { type: 'object', additionalProperties: true } }
+      const security = securityFor(url)
+      return {
+        url,
+        schema: {
+          ...schema,
+          operationId,
+          tags: schema?.tags ?? [tag],
+          summary: schema?.summary ?? `${method} ${url}`,
+          response,
+          ...(security ? { security } : {}),
+        },
+      }
+    },
+  })
 
   app.decorateRequest('ownerId', null)
   app.addHook('preHandler', async (request: OwnerRequest, reply) => {
@@ -232,7 +276,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     return reply.header('ETag', publication.etag).send(publication.snapshot)
   })
 
-  app.get('/openapi.json', async () => openApiDocument())
+  app.get('/openapi.json', { schema: { hide: true } }, async () => app.swagger())
   app.setErrorHandler((error, _request, reply) => {
     const value = error as { validation?: unknown; message?: string }
     if (value.validation) return reply.code(400).type('application/problem+json').send({ code: 'VALIDATION_ERROR', detail: value.message })
@@ -301,21 +345,24 @@ function safeEqual(left: string, right: string): boolean {
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer)
 }
 
-function openApiDocument(): Record<string, unknown> {
-  return {
-    openapi: '3.1.0', info: { title: 'Veetee Manager API', version: '0.1.0' }, servers: [{ url: '{baseUrl}', variables: { baseUrl: { default: 'http://127.0.0.1:8001' } } }],
-    paths: {
-      '/api/v1/auth/login': { post: { operationId: 'login', responses: { '200': { description: 'Authenticated session' }, '401': { description: 'Invalid credentials' } } } },
-      '/api/v1/auth/me': { get: { operationId: 'getCurrentUser', responses: { '200': { description: 'Current user and CSRF token' }, '401': { description: 'Unauthorized' } } } },
-      '/api/v1/auth/logout': { post: { operationId: 'logout', responses: { '204': { description: 'Logged out' } } } },
-      '/api/v1/secret-references': { get: { operationId: 'listSecretReferences', responses: { '200': { description: 'Secret metadata' } } }, post: { operationId: 'createSecretReference', responses: { '201': { description: 'Created metadata; write-only value is omitted' } } } },
-      '/api/v1/secret-references/{id}': { patch: { operationId: 'updateSecretReference', responses: { '200': { description: 'Updated metadata' } } }, delete: { operationId: 'deleteSecretReference', responses: { '204': { description: 'Deleted' } } } },
-      '/api/v1/provider-installations': { get: { operationId: 'listProviderInstallations', responses: { '200': { description: 'Provider catalog' } } } },
-      '/api/v1/provider-configs': { get: { operationId: 'listProviderConfigs', responses: { '200': { description: 'Provider configs' } } }, post: { operationId: 'createProviderConfig', responses: { '201': { description: 'Created' } } } },
-      '/api/v1/assistants': { get: { operationId: 'listAssistants', responses: { '200': { description: 'Assistants' } } }, post: { operationId: 'createAssistant', responses: { '201': { description: 'Created' } } } },
-      '/api/v1/assistants/{id}/role-config': { get: { operationId: 'getRoleConfig', responses: { '200': { description: 'Role config' } } }, patch: { operationId: 'patchRoleConfig', responses: { '200': { description: 'Updated' } } } },
-      '/api/v1/assistants/{id}/publish': { post: { operationId: 'publishAssistant', responses: { '200': { description: 'Published' } } } },
-      '/internal/v1/runtime-config': { get: { operationId: 'getRuntimeConfig', responses: { '200': { description: 'Runtime snapshot' }, '304': { description: 'Unchanged' } } } },
-    },
-  }
+function operationIdFor(method: string, url: string): string {
+  const parts = url.split('/').filter(Boolean).map((part) => part.startsWith(':') ? `By${part.slice(1).replace(/(^|[-_])([a-z])/g, (_match, _separator: string, character: string) => character.toUpperCase())}` : part.replace(/(^|[-_])([a-z])/g, (_match, _separator: string, character: string) => character.toUpperCase()))
+  return `${method.toLowerCase()}${parts.join('') || 'root'}`
+}
+
+function tagFor(url: string): string {
+  if (url.startsWith('/internal/')) return 'runtime'
+  if (url.startsWith('/health/')) return 'health'
+  const segment = url.split('/').filter(Boolean)[2]
+  if (segment === 'auth') return 'auth'
+  if (segment === 'provider-configs' || segment === 'provider-installations' || segment === 'secret-references' || segment === 'voices') return 'providers'
+  if (segment === 'assistants') return 'assistants'
+  if (segment === 'devices') return 'devices'
+  return 'health'
+}
+
+function securityFor(url: string): ReadonlyArray<Record<string, readonly string[]>> | undefined {
+  if (url.startsWith('/health/') || url === '/api/v1/auth/login' || url === '/openapi.json') return undefined
+  if (url.startsWith('/internal/')) return [{ machineBearer: [] }]
+  return [{ veeteeSession: [] }]
 }
