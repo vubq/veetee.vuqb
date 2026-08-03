@@ -11,11 +11,14 @@ import {
 } from './gateways'
 import { i18n } from './i18n'
 import { createMockGatewayDependencies } from './mocks'
+import { createHttpGatewayDependencies } from './gateways/http-gateway'
 import { router } from './app/router'
 import './assets/main.css'
 
 const app = createApp(App)
-const gateways = createMockGatewayDependencies()
+const gateways = import.meta.env.VITE_MANAGER_API_URL
+  ? createHttpGatewayDependencies(import.meta.env.VITE_MANAGER_API_URL)
+  : createMockGatewayDependencies()
 
 app.use(createPinia())
 app.use(router)

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "assistantId": "fixture-assistant",
+  "locale": "vi-VN",
+  "basePrompt": "Bạn là trợ lý Veetee thân thiện, trả lời rõ ràng và ngắn gọn khi có thể.",
+  "personality": {
+    "id": "fixture-personality",
+    "revision": 1,
+    "name": "natural",
+    "prompt": "Giọng điệu tự nhiên, tôn trọng ngữ cảnh và không bịa thông tin."
+  },
+  "speech": {
+    "voiceId": "fixture-voice",
+    "rate": 1.0,
+    "pitch": 0.0,
+    "style": "natural"
+  },
+  "progress": {
+    "enabled": false,
+    "acknowledgementId": "processing",
+    "deadlineMs": 900
+  },
+  "providers": {
+    "vad": {
+      "providerId": "veetee.vad.energy",
+      "version": "1.0.0",
+      "config": {
+        "speechThreshold": 0.006,
+        "releaseThreshold": 0.003,
+        "minSpeechMs": 120,
+        "minSilenceMs": 420
+      }
+    },
+    "asr": {
+      "providerId": "veetee.asr.fixture",
+      "version": "1.0.0",
+      "config": {
+        "text": "Xin chào, đây là một lượt kiểm thử Veetee."
+      }
+    },
+    "llm": {
+      "providerId": "veetee.llm.fixture",
+      "version": "1.0.0",
+      "config": {
+        "segments": ["Chào bạn! ", "Tôi đã nhận được câu nói và đang hoạt động bình thường."]
+      }
+    },
+    "tts": {
+      "providerId": "veetee.tts.fixture-tone",
+      "version": "1.0.0",
+      "config": {
+        "sampleRate": 24000,
+        "toneHz": 440,
+        "chunkMs": 60,
+        "amplitude": 0.08
+      }
+    },
+    "intent": {
+      "mode": "disabled"
+    },
+    "memory": {
+      "mode": "disabled"
+    }
+  },
+  "wire": {
+    "profile": "ws-v3",
+    "uplinkSampleRate": 16000,
+    "downlinkSampleRate": 24000,
+    "frameDurationMs": 60
+  },
+  "tools": []
+}

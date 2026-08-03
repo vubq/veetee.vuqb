@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "services": [
+    {
+      "name": "veetee-manager-api",
+      "command": ["npm", "run", "dev"],
+      "cwd": "${VEETEE_ROOT}/veetee-manager-api",
+      "environment": {
+        "VEETEE_API_HOST": "127.0.0.1",
+        "VEETEE_API_PORT": "18001",
+        "VEETEE_DATABASE_MODE": "memory",
+        "VEETEE_INITIAL_SNAPSHOT_FILE": "${VEETEE_ROOT}/veetee-server/config/fixtures/m0.json",
+        "VEETEE_PROVIDER_CATALOG_FILE": "${VEETEE_ROOT}/veetee-manager-api/config/provider-catalog.json",
+        "VEETEE_ALLOWED_ORIGINS": "http://127.0.0.1:18081",
+        "VEETEE_AUTH_MODE": "disabled",
+        "VEETEE_LOG_LEVEL": "info"
+      },
+      "healthUrl": "http://127.0.0.1:18001/health/ready",
+      "readyTimeoutSeconds": 30,
+      "dependencies": []
+    },
+    {
+      "name": "veetee-server",
+      "command": ["${VEETEE_ROOT}/veetee-server/.venv/bin/python", "-m", "veetee_server"],
+      "cwd": "${VEETEE_ROOT}/veetee-server",
+      "environment": {
+        "VEETEE_CONFIG_SOURCE": "fixture",
+        "VEETEE_CONFIG_FIXTURE_FILE": "${VEETEE_ROOT}/veetee-server/config/fixtures/m0.json",
+        "VEETEE_VOICE_HOST": "127.0.0.1",
+        "VEETEE_VOICE_PORT": "18000",
+        "VEETEE_GROQ_SECRET_FILE": "${VEETEE_ROOT}/secrets/groq.keys"
+      },
+      "healthUrl": "http://127.0.0.1:18000/health/ready",
+      "readyTimeoutSeconds": 20,
+      "dependencies": []
+    },
+    {
+      "name": "manager-web-preview",
+      "command": ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "18081"],
+      "cwd": "${VEETEE_ROOT}/veetee-manager-web",
+      "environment": {},
+      "healthUrl": "http://127.0.0.1:18081/",
+      "readyTimeoutSeconds": 20,
+      "dependencies": ["veetee-manager-api"]
+    }
+  ]
+}

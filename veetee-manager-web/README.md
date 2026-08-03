@@ -1,7 +1,9 @@
-# Veetee Manager Web — UI preview
+# Veetee Manager Web
 
-Đây là bản xem trước giao diện chạy hoàn toàn bằng mock data. Ứng dụng chưa gọi
-Manager API, Voice Server, database hoặc firmware.
+UI có hai chế độ. Không đặt `VITE_MANAGER_API_URL` thì giữ preview fixture để
+review visual; đặt biến này khi chạy cùng Manager API thì các form assistant,
+role, provider/model-memory và voice đọc/ghi qua HTTP API với ETag. UI không truy
+cập database, giữ secret hoặc chứa business prompt/provider vendor trong source.
 
 ## Yêu cầu
 
@@ -14,6 +16,12 @@ Manager API, Voice Server, database hoặc firmware.
 ```bash
 npm ci
 npm run dev -- --host 0.0.0.0
+```
+
+Production-like local API mode:
+
+```bash
+VITE_MANAGER_API_URL=http://127.0.0.1:8001 npm run dev -- --host 0.0.0.0
 ```
 
 Vite sẽ in URL local và LAN thực tế. Các route chính:
@@ -34,6 +42,7 @@ npm run build
 npm run test:e2e
 ```
 
-Mọi mutation trong preview chỉ tồn tại trong memory. Dùng nút **Đặt lại dữ liệu
-mẫu** để khôi phục fixtures xác định.
-
+Khi không có API, mọi mutation trong preview chỉ tồn tại trong memory. Dùng nút
+**Đặt lại dữ liệu mẫu** để khôi phục fixtures xác định. Khi có API, save/publish
+đi qua config revision; đổi provider/model/prompt không cần sửa `.env` hoặc restart
+Voice Server.

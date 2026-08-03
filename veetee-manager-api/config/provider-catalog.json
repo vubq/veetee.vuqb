@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "installations": [
+    {
+      "id": "veetee.vad.energy",
+      "kind": "vad",
+      "displayNameKey": "provider.vad.energy",
+      "version": "1.0.0",
+      "manifest": { "locales": ["*"], "supportsCancel": true },
+      "configSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["speechThreshold", "releaseThreshold", "minSpeechMs", "minSilenceMs"],
+        "properties": {
+          "speechThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+          "releaseThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+          "minSpeechMs": { "type": "integer", "minimum": 1 },
+          "minSilenceMs": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    {
+      "id": "veetee.asr.fixture",
+      "kind": "asr",
+      "displayNameKey": "provider.asr.fixture",
+      "version": "1.0.0",
+      "manifest": { "locales": ["*"], "supportsPartial": false, "supportsCancel": true },
+      "configSchema": { "type": "object", "additionalProperties": false, "required": ["text"], "properties": { "text": { "type": "string", "minLength": 1 } } }
+    },
+    {
+      "id": "groq.chat",
+      "kind": "llm",
+      "displayNameKey": "provider.llm.groq",
+      "version": "1.0.0",
+      "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsTools": true },
+      "configSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["endpoint", "model", "maxTokens"],
+        "properties": {
+          "endpoint": { "type": "string", "format": "uri" },
+          "model": { "type": "string", "minLength": 1 },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+          "maxTokens": { "type": "integer", "minimum": 1, "maximum": 32768 }
+        }
+      }
+    },
+    {
+      "id": "veetee.llm.fixture",
+      "kind": "llm",
+      "displayNameKey": "provider.llm.fixture",
+      "version": "1.0.0",
+      "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsTools": false },
+      "configSchema": { "type": "object", "additionalProperties": false, "required": ["segments"], "properties": { "segments": { "type": "array", "items": { "type": "string" }, "minItems": 1 } } }
+    },
+    {
+      "id": "vieneu.v3-turbo",
+      "kind": "tts",
+      "displayNameKey": "provider.tts.vieneu",
+      "version": "1.0.0",
+      "manifest": { "locales": ["vi-VN"], "supportsStreaming": true, "supportsCancel": true },
+      "configSchema": { "type": "object", "additionalProperties": false, "required": ["modelPath", "sampleRate"], "properties": { "modelPath": { "type": "string", "minLength": 1 }, "sampleRate": { "type": "integer", "minimum": 1 } } }
+    },
+    {
+      "id": "veetee.tts.fixture-tone",
+      "kind": "tts",
+      "displayNameKey": "provider.tts.fixture",
+      "version": "1.0.0",
+      "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsCancel": true },
+      "configSchema": { "type": "object", "additionalProperties": false, "required": ["sampleRate", "toneHz", "chunkMs", "amplitude"], "properties": { "sampleRate": { "type": "integer", "minimum": 1 }, "toneHz": { "type": "number", "minimum": 1 }, "chunkMs": { "type": "integer", "minimum": 1 }, "amplitude": { "type": "number", "minimum": 0, "maximum": 1 } } }
+    }
+  ]
+}

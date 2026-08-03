@@ -1,5 +1,9 @@
 # Dependencies and generated build/test output
 **/node_modules/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/*.egg-info/
 **/dist/
 **/build/
 **/.vite/
