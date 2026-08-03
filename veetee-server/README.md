@@ -14,6 +14,8 @@ python3 -m venv .venv
 ./.venv/bin/pip install -e '.[local-tts]'
 # PhoWhisper-small CTranslate2; thêm local-asr-cuda để dùng CUDA 12 trên host:
 ./.venv/bin/pip install -e '.[local-asr-cuda]'
+# Silero VAD ONNX (modelPath phải được provision trong provider snapshot):
+./.venv/bin/pip install -e '.[local-vad]'
 VEETEE_CONFIG_SOURCE=fixture \
 VEETEE_CONFIG_FIXTURE_FILE=config/fixtures/m0.json \
 VEETEE_GROQ_SECRET_FILE=../secrets/groq.keys \
@@ -32,6 +34,11 @@ PhoWhisper adapter dùng `faster-whisper` với `modelPath`, `device` và
 runtime wheel trong virtualenv nếu có; thiếu runtime tạo provider error có mã,
 không âm thầm chuyển sang provider khác. `local-asr-cuda` là optional extra vì
 CUDA wheels khá lớn và không cần cho fixture/CPU-only bring-up.
+
+Silero VAD adapter dùng ONNX recurrent state và reframe mỗi input thành
+`windowSamples` (mặc định 512 samples ở 16 kHz). Model path, threshold và
+endpoint policy đều đến từ snapshot; thiếu artifact/dependency tạo typed provider
+error, không tự chuyển về energy VAD.
 
 Health:
 

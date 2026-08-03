@@ -238,6 +238,11 @@ Pin candidate:
 - 16 kHz wrapper nhận 512 samples, tức 32 ms; adapter phải reframe PCM từ Opus 60 ms qua stateful ring.
 - Upstream công bố model khoảng 2 MB và xử lý một chunk 30+ ms dưới 1 ms trên một CPU thread; con số phải benchmark lại trên host.
 
+Implementation hiện expose provider ID `veetee.vad.silero`; `modelPath`,
+`sampleRate`, `windowSamples`, dual threshold và endpoint durations đều là config
+schema. ONNX recurrent state được giữ bounded trong một provider instance; thiếu
+artifact/dependency là typed activation error, không fallback sang energy VAD.
+
 Nguồn: [Silero README](https://github.com/snakers4/silero-vad/blob/7e30209a3e901f9842f81b225f3e93d8199902b1/README.md), [wrapper 512 samples](https://github.com/snakers4/silero-vad/blob/7e30209a3e901f9842f81b225f3e93d8199902b1/src/silero_vad/utils_vad.py#L57-L67), [PyPI 6.2.1](https://pypi.org/project/silero-vad/6.2.1/).
 
 ### 9.3 ASR — PhoWhisper-small

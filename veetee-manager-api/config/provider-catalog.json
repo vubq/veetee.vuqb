@@ -20,6 +20,27 @@
       }
     },
     {
+      "id": "veetee.vad.silero",
+      "kind": "vad",
+      "displayNameKey": "provider.vad.silero",
+      "version": "1.0.0",
+      "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsCancel": true, "requiresLocalArtifact": true },
+      "configSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["modelPath", "speechThreshold", "releaseThreshold", "minSpeechMs", "minSilenceMs"],
+        "properties": {
+          "modelPath": { "type": "string", "minLength": 1 },
+          "sampleRate": { "type": "integer", "enum": [16000] },
+          "windowSamples": { "type": "integer", "minimum": 128, "maximum": 4096 },
+          "speechThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+          "releaseThreshold": { "type": "number", "minimum": 0, "maximum": 1 },
+          "minSpeechMs": { "type": "integer", "minimum": 1 },
+          "minSilenceMs": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    {
       "id": "veetee.asr.fixture",
       "kind": "asr",
       "displayNameKey": "provider.asr.fixture",

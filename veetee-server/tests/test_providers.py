@@ -5,7 +5,7 @@ import types
 import numpy as np
 import pytest
 
-from veetee_server.providers import AudioChunk, GroqLLM, PatternIntent, PhoWhisperASR, SessionWindowMemory, VieNeuTTS
+from veetee_server.providers import AudioChunk, GroqLLM, PatternIntent, PhoWhisperASR, SessionWindowMemory, SileroVAD, VieNeuTTS
 
 
 @pytest.mark.asyncio
@@ -124,6 +124,35 @@ async def test_phowhisper_adapter_uses_configured_runtime(monkeypatch):
     assert calls[2][1]["language"] == "vi"
     assert calls[2][1]["condition_on_previous_text"] is False
     assert calls[2][1]["without_timestamps"] is True
+
+
+def test_silero_vad_streams_recurrent_state_and_endpoints(monkeypatch):
+    calls = []
+
+    class FakeSession:
+        def run(self, _outputs, inputs):
+            calls.append(inputs)
+            probability = 0.9 if len(calls) == 1 else 0.05
+            return np.asarray([[probability]], dtype=np.float32), np.zeros((2, 1, 128), dtype=np.float32)
+
+    monkeypatch.setitem(sys.modules, "onnxruntime", types.SimpleNamespace(InferenceSession=lambda path, providers: FakeSession()))
+    provider = SileroVAD({
+        "modelPath": "fixture-silero.onnx",
+        "sampleRate": 16_000,
+        "windowSamples": 512,
+        "speechThreshold": 0.6,
+        "releaseThreshold": 0.2,
+        "minSpeechMs": 32,
+        "minSilenceMs": 32,
+    })
+    speech = np.full(512, 12_000, dtype="<i2").tobytes()
+    silence = np.zeros(512, dtype="<i2").tobytes()
+    assert provider.accept(speech, 16_000) is True
+    assert provider.accept(silence, 16_000) is True
+    assert provider.endpoint() is True
+    assert calls[0]["input"].shape == (1, 512)
+    assert calls[0]["state"].shape == (2, 1, 128)
+    assert int(calls[0]["sr"]) == 16_000
 
 
 def test_groq_provider_resolves_one_secret_ref_without_file(tmp_path):

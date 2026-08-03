@@ -24,6 +24,7 @@ local-asr-cuda = [
   "nvidia-cuda-nvrtc-cu12>=12,<13",
   "nvidia-cudnn-cu12>=9,<10",
 ]
+local-vad = ["onnxruntime>=1.18,<2", "numpy>=1.26,<3"]
 
 [project.scripts]
 veetee-server = "veetee_server.main:main"

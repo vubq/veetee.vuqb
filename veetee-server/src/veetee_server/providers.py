@@ -128,6 +128,89 @@ class EnergyVAD:
         return self._silence_ms >= self._min_silence_ms
 
 
+class SileroVAD:
+    """Config-driven Silero ONNX VAD with bounded streaming state."""
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        model_path = config.get("modelPath")
+        if not isinstance(model_path, str) or not model_path.strip():
+            raise ConfigurationError("Silero VAD provider requires modelPath")
+        try:
+            import numpy as np
+            import onnxruntime as ort
+        except ImportError as exc:
+            raise ProviderError("VAD_DEPENDENCY_MISSING", "onnxruntime and numpy are required for Silero VAD") from exc
+        self._np = np
+        try:
+            self._session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError("VAD_MODEL_LOAD_FAILED", "Silero VAD model could not be loaded") from exc
+        self._sample_rate = _positive_int(config, "sampleRate", fallback=16_000)
+        self._window_samples = _positive_int(config, "windowSamples", fallback=512)
+        self._speech_threshold = _float(config, "speechThreshold")
+        self._release_threshold = _float(config, "releaseThreshold")
+        if not 0 <= self._release_threshold <= self._speech_threshold <= 1:
+            raise ConfigurationError("Silero VAD thresholds must satisfy 0 <= release <= speech <= 1")
+        self._min_speech_ms = _positive_int(config, "minSpeechMs")
+        self._min_silence_ms = _positive_int(config, "minSilenceMs")
+        self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self._carry = bytearray()
+        self._speech_ms = 0
+        self._silence_ms = 0
+        self._active = False
+
+    def reset(self) -> None:
+        self._state = self._np.zeros((2, 1, 128), dtype=self._np.float32)
+        self._carry.clear()
+        self._speech_ms = 0
+        self._silence_ms = 0
+        self._active = False
+
+    def accept(self, pcm: bytes, sample_rate: int) -> bool:
+        if sample_rate != self._sample_rate:
+            raise ProviderError("VAD_SAMPLE_RATE_UNSUPPORTED", "Silero VAD requires its configured sample rate")
+        if len(pcm) % 2:
+            raise ProviderError("VAD_PCM_ALIGNMENT", "VAD input must be signed 16-bit PCM")
+        self._carry.extend(pcm)
+        window_bytes = self._window_samples * 2
+        while len(self._carry) >= window_bytes:
+            window = bytes(self._carry[:window_bytes])
+            del self._carry[:window_bytes]
+            self._accept_window(window)
+        return self._active or self._speech_ms >= self._min_speech_ms
+
+    def endpoint(self) -> bool:
+        if self._speech_ms < self._min_speech_ms:
+            return False
+        self._active = True
+        return self._silence_ms >= self._min_silence_ms
+
+    def _accept_window(self, pcm: bytes) -> None:
+        samples = self._np.frombuffer(pcm, dtype="<i2").astype(self._np.float32) / 32768.0
+        try:
+            output, state = self._session.run(
+                None,
+                {
+                    "input": samples.reshape(1, -1),
+                    "state": self._state,
+                    "sr": self._np.asarray(self._sample_rate, dtype=self._np.int64),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise ProviderError("VAD_INFERENCE_FAILED", "Silero VAD inference failed") from exc
+        probability = float(self._np.asarray(output).reshape(-1)[0])
+        next_state = self._np.asarray(state, dtype=self._np.float32)
+        if next_state.shape != self._state.shape:
+            raise ProviderError("VAD_STATE_INVALID", "Silero VAD returned an invalid recurrent state")
+        self._state = next_state
+        duration_ms = round(self._window_samples * 1000 / self._sample_rate)
+        if probability >= self._speech_threshold:
+            self._speech_ms += duration_ms
+            self._silence_ms = 0
+        elif probability <= self._release_threshold:
+            self._silence_ms += duration_ms
+
+
 class FixtureASR:
     def __init__(self, config: dict[str, Any]) -> None:
         text = config.get("text")
@@ -599,6 +682,8 @@ class ProviderRegistry:
         provider_id, config = self._selection(item)
         if provider_id == "veetee.vad.energy":
             return EnergyVAD(config)
+        if provider_id == "veetee.vad.silero":
+            return SileroVAD(config)
         raise ProviderError("VAD_PROVIDER_UNAVAILABLE", f"selected VAD provider unavailable: {provider_id}")
 
     def _asr(self, item: dict[str, Any]) -> ASRProvider:
