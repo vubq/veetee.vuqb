@@ -247,6 +247,15 @@ class VoiceSession:
     async def _audio(self, raw: bytes) -> None:
         if not self.ready or self.pipeline is None or self.turn is None or self.codec is None:
             raise ProtocolError("audio received outside listening turn")
+        # A manual/auto turn owns the microphone only while it is listening.
+        # Once endpointing has scheduled finish(), or while the answer is being
+        # spoken, late packets are ambient audio and must not be appended to the
+        # finalized ASR session. Realtime is the explicit duplex exception.
+        if (self.phase in {"thinking", "speaking"} and self.turn.mode != "realtime") or (
+            self.phase == "listening" and self.turn.task is not None
+        ):
+            self.app.metrics["audio_frames_ignored"] = self.app.metrics.get("audio_frames_ignored", 0) + 1
+            return
         frame = decode_audio(self.profile, raw)  # type: ignore[arg-type]
         pcm = self.codec.decode_uplink(frame.payload, int(self.app.runtime.view.snapshot.raw.get("wire", {}).get("uplinkSampleRate", 16000)) * 60 // 1000)
         self.app.metrics["audio_frames_in"] += 1
@@ -257,10 +266,13 @@ class VoiceSession:
             if self._speech_frames >= max(1, threshold):
                 await self._abort(reason="barge_in")
                 await self._start_turn("realtime")
-        elif self.phase == "listening" and self.turn.mode == "auto" and self.app.runtime.view.registry.vad.endpoint() and self.turn.task is None:
+        await self.pipeline.ingest(pcm)
+        # Ingest the endpointing frame before scheduling ASR finalization. This
+        # ordering is important for short utterances where VAD marks the last
+        # frame as endpointed: finish() must observe that frame.
+        if self.phase == "listening" and self.turn.mode == "auto" and self.app.runtime.view.registry.vad.endpoint() and self.turn.task is None:
             self.phase = "thinking"
             self.turn.task = asyncio.create_task(self.pipeline.finish(), name=f"turn-{self.turn.turn_id}")
-        await self.pipeline.ingest(pcm)
 
     async def _execute_tool(self, name: str, arguments: dict[str, Any], generation: int) -> dict[str, Any]:
         if not self.mcp:

@@ -269,6 +269,13 @@ static void websocket_text_callback(const cJSON *message, void *context) {
         if (strcmp(tts_state->valuestring, "start") == 0) {
             (void)xQueueReset(app->playback_queue);
             vt_audio_reset(&app->audio);
+            if (app->wake_auto_capture) {
+                /* Auto-mode is half-duplex until AFE/AEC realtime capture is
+                   promoted. Stop uplink as soon as the server starts speaking;
+                   keep the flag so tts/stop can re-arm WakeNet exactly once. */
+                app->capture_active = false;
+                ESP_LOGI(TAG, "wake capture paused while server is speaking");
+            }
             (void)state_apply(app, VT_EVENT_TTS_START);
         } else if (strcmp(tts_state->valuestring, "stop") == 0) {
             if (app->wake_auto_capture) {
