@@ -312,6 +312,69 @@ async def test_compatibility_profile_handshake_and_turn(monkeypatch, version):
 
 
 @pytest.mark.asyncio
+async def test_reference_mcp_peer_gets_ordered_initialize_then_tools_list(monkeypatch):
+    """A reference-style MCP device must be able to answer discovery in order."""
+
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "reference-mcp-device", "Client-Id": "reference-mcp-client", "Protocol-Version": "3"},
+        )
+        await ws.send_json(
+            {
+                "type": "hello",
+                "version": 3,
+                "transport": "websocket",
+                "features": {"mcp": True},
+                "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+            }
+        )
+        hello = await ws.receive_json()
+        assert hello["type"] == "hello"
+        session_id = hello["session_id"]
+
+        initialize = await ws.receive_json()
+        assert initialize["type"] == "mcp"
+        assert initialize["session_id"] == session_id
+        initialize_payload = initialize["payload"]
+        assert initialize_payload["method"] == "initialize"
+        await ws.send_json(
+            {
+                "type": "mcp",
+                "session_id": session_id,
+                "payload": {"jsonrpc": "2.0", "id": initialize_payload["id"], "result": {"protocolVersion": "2024-11-05"}},
+            }
+        )
+
+        tools_list = await ws.receive_json()
+        assert tools_list["type"] == "mcp"
+        assert tools_list["payload"]["method"] == "tools/list"
+        assert tools_list["payload"]["params"] == {}
+        await ws.send_json(
+            {
+                "type": "mcp",
+                "payload": {"jsonrpc": "2.0", "id": tools_list["payload"]["id"], "result": {"tools": []}},
+            }
+        )
+        await asyncio.sleep(0)
+        assert service.metrics.get("mcp_discovery_failures", 0) == 0
+        await ws.close()
+    finally:
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "mutator",
     [

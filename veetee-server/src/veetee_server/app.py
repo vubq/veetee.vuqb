@@ -125,6 +125,7 @@ class VoiceSession:
         self.generation = 0
         self.codec: OpusCodec | None = None
         self.mcp: DeviceMcpBridge | None = None
+        self._mcp_discovery_task: asyncio.Task[None] | None = None
         self.memory: MemorySession | None = None
         self.view: RuntimeView | None = None
         self.phase = "ready_idle"
@@ -168,6 +169,11 @@ class VoiceSession:
             await self.close(1002, "protocol error")
         finally:
             try:
+                if self._mcp_discovery_task is not None and not self._mcp_discovery_task.done():
+                    self._mcp_discovery_task.cancel()
+                    await asyncio.gather(self._mcp_discovery_task, return_exceptions=True)
+                if self.mcp is not None:
+                    self.mcp.cancel_all()
                 await self._report_presence("offline")
                 await self._abort(reason="disconnect", send_stop=False)
             finally:
@@ -220,11 +226,34 @@ class VoiceSession:
             descriptors = []
         timeout_ms = int((snapshot.raw.get("toolPolicy") or {}).get("timeoutMs", 30000))
         self.mcp = DeviceMcpBridge(session_id=self.session_id, send=self.send_text, descriptors=descriptors, timeout_ms=timeout_ms)
-        if bool((message.get("features") or {}).get("mcp", False)):
-            await self.mcp.initialize()
-            await self.mcp.list_tools()
         self.ready = True
+        if bool((message.get("features") or {}).get("mcp", False)):
+            # Discovery is deliberately started only after the hello response
+            # has been sent and the receive loop is active. The device replies
+            # to initialize before it accepts the paginated tools/list request;
+            # awaiting either response inside _hello would deadlock that loop.
+            self._mcp_discovery_task = asyncio.create_task(self._discover_mcp(), name=f"mcp-discovery-{self.session_id}")
         self._report_presence("online")
+
+    async def _discover_mcp(self) -> None:
+        bridge = self.mcp
+        if bridge is None:
+            return
+        try:
+            await bridge.initialize()
+            cursor: str | None = None
+            for _ in range(64):
+                result = await bridge.list_tools(cursor=cursor)
+                next_cursor = result.get("nextCursor")
+                if not isinstance(next_cursor, str) or not next_cursor:
+                    return
+                cursor = next_cursor
+            raise ProviderError("MCP_DISCOVERY_LIMIT", "device MCP tools/list exceeded page limit")
+        except asyncio.CancelledError:
+            raise
+        except ProviderError as exc:
+            self.app.metrics["mcp_discovery_failures"] = self.app.metrics.get("mcp_discovery_failures", 0) + 1
+            self.log.warning("MCP discovery failed code=%s", exc.code)
 
     def _session_view(self) -> RuntimeView:
         view = self.view

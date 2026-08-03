@@ -25,11 +25,22 @@ class DeviceMcpBridge:
         self._next_id = 1
         self._pending: dict[int, PendingCall] = {}
 
-    async def initialize(self) -> None:
-        await self._send(self._envelope(self._allocate(), "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "veetee-server", "version": "0.1.0"}}))
+    async def initialize(self) -> dict[str, Any]:
+        return await self._request(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "veetee-server", "version": "0.1.0"},
+            },
+            error_code="MCP_INITIALIZE_FAILED",
+        )
 
-    async def list_tools(self) -> None:
-        await self._send(self._envelope(self._allocate(), "tools/list", {}))
+    async def list_tools(self, *, cursor: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return await self._request("tools/list", params, error_code="MCP_TOOLS_LIST_FAILED")
 
     async def call(self, name: str, arguments: dict[str, Any], generation: int) -> dict[str, Any]:
         if not any(descriptor.get("name") == name for descriptor in self._descriptors):
@@ -59,6 +70,32 @@ class DeviceMcpBridge:
             raise ProviderError("TOOL_FAILED", str(result["error"]))
         return result
 
+    async def _request(self, method: str, params: dict[str, Any], *, error_code: str) -> dict[str, Any]:
+        request_id = self._allocate()
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        self._pending[request_id] = PendingCall(request_id, 0, future)
+        try:
+            await self._send(self._envelope(request_id, method, params))
+            result = await asyncio.wait_for(future, timeout=self._timeout_s)
+        except asyncio.CancelledError:
+            self._pending.pop(request_id, None)
+            raise
+        except asyncio.TimeoutError as exc:
+            self._pending.pop(request_id, None)
+            raise ProviderError(error_code, f"device MCP request timed out: {method}", retryable=True) from exc
+        except ProviderError:
+            self._pending.pop(request_id, None)
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self._pending.pop(request_id, None)
+            raise ProviderError(error_code, "device MCP request could not be sent", retryable=True) from exc
+        finally:
+            self._pending.pop(request_id, None)
+        if result.get("error"):
+            raise ProviderError(error_code, str(result["error"]))
+        return result
+
     def resolve(self, payload: dict[str, Any]) -> bool:
         if payload.get("jsonrpc") != "2.0":
             return False
@@ -79,6 +116,12 @@ class DeviceMcpBridge:
             if pending.turn_generation == generation and not pending.future.done():
                 pending.future.cancel()
                 self._pending.pop(request_id, None)
+
+    def cancel_all(self) -> None:
+        for request_id, pending in list(self._pending.items()):
+            if not pending.future.done():
+                pending.future.cancel()
+            self._pending.pop(request_id, None)
 
     def _allocate(self) -> int:
         if self._next_id > 2_147_483_647:
