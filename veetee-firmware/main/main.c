@@ -49,7 +49,7 @@
 #define CONFIG_VEETEE_LCD_ENABLED 0
 #endif
 #ifndef CONFIG_VEETEE_LCD_SPI_HOST
-#define CONFIG_VEETEE_LCD_SPI_HOST 3
+#define CONFIG_VEETEE_LCD_SPI_HOST 2
 #endif
 #ifndef CONFIG_VEETEE_LCD_WIDTH
 #define CONFIG_VEETEE_LCD_WIDTH 240
@@ -499,15 +499,19 @@ void app_main(void) {
     ESP_ERROR_CHECK(vt_audio_init(&app->audio, &audio_config));
     ESP_ERROR_CHECK(vt_audio_start(&app->audio));
 #if CONFIG_VEETEE_BOOT_CHIME_ENABLED
+    bool chime_ok = true;
     if (vt_audio_play_tone(&app->audio, CONFIG_VEETEE_BOOT_CHIME_FIRST_HZ,
                            CONFIG_VEETEE_BOOT_CHIME_TONE_MS, CONFIG_VEETEE_BOOT_CHIME_AMPLITUDE) != ESP_OK) {
         ESP_LOGW(TAG, "startup chime first tone failed");
+        chime_ok = false;
     }
     vTaskDelay(pdMS_TO_TICKS(CONFIG_VEETEE_BOOT_CHIME_GAP_MS));
     if (vt_audio_play_tone(&app->audio, CONFIG_VEETEE_BOOT_CHIME_SECOND_HZ,
                            CONFIG_VEETEE_BOOT_CHIME_TONE_MS, CONFIG_VEETEE_BOOT_CHIME_AMPLITUDE) != ESP_OK) {
         ESP_LOGW(TAG, "startup chime second tone failed");
+        chime_ok = false;
     }
+    if (chime_ok) ESP_LOGI(TAG, "startup chime played");
 #endif
     gpio_config_t ptt = {
         .pin_bit_mask = 1ULL << CONFIG_VEETEE_PTT_GPIO,

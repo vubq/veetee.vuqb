@@ -104,8 +104,8 @@ config VEETEE_LCD_ENABLED
 
 config VEETEE_LCD_SPI_HOST
     int "LCD SPI host"
-    range 1 3
-    default 3
+    range 1 2
+    default 2
 
 config VEETEE_LCD_WIDTH
     int "LCD width"
