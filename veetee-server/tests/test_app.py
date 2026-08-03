@@ -131,3 +131,56 @@ async def test_realtime_barge_in_cancels_old_turn_before_new_audio(monkeypatch):
     finally:
         await client.close()
         await runtime.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("version", [1, 2])
+async def test_compatibility_profile_handshake_and_turn(monkeypatch, version):
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        profile = {1: "ws-v1-compat", 2: "ws-v2"}[version]
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": f"compat-{version}", "Protocol-Version": str(version)},
+        )
+        await ws.send_json(
+            {
+                "type": "hello",
+                "version": version,
+                "transport": "websocket",
+                "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+            }
+        )
+        hello = await ws.receive_json()
+        assert hello["version"] == version
+        await ws.send_json({"type": "listen", "state": "start", "mode": "manual", "session_id": hello["session_id"]})
+        encoder = __import__("opuslib").Encoder(16000, 1, __import__("opuslib").APPLICATION_AUDIO)
+        from veetee_server.protocol import AudioFrame, encode_audio
+
+        await ws.send_bytes(encode_audio(AudioFrame(profile, encoder.encode(b"\0" * 1920, 960))))
+        await ws.send_json({"type": "listen", "state": "stop", "session_id": hello["session_id"]})
+        events = []
+        binary = 0
+        for _ in range(24):
+            message = await ws.receive()
+            if message.type == 1:
+                events.append(json.loads(message.data))
+                if events[-1].get("type") == "tts" and events[-1].get("state") == "stop":
+                    break
+            elif message.type == 2:
+                binary += 1
+        assert any(event.get("type") == "stt" for event in events)
+        assert binary > 0
+        await ws.close()
+    finally:
+        await client.close()
+        await runtime.stop()
