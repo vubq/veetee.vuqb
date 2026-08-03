@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { History, RefreshCcw } from '@lucide/vue'
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
 import type { AssistantCard, ConversationDetail, ConversationSummary, RetentionPolicy } from '@/domain'
@@ -19,8 +19,17 @@ const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
 const conversations = ref<ConversationSummary[]>([])
 const retention = ref<RetentionPolicy>()
 const selected = ref<ConversationDetail>()
+const selectedItem = ref<ConversationSummary>()
 const loading = ref(true)
 const detailLoading = ref(false)
+const loadState = ref<'loading' | 'ready' | 'empty' | 'error' | 'offline'>('loading')
+const loadError = ref('')
+const detailState = ref<'idle' | 'loading' | 'ready' | 'error' | 'offline'>('idle')
+const detailError = ref('')
+const listStateHeading = ref<HTMLElement | null>(null)
+const detailStateHeading = ref<HTMLElement | null>(null)
+let loadGeneration = 0
+let detailGeneration = 0
 
 function formatTime(value: string | null) {
   if (!value) return 'Đang diễn ra'
@@ -32,133 +41,251 @@ function statusLabel(status: ConversationSummary['status']) {
 }
 
 async function load() {
+  const generation = ++loadGeneration
+  detailGeneration += 1
   loading.value = true
-  const [history, policy] = await Promise.all([gateway.listConversations(props.assistant.id), gateway.getRetentionPolicy()])
-  if (history.ok) conversations.value = history.data.items
-  if (policy.ok) retention.value = policy.data
-  loading.value = false
+  detailLoading.value = false
+  selected.value = undefined
+  selectedItem.value = undefined
+  detailState.value = 'idle'
+  loadState.value = 'loading'
+  loadError.value = ''
+  try {
+    const [history, policy] = await Promise.all([
+      gateway.listConversations(props.assistant.id),
+      gateway.getRetentionPolicy(),
+    ])
+    if (generation !== loadGeneration) return
+    if (!history.ok || !policy.ok) {
+      const offline = history.meta.offline || policy.meta.offline
+      loadState.value = offline ? 'offline' : 'error'
+      loadError.value = !history.ok && !policy.ok
+        ? 'Không tải được lịch sử và retention policy từ Manager API.'
+        : !history.ok
+          ? 'Không tải được lịch sử hội thoại từ Manager API.'
+          : 'Không tải được retention policy; lịch sử tạm thời bị khóa để tránh hiểu sai chính sách lưu trữ.'
+      await focusListState()
+      return
+    }
+    conversations.value = history.data.items
+    retention.value = policy.data
+    loadState.value = conversations.value.length > 0 ? 'ready' : 'empty'
+  } catch {
+    if (generation !== loadGeneration) return
+    loadState.value = 'offline'
+    loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+    await focusListState()
+  } finally {
+    if (generation === loadGeneration) loading.value = false
+  }
 }
 
 async function openConversation(item: ConversationSummary) {
+  const generation = ++detailGeneration
+  selectedItem.value = item
+  selected.value = undefined
   detailLoading.value = true
-  const result = await gateway.getConversation(item.id)
-  if (result.ok) selected.value = result.data
-  detailLoading.value = false
+  detailState.value = 'loading'
+  detailError.value = ''
+  try {
+    const result = await gateway.getConversation(item.id)
+    if (generation !== detailGeneration) return
+    if (result.ok) {
+      selected.value = result.data
+      detailState.value = 'ready'
+      return
+    }
+    detailState.value = result.meta.offline ? 'offline' : 'error'
+    detailError.value = result.meta.offline
+      ? 'Đang ngoại tuyến; chưa thể tải chi tiết lượt nói.'
+      : 'Không tải được chi tiết lượt nói từ Manager API.'
+    await focusDetailState()
+  } catch {
+    if (generation !== detailGeneration) return
+    detailState.value = 'offline'
+    detailError.value = 'Không kết nối được Manager API; hãy thử lại sau.'
+    await focusDetailState()
+  } finally {
+    if (generation === detailGeneration) detailLoading.value = false
+  }
+}
+
+async function focusListState() {
+  await nextTick()
+  listStateHeading.value?.focus()
+}
+
+async function focusDetailState() {
+  await nextTick()
+  detailStateHeading.value?.focus()
 }
 
 onMounted(load)
 </script>
 
 <template>
-  <PreviewScenarioToolbar
-    @change="load"
-    @reset="load"
-  />
-  <div class="history-toolbar">
-    <div><strong>Lịch sử hội thoại</strong><span>Transcript được lưu theo retention policy; audio recording đang tắt.</span></div>
-    <VtButton
-      size="sm"
-      @click="load"
-    >
-      <template #leading>
-        <VtIcon
-          :icon="RefreshCcw"
-          :size="14"
-        />
-      </template>Làm mới
-    </VtButton>
-  </div>
-
-  <VtCard
-    v-if="retention"
-    class="retention-card"
+  <section
+    class="history-feature"
+    :aria-busy="loading"
   >
-    <div>
-      <VtStatus
-        tone="online"
-        label="Retention đang áp dụng"
-      /><strong>{{ retention.captureTranscript ? `${retention.transcriptDays} ngày transcript` : 'Không lưu transcript' }}</strong>
-    </div>
-    <span>Audio: {{ retention.captureAudio ? 'đang bật' : 'tắt mặc định' }}</span>
-  </VtCard>
-
-  <div
-    v-if="loading"
-    class="history-list"
-    role="status"
-    aria-live="polite"
-    aria-label="Đang tải lịch sử hội thoại"
-  >
-    <VtCard
-      v-for="index in 3"
-      :key="index"
-      class="history-skeleton"
-    >
-      <VtSkeleton width="180px" /><VtSkeleton width="120px" />
-    </VtCard>
-  </div>
-  <VtEmptyState
-    v-else-if="conversations.length === 0"
-    :icon="History"
-    title="Chưa có hội thoại"
-    description="Các lượt nói qua Voice Server sẽ xuất hiện ở đây sau khi history ingest được bật."
-  />
-  <div
-    v-else
-    class="history-layout"
-  >
-    <div class="history-list">
-      <VtCard
-        v-for="item in conversations"
-        :key="item.id"
-        class="history-item"
-        :class="{ selected: selected?.summary.id === item.id }"
-        interactive
-        role="button"
-        tabindex="0"
-        :aria-pressed="selected?.summary.id === item.id"
-        @click="openConversation(item)"
-        @keydown.enter="openConversation(item)"
-        @keydown.space.prevent="openConversation(item)"
+    <PreviewScenarioToolbar
+      @change="load"
+      @reset="load"
+    />
+    <div class="history-toolbar">
+      <div><strong>Lịch sử hội thoại</strong><span>Transcript được lưu theo retention policy; audio recording đang tắt.</span></div>
+      <VtButton
+        size="sm"
+        @click="load"
       >
-        <header><div><strong>{{ formatTime(item.startedAt) }}</strong><span>{{ item.locale }}</span></div><VtBadge>{{ statusLabel(item.status) }}</VtBadge></header>
-        <p>{{ item.turnCount }} lượt · TTFA {{ item.aggregateTimings.last_ttfa_ms ?? '—' }} ms</p>
+        <template #leading>
+          <VtIcon
+            :icon="RefreshCcw"
+            :size="14"
+          />
+        </template>Làm mới
+      </VtButton>
+    </div>
+
+    <VtCard
+      v-if="retention && (loadState === 'ready' || loadState === 'empty')"
+      class="retention-card"
+    >
+      <div>
+        <VtStatus
+          tone="online"
+          label="Retention đang áp dụng"
+        /><strong>{{ retention.captureTranscript ? `${retention.transcriptDays} ngày transcript` : 'Không lưu transcript' }}</strong>
+      </div>
+      <span>Audio: {{ retention.captureAudio ? 'đang bật' : 'tắt mặc định' }}</span>
+    </VtCard>
+
+    <div
+      v-if="loadState === 'loading'"
+      class="history-list"
+      role="status"
+      aria-live="polite"
+      aria-label="Đang tải lịch sử hội thoại"
+    >
+      <VtCard
+        v-for="index in 3"
+        :key="index"
+        class="history-skeleton"
+      >
+        <VtSkeleton width="180px" /><VtSkeleton width="120px" />
       </VtCard>
     </div>
     <VtCard
-      v-if="selected"
-      class="history-detail"
+      v-else-if="loadState === 'error' || loadState === 'offline'"
+      class="history-state history-state-error"
+      role="alert"
     >
-      <header><div><strong>Chi tiết lượt nói</strong><span>{{ formatTime(selected.summary.startedAt) }} → {{ formatTime(selected.summary.endedAt) }}</span></div><VtBadge>{{ selected.summary.configRevision }}</VtBadge></header>
-      <div
-        v-if="detailLoading"
-        class="detail-loading"
-        role="status"
-        aria-live="polite"
-        aria-label="Đang tải chi tiết hội thoại"
+      <h2
+        ref="listStateHeading"
+        tabindex="-1"
       >
-        <VtSkeleton height="70px" />
-      </div>
-      <ol
-        v-else
-        class="transcript"
+        {{ loadState === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được lịch sử' }}
+      </h2>
+      <p>{{ loadError }}</p>
+      <VtButton
+        variant="secondary"
+        :loading="loading"
+        @click="load"
       >
-        <li
-          v-for="(segment, index) in selected.turns.flatMap((turn) => turn.transcript)"
-          :key="`${segment.speaker}-${index}`"
-          :class="segment.speaker"
-        >
-          <span>{{ segment.speaker === 'user' ? 'Bạn' : segment.speaker === 'assistant' ? 'Veetee' : 'Hệ thống' }}</span><p>{{ segment.text }}</p>
-        </li>
-      </ol>
+        Thử lại
+      </VtButton>
     </VtCard>
-  </div>
+    <VtEmptyState
+      v-else-if="loadState === 'empty'"
+      :icon="History"
+      title="Chưa có hội thoại"
+      description="Các lượt nói qua Voice Server sẽ xuất hiện ở đây sau khi history ingest được bật."
+    />
+    <div
+      v-else
+      class="history-layout"
+    >
+      <div class="history-list">
+        <VtCard
+          v-for="item in conversations"
+          :key="item.id"
+          class="history-item"
+          :class="{ selected: selectedItem?.id === item.id }"
+          interactive
+          role="button"
+          tabindex="0"
+          :aria-pressed="selectedItem?.id === item.id"
+          @click="openConversation(item)"
+          @keydown.enter="openConversation(item)"
+          @keydown.space.prevent="openConversation(item)"
+        >
+          <header><div><strong>{{ formatTime(item.startedAt) }}</strong><span>{{ item.locale }}</span></div><VtBadge>{{ statusLabel(item.status) }}</VtBadge></header>
+          <p>{{ item.turnCount }} lượt · TTFA {{ item.aggregateTimings.last_ttfa_ms ?? '—' }} ms</p>
+        </VtCard>
+      </div>
+      <VtCard
+        v-if="selectedItem"
+        class="history-detail"
+      >
+        <header>
+          <div>
+            <strong
+              ref="detailStateHeading"
+              tabindex="-1"
+            >Chi tiết lượt nói</strong><span>{{ formatTime(selectedItem.startedAt) }} → {{ formatTime(selectedItem.endedAt) }}</span>
+          </div><VtBadge>{{ selectedItem.configRevision }}</VtBadge>
+        </header>
+        <div
+          v-if="detailLoading"
+          class="detail-loading"
+          role="status"
+          aria-live="polite"
+          aria-label="Đang tải chi tiết hội thoại"
+        >
+          <VtSkeleton height="70px" />
+        </div>
+        <div
+          v-else-if="detailState === 'error' || detailState === 'offline'"
+          class="detail-state"
+          role="alert"
+        >
+          <p>{{ detailError }}</p>
+          <VtButton
+            size="sm"
+            variant="secondary"
+            @click="openConversation(selectedItem!)"
+          >
+            Thử lại chi tiết
+          </VtButton>
+        </div>
+        <ol
+          v-else-if="selected"
+          class="transcript"
+        >
+          <li
+            v-for="(segment, index) in selected.turns.flatMap((turn) => turn.transcript)"
+            :key="`${segment.speaker}-${index}`"
+            :class="segment.speaker"
+          >
+            <span>{{ segment.speaker === 'user' ? 'Bạn' : segment.speaker === 'assistant' ? 'Veetee' : 'Hệ thống' }}</span><p>{{ segment.text }}</p>
+          </li>
+        </ol>
+      </VtCard>
+    </div>
+  </section>
 </template>
 
 <style scoped>
-.history-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-section); background: var(--vt-surface); padding: 10px 12px; }
+.history-feature { display: grid; gap: 12px; }
+.history-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-section); background: var(--vt-surface); padding: 10px 12px; }
 .history-toolbar strong { display: block; font-size: 12px; }.history-toolbar span, .retention-card > span { color: var(--vt-text-muted); font-size: 9px; }
 .retention-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 11px 13px; }.retention-card > div { display: flex; align-items: center; gap: 9px; }.retention-card strong { font-size: 10px; }
 .history-layout { display: grid; grid-template-columns: minmax(220px, .75fr) minmax(0, 1.25fr); gap: 12px; }.history-list { display: grid; gap: 8px; }.history-item { cursor: pointer; padding: 12px; }.history-item.selected { border-color: var(--vt-primary); box-shadow: 0 0 0 3px var(--vt-focus); }.history-item header, .history-detail header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }.history-item header div, .history-detail header div { display: grid; gap: 3px; }.history-item strong, .history-detail strong { font-size: 11px; }.history-item span, .history-detail span { color: var(--vt-text-muted); font-size: 9px; }.history-item p { margin: 9px 0 0; color: var(--vt-text-soft); font-size: 9px; }.history-detail { min-height: 270px; padding: 14px; }.transcript { display: grid; gap: 9px; margin: 16px 0 0; padding: 0; list-style: none; }.transcript li { border: 1px solid var(--vt-border); border-radius: 7px; background: var(--vt-surface-subtle); padding: 9px 10px; }.transcript li.user { background: #f1f6fb; }.transcript span { font-size: 9px; font-weight: 700; }.transcript p { margin: 4px 0 0; color: var(--vt-text-soft); font-size: 10px; line-height: 1.5; }.history-skeleton { display: grid; gap: 8px; padding: 13px; }.detail-loading { margin-top: 16px; }
+.history-state { display: grid; justify-items: center; gap: 4px; color: var(--vt-text-muted); padding: 24px; text-align: center; }
+.history-state h2 { margin: 0; color: var(--vt-text); font-size: 14px; }
+.history-state p { max-width: 460px; margin: 3px auto 10px; font-size: 11px; line-height: 1.5; }
+.history-state h2:focus-visible, .history-detail strong:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--vt-focus); border-radius: 3px; }
+.detail-state { display: grid; justify-items: start; gap: 6px; margin-top: 16px; color: var(--vt-danger); font-size: 11px; line-height: 1.5; }
+.detail-state p { margin: 0; }
 @media (max-width: 700px) { .history-layout { grid-template-columns: 1fr; }.retention-card, .history-toolbar { align-items: flex-start; flex-direction: column; }.history-toolbar .vt-button { width: 100%; } }
 </style>
