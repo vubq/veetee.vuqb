@@ -137,18 +137,33 @@ class VoiceSession:
                     break
                 except ProviderError as exc:
                     await self.send_text(control_message("alert", session_id=self.session_id, status="error", code=exc.code))
+        except ProtocolError:
+            # The first hello is outside the steady-state message loop. Keep
+            # malformed handshake behavior identical to malformed later frames
+            # instead of leaking a server-side exception to aiohttp.
+            self.app.metrics["protocol_errors"] += 1
+            await self.close(1002, "protocol error")
         finally:
             await self._abort(reason="disconnect", send_stop=False)
 
     async def _hello(self, message: dict[str, Any]) -> None:
         if message.get("type") != "hello":
             raise ProtocolError("first control message must be hello")
-        if message.get("version") != {"ws-v1-compat": 1, "ws-v2": 2, "ws-v3": 3}[self.profile]:
+        expected_version = {"ws-v1-compat": 1, "ws-v2": 2, "ws-v3": 3}[self.profile]
+        version = message.get("version")
+        if isinstance(version, bool) or not isinstance(version, int) or version != expected_version:
             raise ProtocolError("hello version mismatch")
+        if message.get("transport") != "websocket":
+            raise ProtocolError("unsupported transport")
         audio = message.get("audio_params")
-        if not isinstance(audio, dict) or audio.get("format") != "opus" or audio.get("channels") != 1:
+        if not isinstance(audio, dict) or audio.get("format") != "opus":
             raise ProtocolError("unsupported client audio parameters")
-        if int(audio.get("sample_rate", 0)) != 16000 or int(audio.get("frame_duration", 0)) != 60:
+        channels = audio.get("channels")
+        sample_rate = audio.get("sample_rate")
+        frame_duration = audio.get("frame_duration")
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in (channels, sample_rate, frame_duration)):
+            raise ProtocolError("audio parameters must be integers")
+        if channels != 1 or sample_rate != 16000 or frame_duration != 60:
             raise ProtocolError("client audio must be opus mono 16kHz/60ms")
         self.client_hello = message
         snapshot = self.app.runtime.view.snapshot

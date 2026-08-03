@@ -310,3 +310,44 @@ async def test_compatibility_profile_handshake_and_turn(monkeypatch, version):
     finally:
         await client.close()
         await runtime.stop()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mutator",
+    [
+        lambda hello: hello.update(transport="mqtt"),
+        lambda hello: hello["audio_params"].update(sample_rate="16000"),
+        lambda hello: hello.update(version=True),
+    ],
+)
+async def test_malformed_handshake_closes_with_protocol_error(monkeypatch, mutator):
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "malformed-handshake", "Protocol-Version": "3"},
+        )
+        hello = {
+            "type": "hello",
+            "version": 3,
+            "transport": "websocket",
+            "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+        }
+        mutator(hello)
+        await ws.send_json(hello)
+        await ws.receive(timeout=2)
+        assert ws.close_code == 1002
+        assert service.metrics["protocol_errors"] == 1
+    finally:
+        await client.close()
+        await runtime.stop()
