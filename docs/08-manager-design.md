@@ -1003,10 +1003,11 @@ invalid schema và domain conflict. Các oracle bắt buộc:
 Evidence này chỉ bao phủ Core slice A mock preview, không thay thế production E2E
 oracle ở trên:
 
-- `npm test` pass typecheck, lint, 3 unit files/12 tests và Vite production build;
-- `npm run test:e2e` pass 6 Chromium tests cho create/reset, role select/save,
-  pairing, no-fallback + revision conflict, mobile overflow/context navigation và
-  axe scan năm surface không có violation `serious`/`critical`;
+- `npm test` pass typecheck, lint, 4 unit files/15 tests và Vite production build;
+- `npm run test:e2e` pass 8 Chromium tests cho create/reset, role select/save,
+  pairing, history detail keyboard `Enter`/`Space`, no-fallback + revision
+  conflict, mobile overflow/context navigation và axe scan năm surface không có
+  violation `serious`/`critical`;
 - build emit self-host Be Vietnam Pro WOFF2 Latin/Vietnamese 400/500/600/700;
 - Reka UI chỉ nằm sau Veetee primitives và mọi route dùng mock/in-memory state.
 

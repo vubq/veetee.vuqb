@@ -4,6 +4,7 @@ export const PREVIEW_SCENARIO_IDS = [
   'revision-conflict',
   'provider-error',
   'long-action',
+  'history',
 ] as const
 
 export type PreviewScenarioId = (typeof PREVIEW_SCENARIO_IDS)[number]

@@ -38,6 +38,10 @@ export default {
         label: 'Tác vụ dài',
         description: 'Mutation giữ loading đủ lâu để quan sát.',
       },
+      history: {
+        label: 'Có lịch sử',
+        description: 'Có một cuộc hội thoại mẫu để kiểm tra chi tiết và keyboard.',
+      },
     },
   },
 }

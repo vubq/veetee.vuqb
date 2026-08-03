@@ -189,6 +189,24 @@ describe('MockGateway preview scenarios', () => {
     )
   })
 
+  it('serves a bounded history fixture for keyboard/detail states', async () => {
+    const gateway = immediateGateway('history')
+    const list = await gateway.listConversations(ASSISTANT_IDS.may)
+    expect(list.ok).toBe(true)
+    if (!list.ok) return
+    expect(list.data.total).toBe(1)
+    const first = list.data.items[0]
+    expect(first).toBeDefined()
+    if (!first) return
+    const detail = await gateway.getConversation(first.id)
+    expect(detail.ok).toBe(true)
+    if (!detail.ok) return
+    const turn = detail.data.turns[0]
+    expect(turn).toBeDefined()
+    if (!turn) return
+    expect(turn.transcript).toHaveLength(2)
+  })
+
   it('uses an observable deterministic delay for long actions without coupling tests to timers', async () => {
     const delays: number[] = []
     const gateway = new MockGateway({

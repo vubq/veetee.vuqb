@@ -27,8 +27,9 @@ và các service port `18xxx`).
 - Visual approval không thay cho full primitive-state inventory, keyboard-only
   core flows, demo/catalog cleanup hoặc snapshot matrix mọi surface/viewport;
   các gate này vẫn cần evidence riêng trước production promotion.
-- Evidence hiện tại của riêng preview: `npm test` pass typecheck, lint, 12 unit
-  tests và production build; 6 Chromium E2E pass, gồm responsive overflow check
+- Evidence hiện tại của riêng preview: `npm test` pass typecheck, lint, 15 unit
+  tests và production build; 8 Chromium E2E pass, gồm history keyboard,
+  responsive overflow check
   và axe scan không có violation `serious`/`critical` trên năm surface.
 - Hai thư mục dưới `references/` là snapshot bằng chứng **read-only**. Chỉ đọc
   để kiểm tra protocol/behavior và trích dẫn `path/to/file:line-line`; không fork,

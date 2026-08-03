@@ -53,6 +53,7 @@ import {
   PERSONALITY_IDS,
   PROVIDER_CONFIG_IDS,
   createInitialMockState,
+  HISTORY_CONVERSATIONS,
 } from './fixtures'
 import type { MockState } from './fixtures'
 import { MOCK_SCENARIOS, MOCK_SCENARIO_LIST } from './scenarios'
@@ -655,12 +656,17 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
   async listConversations(assistantId: string, limit = 20): Promise<GatewayResult<Page<ConversationSummary>, NotFoundProblem>> {
     const request = await this.begin('read')
     if (!this.state.assistants[assistantId]) return this.failure(this.notFound('assistant', assistantId, request.requestId), request)
-    const items: ConversationSummary[] = []
+    const conversation = this.scenario === 'history' ? HISTORY_CONVERSATIONS[assistantId] : undefined
+    const items: ConversationSummary[] = conversation ? [clone(conversation.summary)] : []
     return this.success({ items: items.slice(0, limit), total: items.length }, request)
   }
 
   async getConversation(id: string): Promise<GatewayResult<ConversationDetail, NotFoundProblem>> {
     const request = await this.begin('read')
+    if (this.scenario === 'history') {
+      const conversation = Object.values(HISTORY_CONVERSATIONS).find((item) => item.summary.id === id)
+      if (conversation) return this.success(clone(conversation), request)
+    }
     return this.failure(this.notFound('conversation', id, request.requestId), request)
   }
 

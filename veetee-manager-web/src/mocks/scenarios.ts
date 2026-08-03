@@ -61,6 +61,16 @@ export const MOCK_SCENARIOS: Readonly<
     forceRoleConflict: false,
     unavailableProviderKind: null,
   },
+  history: {
+    id: 'history',
+    labelKey: 'preview.scenario.history.label',
+    descriptionKey: 'preview.scenario.history.description',
+    readDelayMs: 24,
+    mutationDelayMs: 80,
+    offline: false,
+    forceRoleConflict: false,
+    unavailableProviderKind: null,
+  },
 }
 
 export const MOCK_SCENARIO_LIST: readonly PreviewScenarioDefinition[] =

@@ -85,6 +85,9 @@ onMounted(load)
   <div
     v-if="loading"
     class="history-list"
+    role="status"
+    aria-live="polite"
+    aria-label="Đang tải lịch sử hội thoại"
   >
     <VtCard
       v-for="index in 3"
@@ -113,8 +116,10 @@ onMounted(load)
         interactive
         role="button"
         tabindex="0"
+        :aria-pressed="selected?.summary.id === item.id"
         @click="openConversation(item)"
         @keydown.enter="openConversation(item)"
+        @keydown.space.prevent="openConversation(item)"
       >
         <header><div><strong>{{ formatTime(item.startedAt) }}</strong><span>{{ item.locale }}</span></div><VtBadge>{{ statusLabel(item.status) }}</VtBadge></header>
         <p>{{ item.turnCount }} lượt · TTFA {{ item.aggregateTimings.last_ttfa_ms ?? '—' }} ms</p>
@@ -128,6 +133,9 @@ onMounted(load)
       <div
         v-if="detailLoading"
         class="detail-loading"
+        role="status"
+        aria-live="polite"
+        aria-label="Đang tải chi tiết hội thoại"
       >
         <VtSkeleton height="70px" />
       </div>

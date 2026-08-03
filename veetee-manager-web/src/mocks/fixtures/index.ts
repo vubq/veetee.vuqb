@@ -1,4 +1,5 @@
 export * from './assistants'
 export * from './devices'
+export * from './history'
 export * from './providers'
 export * from './state'

@@ -64,6 +64,20 @@ test('history surface hiển thị retention notice và empty state', async ({ p
   await expect(page.getByText('Chưa có hội thoại', { exact: true })).toBeVisible()
 })
 
+test('history item mở được bằng keyboard Enter và Space', async ({ page }) => {
+  await page.goto(`/assistants/${assistantId}/history`)
+  const scenario = page.getByRole('combobox', { name: 'Tình huống mô phỏng' })
+  await scenario.click()
+  await page.getByRole('option', { name: /Có lịch sử/ }).click()
+  const item = page.getByRole('button').filter({ hasText: 'TTFA' }).first()
+  await item.focus()
+  await expect(item).toBeFocused()
+  await item.press('Enter')
+  await expect(page.getByText('Chi tiết lượt nói')).toBeVisible()
+  await item.press('Space')
+  await expect(item).toHaveAttribute('aria-pressed', 'true')
+})
+
 test('provider unavailable không fallback và conflict giữ draft', async ({ page }) => {
   await page.goto(`/assistants/${assistantId}/config/model-memory`)
   const scenario = page.getByRole('combobox', { name: 'Tình huống mô phỏng' })
