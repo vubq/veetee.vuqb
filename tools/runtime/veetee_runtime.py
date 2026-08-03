@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -27,7 +28,9 @@ class ServiceSpec:
     cwd: Path
     dependencies: tuple[str, ...]
     health_url: str | None
+    health_tcp: tuple[str, int] | None
     ready_timeout_s: float
+    wait_for_exit: bool
     environment: dict[str, str]
 
 
@@ -65,13 +68,24 @@ class RuntimeSupervisor:
             health_url = value.get("healthUrl")
             if health_url is not None and not isinstance(health_url, str):
                 raise ManifestError(f"{name}: healthUrl must be string or null")
+            health_tcp_raw = value.get("healthTcp")
+            health_tcp: tuple[str, int] | None = None
+            if health_tcp_raw is not None:
+                if not isinstance(health_tcp_raw, dict) or not isinstance(health_tcp_raw.get("host"), str) or not isinstance(health_tcp_raw.get("port"), int) or not 1 <= health_tcp_raw["port"] <= 65535:
+                    raise ManifestError(f"{name}: healthTcp must contain host and integer port")
+                if health_url is not None:
+                    raise ManifestError(f"{name}: healthUrl and healthTcp are mutually exclusive")
+                health_tcp = (health_tcp_raw["host"], health_tcp_raw["port"])
             env = value.get("environment", {})
             if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
                 raise ManifestError(f"{name}: environment must be string map")
             deps = value.get("dependencies", [])
             if not isinstance(deps, list) or not all(isinstance(dep, str) for dep in deps):
                 raise ManifestError(f"{name}: dependencies must be string array")
-            specs.append(ServiceSpec(name, tuple(_expand(part, self.root) for part in command), cwd, tuple(deps), health_url, float(value.get("readyTimeoutSeconds", 20)), {k: _expand(v, self.root) for k, v in env.items()}))
+            wait_for_exit = value.get("waitForExit", False)
+            if not isinstance(wait_for_exit, bool):
+                raise ManifestError(f"{name}: waitForExit must be boolean")
+            specs.append(ServiceSpec(name, tuple(_expand(part, self.root) for part in command), cwd, tuple(deps), health_url, health_tcp, float(value.get("readyTimeoutSeconds", 20)), wait_for_exit, {k: _expand(v, self.root) for k, v in env.items()}))
             names.add(name)
         by_name = {spec.name for spec in specs}
         for spec in specs:
@@ -94,8 +108,15 @@ class RuntimeSupervisor:
                 stderr=None,
             )
             self.processes[spec.name] = process
-            if spec.health_url:
+            if spec.health_url or spec.health_tcp:
                 self._wait_ready(spec, process)
+            if spec.wait_for_exit:
+                try:
+                    result = process.wait(timeout=spec.ready_timeout_s)
+                except subprocess.TimeoutExpired as exc:
+                    raise TimeoutError(f"one-shot service timeout: {spec.name}") from exc
+                if result != 0:
+                    raise RuntimeError(f"one-shot service failed: {spec.name} ({result})")
 
     def stop(self) -> None:
         for name, process in reversed(list(self.processes.items())):
@@ -120,17 +141,25 @@ class RuntimeSupervisor:
         return {"services": [{"name": spec.name, "pid": self.processes.get(spec.name).pid if spec.name in self.processes else None, "running": self.processes.get(spec.name) is not None and self.processes[spec.name].poll() is None} for spec in self.specs]}
 
     def _wait_ready(self, spec: ServiceSpec, process: subprocess.Popen[bytes]) -> None:
-        assert spec.health_url is not None
+        if spec.health_url is None and spec.health_tcp is None:
+            return
         deadline = time.monotonic() + spec.ready_timeout_s
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(f"service exited before readiness: {spec.name}")
-            try:
-                with urlopen(Request(spec.health_url, headers={"Accept": "*/*"}), timeout=1) as response:
-                    if 200 <= response.status < 300:
+            if spec.health_url:
+                try:
+                    with urlopen(Request(spec.health_url, headers={"Accept": "*/*"}), timeout=1) as response:
+                        if 200 <= response.status < 300:
+                            return
+                except (URLError, TimeoutError, OSError):
+                    pass
+            elif spec.health_tcp:
+                try:
+                    with socket.create_connection(spec.health_tcp, timeout=1):
                         return
-            except (URLError, TimeoutError, OSError):
-                pass
+                except OSError:
+                    pass
             time.sleep(0.1)
         raise TimeoutError(f"service readiness timeout: {spec.name} {spec.health_url}")
 

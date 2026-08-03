@@ -210,15 +210,18 @@ khớp, không tạo binary “best effort”.
 
 ### Q-017 — PostgreSQL query/migration layer nào?
 
-**Trạng thái: Resolved design choice; code gate M2.**
+**Trạng thái: Resolved; implementation slice đã có, promotion gate còn mở.**
 
 Phương án A: Drizzle + generated SQL migration được review và chạy one-shot.  
 Phương án B: Kysely + migration tool SQL-first riêng.  
 Phương án C: Prisma nếu ưu tiên migration/admin ecosystem hơn footprint.
 
 Chọn A (Drizzle + SQL migration được review) vì typed schema, footprint nhỏ và SQL
-inspect được. M2 phải bổ sung ADR/benchmark cold start, transaction rollback và
-PostgreSQL runtime trước khi promotion; memory store hiện chỉ là dev adapter.
+inspect được. Implementation hiện dùng database riêng `veetee_vubq` trên
+instance loopback `127.0.0.1:55432`, schema `veetee_manager`, migration one-shot
+và immutable revision tables. M2 vẫn cần benchmark cold start, transaction
+rollback, session/CSRF và PostgreSQL runtime soak trước khi promotion; memory
+store hiện chỉ là dev adapter.
 
 ### Q-018 — Secret store local cụ thể là gì?
 

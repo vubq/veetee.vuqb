@@ -40,3 +40,15 @@ def test_manifest_rejects_cycle(tmp_path):
     )
     with pytest.raises(ManifestError, match="cycle"):
         RuntimeSupervisor(path)._order()
+
+
+def test_manifest_accepts_tcp_readiness_probe(tmp_path):
+    path = write_manifest(tmp_path, [{"name": "db", "command": ["python3"], "healthTcp": {"host": "127.0.0.1", "port": 55432}}])
+    spec = RuntimeSupervisor(path).specs[0]
+    assert spec.health_url is None
+    assert spec.health_tcp == ("127.0.0.1", 55432)
+
+
+def test_manifest_accepts_one_shot_service(tmp_path):
+    path = write_manifest(tmp_path, [{"name": "migration", "command": ["python3"], "waitForExit": True}])
+    assert RuntimeSupervisor(path).specs[0].wait_for_exit is True

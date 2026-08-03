@@ -316,12 +316,15 @@ config rollback, không phải runtime provider fallback; canonical lifecycle �
 
 ### 9.4 PostgreSQL và data directories
 
-- PostgreSQL dùng Ubuntu host package với pinned supported major/minor policy,
-  bind loopback và dedicated OS account.
+- PostgreSQL của Veetee dùng host-native binary với pinned supported major/minor
+  policy, bind loopback `127.0.0.1:55432`, database `veetee_vubq` và data
+  directory riêng của project. Không dùng listener `5432`, database hoặc data
+  directory của project khác.
 - DB data, object store, model cache, config cache và release artifact là các
   absolute directory riêng; source tree không phải data directory.
 - Object directory tách DB data để backup manifest/checksum rõ; permission test
-  chứng minh API chỉ ghi đúng path cần thiết.
+  chứng minh API chỉ ghi đúng path cần thiết. File DSN bootstrap là owner-read
+  và không được commit.
 
 ## 10. LAN exposure
 

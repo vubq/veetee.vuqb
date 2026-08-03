@@ -5,12 +5,14 @@ chạy service hoặc tạo component mới.
 
 ## 1. Trạng thái repository
 
-- Repository vẫn là **design package** cho firmware, Voice Server, Manager API và
-  full Manager Web/M2. Ngoại lệ explicit đã được chủ dự án phê duyệt và đã code là
-  `veetee-manager-web/` mock UI preview theo design spec tương ứng.
-- Mock preview chỉ phục vụ review UI trong browser: không backend/database/auth/
-  Voice Server/firmware thật, không production secret và không được coi là M2 hoặc
-  full implementation. Evidence của preview không cấp quyền mở scope component khác.
+- Chủ dự án đã mở scope implementation. Repository hiện có M0/M1 vertical slices:
+  `veetee-server/` direct WS/config pipeline, `veetee-firmware/` protocol/state
+  scaffold, `veetee-manager-api/` Fastify control plane fixture và
+  `veetee-manager-web/` preview + HTTP/provider config surface. Physical firmware,
+  PostgreSQL persistence và model promotion vẫn chưa được coi là accepted DoD.
+- UI không có `VITE_MANAGER_API_URL` vẫn là mock preview để review; khi có URL nó
+  gọi Manager API qua typed HTTP gateway và publish config revision. Preview
+  evidence không thay thế API/DB/firmware DoD.
 - Visual foundation hiện tại của preview đã được chủ dự án duyệt. Layout,
   semantic tokens và primitive regression rules trong UI preview spec là baseline;
   không redesign hoặc auto-update visual baseline nếu không có yêu cầu explicit.
@@ -69,12 +71,12 @@ và tạo/cập nhật ADR trước nếu quyết định có nhiều lựa ch�
 |---|---|
 | `veetee-firmware/` | `03-protocol-spec.md`, `04-audio-pipeline.md`, `06-firmware-design.md`, ADR-001, ADR-005, ADR-006, ADR-010 |
 | `veetee-server/` | `02-architecture.md`, `03-protocol-spec.md`, `04-audio-pipeline.md`, `05-provider-registry.md`, `07-server-design.md`, `09-deployment.md`, ADR-001/002/006/007/010 |
-| `veetee-manager-api/` | `05-provider-registry.md`, `08-manager-design.md`, `09-deployment.md`, ADR-003/007/008/009/010 |
+| `veetee-manager-api/` | `05-provider-registry.md`, `08-manager-design.md`, `09-deployment.md`, ADR-003/007/008/009/010/014 |
 | `veetee-manager-web/` | `01-vision-scope.md`, `08-manager-design.md`, `superpowers/specs/2026-08-03-manager-web-ui-preview-design.md`, ADR-004/009/010 |
 | Wire fixture/conformance | `00-reference-analysis.md`, `03-protocol-spec.md`, ADR-001; kiểm tra source cited trong `references/` |
 | Model/provider | `04-audio-pipeline.md`, `05-provider-registry.md`, `09-deployment.md`, `11-open-questions.md`, ADR-002/007 |
 | Schema/API/data | `05-provider-registry.md`, `08-manager-design.md`, ADR-003/007/008/009 |
-| Deployment/runtime | `09-deployment.md`, ADR-002/008/009/010 |
+| Deployment/runtime | `09-deployment.md`, ADR-002/008/009/010/014 |
 | Architecture change | ADR template + mọi ADR liên quan; update cross-document links sau khi accepted |
 
 Chỉ đọc sâu `references/` khi cần verify compatibility claim hoặc test fixture.
@@ -179,12 +181,12 @@ Không kéo feature M3/M4 vào M0 chỉ vì interface đã được mô tả.
   host PostgreSQL và host reverse proxy/service supervisor.
 - Không tạo Dockerfile, Compose file hoặc lệnh container. Nếu một dependency guide
   chỉ có container example, chuyển thành host-native plan hoặc dừng xin quyết định.
-- Manager Web mock preview dùng command contract đã document trong
-  `veetee-manager-web/README.md`/`package.json`. Exact commands của firmware,
-  Voice Server, Manager API và phần product còn design-only chưa tồn tại; không
-  copy command preview sang component khác hoặc bịa command rồi coi là chuẩn.
-- M0/M1 Voice Server dùng `config_source=fixture`; M2+ dùng manager source. Không
-  auto-switch giữa hai nguồn.
+- Manager Web mock/API modes dùng command contract trong
+  `veetee-manager-web/README.md`/`package.json`; Voice Server, Manager API và
+  firmware commands nằm trong README từng component. Host-native stack có manifest
+  tại `tools/runtime/manifests/host-native-dev.json` và readiness supervisor.
+- M0 fixture vẫn là test oracle; runtime bring-up có thể chọn `config_source=manager`
+  bằng manifest với local-only explicit flag. Không auto-switch khi source lỗi.
 - Secret chỉ qua owner-read file/OS credential; không đặt trong command line,
   committed `.env`, logs, screenshot hoặc test artifact.
 

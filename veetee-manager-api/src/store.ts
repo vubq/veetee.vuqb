@@ -64,20 +64,21 @@ export interface ModelMemoryView {
 }
 
 export interface Store {
-  listInstallations(): ProviderInstallation[]
-  listProviderConfigs(ownerId: string, kind?: ProviderKind): ProviderConfig[]
-  createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): ProviderConfig
-  updateProviderConfig(ownerId: string, id: string, value: Partial<Pick<ProviderConfig, 'name' | 'config' | 'secretRefs'>>, ifMatch: string): ProviderConfig
-  listAssistants(ownerId: string): Assistant[]
-  getAssistant(ownerId: string, id: string): Assistant | undefined
-  createAssistant(ownerId: string, name: string): Assistant
-  updateRole(ownerId: string, id: string, value: Record<string, unknown>, ifMatch: string): Assistant
-  getModelMemory(ownerId: string, id: string): ModelMemoryView
-  updateProviderSelection(ownerId: string, id: string, value: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string }, ifMatch: string): ModelMemoryView
-  setMemoryEnabled(ownerId: string, id: string, enabled: boolean, ifMatch: string): ModelMemoryView
-  publish(ownerId: string, id: string, ifMatch?: string): RuntimePublication
-  runtime(): RuntimePublication | undefined
-  setRuntime(publication: RuntimePublication): void
+  close?(): Promise<void>
+  listInstallations(): Promise<ProviderInstallation[]>
+  listProviderConfigs(ownerId: string, kind?: ProviderKind): Promise<ProviderConfig[]>
+  createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<ProviderConfig>
+  updateProviderConfig(ownerId: string, id: string, value: Partial<Pick<ProviderConfig, 'name' | 'config' | 'secretRefs'>>, ifMatch: string): Promise<ProviderConfig>
+  listAssistants(ownerId: string): Promise<Assistant[]>
+  getAssistant(ownerId: string, id: string): Promise<Assistant | undefined>
+  createAssistant(ownerId: string, name: string): Promise<Assistant>
+  updateRole(ownerId: string, id: string, value: Record<string, unknown>, ifMatch: string): Promise<Assistant>
+  getModelMemory(ownerId: string, id: string): Promise<ModelMemoryView>
+  updateProviderSelection(ownerId: string, id: string, value: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string }, ifMatch: string): Promise<ModelMemoryView>
+  setMemoryEnabled(ownerId: string, id: string, enabled: boolean, ifMatch: string): Promise<ModelMemoryView>
+  publish(ownerId: string, id: string, ifMatch?: string): Promise<RuntimePublication>
+  runtime(assistantId?: string): Promise<RuntimePublication | undefined>
+  setRuntime(publication: RuntimePublication): Promise<void>
 }
 
 export class InMemoryStore implements Store {
@@ -117,23 +118,23 @@ export class InMemoryStore implements Store {
     }
   }
 
-  listInstallations(): ProviderInstallation[] { return this.installations.map((item) => structuredClone(item)) }
+  async listInstallations(): Promise<ProviderInstallation[]> { return this.installations.map((item) => structuredClone(item)) }
 
-  listProviderConfigs(ownerId: string, kind?: ProviderKind): ProviderConfig[] {
+  async listProviderConfigs(ownerId: string, kind?: ProviderKind): Promise<ProviderConfig[]> {
     return [...this.providerConfigs.values()].filter((item) => item.ownerId === ownerId && (!kind || this.kind(item.installationId) === kind)).map((item) => structuredClone(item))
   }
 
-  createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): ProviderConfig {
+  async createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<ProviderConfig> {
     const installation = this.installations.find((item) => item.id === value.installationId)
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
     validateJsonObject(value.config, installation.configSchema)
     const now = new Date().toISOString()
-    const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name, revision: 1, config: structuredClone(value.config), secretRefs: value.secretRefs ?? [], etag: etag(value.config), updatedAt: now }
+    const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name, revision: 1, config: structuredClone(value.config), secretRefs: value.secretRefs ?? [], etag: etag({ ...value.config, revision: 1 }), updatedAt: now }
     this.providerConfigs.set(item.id, item)
     return structuredClone(item)
   }
 
-  updateProviderConfig(ownerId: string, id: string, value: Partial<Pick<ProviderConfig, 'name' | 'config' | 'secretRefs'>>, ifMatch: string): ProviderConfig {
+  async updateProviderConfig(ownerId: string, id: string, value: Partial<Pick<ProviderConfig, 'name' | 'config' | 'secretRefs'>>, ifMatch: string): Promise<ProviderConfig> {
     const current = this.providerConfigs.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Provider config not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
@@ -146,20 +147,20 @@ export class InMemoryStore implements Store {
     return structuredClone(next)
   }
 
-  listAssistants(ownerId: string): Assistant[] { return [...this.assistants.values()].filter((item) => item.ownerId === ownerId).map((item) => structuredClone(item)) }
-  getAssistant(ownerId: string, id: string): Assistant | undefined {
+  async listAssistants(ownerId: string): Promise<Assistant[]> { return [...this.assistants.values()].filter((item) => item.ownerId === ownerId).map((item) => structuredClone(item)) }
+  async getAssistant(ownerId: string, id: string): Promise<Assistant | undefined> {
     const item = this.assistants.get(id)
     return item && item.ownerId === ownerId ? structuredClone(item) : undefined
   }
 
-  createAssistant(ownerId: string, name: string): Assistant {
+  async createAssistant(ownerId: string, name: string): Promise<Assistant> {
     const now = new Date().toISOString()
-    const item: Assistant = { id: randomUUID(), ownerId, name, role: {}, providerSelections: {}, draftRevision: 1, publishedRevision: null, etag: etag({ name, now }), updatedAt: now }
+    const item: Assistant = { id: randomUUID(), ownerId, name, role: {}, providerSelections: {}, draftRevision: 1, publishedRevision: null, etag: etag({ name, revision: 1, role: {}, providerSelections: {} }), updatedAt: now }
     this.assistants.set(item.id, item)
     return structuredClone(item)
   }
 
-  updateRole(ownerId: string, id: string, value: Record<string, unknown>, ifMatch: string): Assistant {
+  async updateRole(ownerId: string, id: string, value: Record<string, unknown>, ifMatch: string): Promise<Assistant> {
     const current = this.assistants.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Assistant not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Assistant changed', 409)
@@ -168,13 +169,13 @@ export class InMemoryStore implements Store {
     return structuredClone(next)
   }
 
-  getModelMemory(ownerId: string, id: string): ModelMemoryView {
+  async getModelMemory(ownerId: string, id: string): Promise<ModelMemoryView> {
     const current = this.assistants.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Assistant not found', 404)
     return this.modelMemory(current)
   }
 
-  updateProviderSelection(ownerId: string, id: string, value: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string }, ifMatch: string): ModelMemoryView {
+  async updateProviderSelection(ownerId: string, id: string, value: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string }, ifMatch: string): Promise<ModelMemoryView> {
     const current = this.assistants.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Assistant not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Assistant changed', 409)
@@ -187,7 +188,7 @@ export class InMemoryStore implements Store {
     return this.modelMemory(current)
   }
 
-  setMemoryEnabled(ownerId: string, id: string, enabled: boolean, ifMatch: string): ModelMemoryView {
+  async setMemoryEnabled(ownerId: string, id: string, enabled: boolean, ifMatch: string): Promise<ModelMemoryView> {
     const current = this.assistants.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Assistant not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Assistant changed', 409)
@@ -199,12 +200,12 @@ export class InMemoryStore implements Store {
     return this.modelMemory(current)
   }
 
-  publish(ownerId: string, id: string, ifMatch?: string): RuntimePublication {
+  async publish(ownerId: string, id: string, ifMatch?: string): Promise<RuntimePublication> {
     const current = this.assistants.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Assistant not found', 404)
     if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Assistant changed', 409)
     if (!current.role.locale || !current.role.basePrompt) throw problem('CONFIG_NOT_PUBLISHABLE', 'Role configuration is incomplete', 422)
-    const revision = (current.publishedRevision ?? 0) + 1
+    const revision = current.draftRevision
     const resolvedProviders: Record<string, Record<string, unknown>> = {}
     for (const [kind, value] of Object.entries(current.providerSelections)) {
       if (!value || value.mode === 'disabled') {
@@ -233,15 +234,17 @@ export class InMemoryStore implements Store {
       wire: { profile: 'ws-v3', uplinkSampleRate: 16000, downlinkSampleRate: 24000, frameDurationMs: 60 },
     }
     current.publishedRevision = revision
-    current.etag = etag(snapshot)
     current.updatedAt = new Date().toISOString()
     this.assistants.set(id, current)
     this.publication = { snapshot, etag: etag(snapshot), updatedAt: current.updatedAt }
     return structuredClone(this.publication)
   }
 
-  runtime(): RuntimePublication | undefined { return this.publication && structuredClone(this.publication) }
-  setRuntime(publication: RuntimePublication): void { this.publication = structuredClone(publication) }
+  async runtime(assistantId?: string): Promise<RuntimePublication | undefined> {
+    if (assistantId && this.publication?.snapshot.assistantId !== assistantId) return undefined
+    return this.publication && structuredClone(this.publication)
+  }
+  async setRuntime(publication: RuntimePublication): Promise<void> { this.publication = structuredClone(publication) }
 
   private kind(id: string): ProviderKind | undefined { return this.installations.find((item) => item.id === id)?.kind }
 

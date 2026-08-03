@@ -13,8 +13,20 @@ VEETEE_DATABASE_MODE=memory \
 npm run dev
 ```
 
-`memory` phù hợp fixture/dev test. M2 production dùng `VEETEE_DATABASE_MODE=postgres`
-và `VEETEE_DATABASE_URL_FILE`; migration SQL nằm trong `migrations/`.
+`memory` phù hợp fixture/dev test. M2 dùng `VEETEE_DATABASE_MODE=postgres` và
+`VEETEE_DATABASE_URL_FILE`; migration SQL nằm trong `migrations/`. Runtime
+bootstrap của project dùng database riêng `veetee_vubq` trên `127.0.0.1:55432`,
+không dùng database hoặc data directory của project khác.
+
+Migration chạy one-shot trước khi API khởi động:
+
+```bash
+VEETEE_DATABASE_URL_FILE=../secrets/manager.database-url npm run db:migrate
+```
+
+PostgreSQL adapter dùng immutable `assistant_revision` và
+`provider_config_revision`; các row current chỉ giữ pointer/ETag. Secret chỉ là
+reference metadata, không lưu plaintext trong PostgreSQL.
 
 Health: `/health/live`, `/health/ready`. User API có prefix `/api/v1`, machine
 runtime snapshot là `/internal/v1/runtime-config`. OpenAPI JSON ở `/openapi.json`.

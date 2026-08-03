@@ -1045,4 +1045,7 @@ Persistence baseline đã được chốt tại
 [ADR-008](ADR/ADR-008-postgresql-without-redis-baseline.md); provider terminology,
 package discovery và lifecycle được chốt tại
 [ADR-007](ADR/ADR-007-provider-registry-lifecycle.md); local owner/session auth
-được chốt tại [ADR-009](ADR/ADR-009-local-manager-authentication.md).
+được chốt tại [ADR-009](ADR/ADR-009-local-manager-authentication.md). Database
+isolation và immutable revision implementation được chốt tại
+[ADR-014](ADR/ADR-014-isolated-postgres-immutable-control-plane.md): database
+`veetee_vubq`, instance loopback riêng và schema `veetee_manager`.

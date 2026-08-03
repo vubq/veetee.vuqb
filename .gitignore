@@ -27,6 +27,8 @@
 # Test-only credential lists. Keep the tracked shape in secrets/*.example.
 secrets/*.keys
 secrets/*.secret
+secrets/*.url
+secrets/*.database-url
 
 # Host-local agent/tool state and visual artifacts
 .agents/
@@ -34,6 +36,7 @@ secrets/*.secret
 .playwright-cli/
 .superpowers/
 output/
+.runtime/
 
 # Read-only architecture reference snapshots; not product source
 references/

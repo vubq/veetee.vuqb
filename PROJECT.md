@@ -7,12 +7,11 @@ thuẫn, yêu cầu mới nhất của chủ dự án và tài liệu source-of-
 
 ## 1. Trạng thái hiện tại
 
-- Bộ planning `docs/00` → `docs/11`, các ADR và roadmap đã đủ để review; trạng
-  thái này **không** cấp quyền implement firmware, Voice Server, Manager API hoặc
-  full Manager Web/M2. Chỉ yêu cầu explicit sau này mới mở product code scope.
-- Ngoại lệ code duy nhất là `veetee-manager-web/` mock UI preview. Chủ dự án đã
-  duyệt visual foundation hiện tại: information hierarchy, layout, typography,
-  component styling và responsive direction.
+- Bộ planning `docs/00` → `docs/11`, các ADR và roadmap vẫn là source of truth;
+  chủ dự án đã explicit mở product code scope. M0/M1/M2 slices đang được triển
+  khai theo note trong `docs/implementation-notes/`.
+- `veetee-manager-web/` giữ visual foundation đã duyệt, đồng thời có HTTP gateway
+  và provider registry schema-driven khi chạy cùng Manager API.
 - Preview đã có code Vue/Vite/Tailwind, Reka-backed `Vt*` primitives, mock gateway
   và năm surface; nó không gọi API/database/Voice Server/firmware, không có auth
   hoặc secret production và **không** được tính là hoàn thành M2/full product.
@@ -66,7 +65,7 @@ Trước một task mới, đọc theo thứ tự sau:
 | Provider manifest/lifecycle/config | [`05-provider-registry.md`](docs/05-provider-registry.md), ADR-007, [`11-open-questions.md`](docs/11-open-questions.md) |
 | Manager API/data/auth | [`08-manager-design.md`](docs/08-manager-design.md), ADR-003/008/009 |
 | Manager Web/UI | [`08-manager-design.md`](docs/08-manager-design.md), [`UI preview design`](docs/superpowers/specs/2026-08-03-manager-web-ui-preview-design.md), ADR-004; dùng skill Vue/UI/accessibility khi cần |
-| Local run, LAN, model/resource budget | [`09-deployment.md`](docs/09-deployment.md), ADR-002/010 |
+| Local run, LAN, model/resource budget | [`09-deployment.md`](docs/09-deployment.md), ADR-002/010/014 |
 | Kiến trúc mới | [`docs/ADR/ADR-000-template.md`](docs/ADR/ADR-000-template.md) và các ADR liên quan |
 
 ## 4. Nơi được thao tác và ownership
@@ -132,10 +131,12 @@ Quy trình tối thiểu:
 6. Handoff nêu outcome, file/contract, lệnh và kết quả kiểm tra, giới hạn,
    physical checks cần chủ dự án thực hiện và rollback an toàn.
 
-Manager Web mock preview đã có command contract host-native trong
-`veetee-manager-web/README.md` và `package.json`. Với firmware, Voice Server,
-Manager API và mọi phần product còn design-only, command build/run/lint/test chưa
-tồn tại; AI không được suy từ preview hoặc bịa lệnh cho các component đó.
+Manager Web mock preview và API mode đã có command contract host-native trong
+`veetee-manager-web/README.md` và `package.json`. Voice Server, Manager API và
+firmware hiện có README/command/test contract tương ứng; riêng PostgreSQL control
+plane dùng manifest `tools/runtime/manifests/host-native-postgres-dev.json`,
+database `veetee_vubq` trên instance loopback riêng. Không coi preview hoặc
+fixture memory là bằng chứng cho physical firmware hay M2 production gate.
 
 ## 7. Skill routing
 
