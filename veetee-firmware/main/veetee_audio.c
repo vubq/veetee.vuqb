@@ -5,6 +5,7 @@
 #include "driver/i2s_common.h"
 #include "esp_audio_enc.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "encoder/impl/esp_opus_enc.h"
@@ -71,6 +72,36 @@ static i2s_std_config_t std_config(int sample_rate, int bclk, int ws, int dout, 
     return value;
 }
 
+void vt_audio_deinit(vt_audio_t *audio) {
+    if (audio == NULL) return;
+    (void)vt_audio_stop(audio);
+    if (audio->encoder != NULL) {
+        esp_opus_enc_close(audio->encoder);
+        audio->encoder = NULL;
+    }
+    if (audio->decoder != NULL) {
+        (void)esp_opus_dec_close(audio->decoder);
+        audio->decoder = NULL;
+    }
+    if (audio->rx_handle != NULL) {
+        (void)i2s_del_channel(audio->rx_handle);
+        audio->rx_handle = NULL;
+    }
+    if (audio->tx_handle != NULL) {
+        (void)i2s_del_channel(audio->tx_handle);
+        audio->tx_handle = NULL;
+    }
+    if (audio->decode_pcm != NULL) {
+        heap_caps_free(audio->decode_pcm);
+        audio->decode_pcm = NULL;
+    }
+    if (audio->output_pcm != NULL) {
+        heap_caps_free(audio->output_pcm);
+        audio->output_pcm = NULL;
+    }
+    audio->started = false;
+}
+
 int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
     if (audio == NULL || check_config(config) != ESP_OK) return ESP_ERR_INVALID_ARG;
     memset(audio, 0, sizeof(*audio));
@@ -78,6 +109,15 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
     audio->output_frame_samples = config->output_sample_rate * config->frame_duration_ms / 1000;
     audio->input_frame_bytes = audio->input_frame_samples * (int)sizeof(int16_t);
     audio->output_frame_bytes = audio->output_frame_samples * (int)sizeof(int16_t);
+    if (audio->input_frame_samples <= 0 || audio->output_frame_samples <= 0) return ESP_ERR_INVALID_SIZE;
+    audio->decode_pcm = heap_caps_calloc((size_t)audio->output_frame_samples, sizeof(*audio->decode_pcm),
+                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    audio->output_pcm = heap_caps_calloc((size_t)audio->output_frame_samples, sizeof(*audio->output_pcm),
+                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (audio->decode_pcm == NULL || audio->output_pcm == NULL) {
+        vt_audio_deinit(audio);
+        return ESP_ERR_NO_MEM;
+    }
 
     i2s_chan_config_t channel_config = {
         .id = 0,
@@ -89,19 +129,31 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
         .intr_priority = 0,
     };
     esp_err_t error = i2s_new_channel(&channel_config, &audio->tx_handle, NULL);
-    if (error != ESP_OK) return error;
+    if (error != ESP_OK) {
+        vt_audio_deinit(audio);
+        return error;
+    }
     i2s_std_config_t tx_config = std_config(config->output_sample_rate, config->speaker_bclk_gpio,
                                             config->speaker_ws_gpio, config->speaker_dout_gpio, I2S_GPIO_UNUSED);
     error = i2s_channel_init_std_mode(audio->tx_handle, &tx_config);
-    if (error != ESP_OK) return error;
+    if (error != ESP_OK) {
+        vt_audio_deinit(audio);
+        return error;
+    }
 
     channel_config.id = 1;
     error = i2s_new_channel(&channel_config, NULL, &audio->rx_handle);
-    if (error != ESP_OK) return error;
+    if (error != ESP_OK) {
+        vt_audio_deinit(audio);
+        return error;
+    }
     i2s_std_config_t rx_config = std_config(config->input_sample_rate, config->microphone_bclk_gpio,
                                             config->microphone_ws_gpio, I2S_GPIO_UNUSED, config->microphone_din_gpio);
     error = i2s_channel_init_std_mode(audio->rx_handle, &rx_config);
-    if (error != ESP_OK) return error;
+    if (error != ESP_OK) {
+        vt_audio_deinit(audio);
+        return error;
+    }
 
     esp_opus_enc_config_t encoder_config = {
         .sample_rate = config->input_sample_rate,
@@ -117,6 +169,7 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
     };
     if (esp_opus_enc_open(&encoder_config, sizeof(encoder_config), &audio->encoder) != ESP_AUDIO_ERR_OK) {
         ESP_LOGE(TAG, "Opus encoder init failed");
+        vt_audio_deinit(audio);
         return ESP_ERR_NOT_SUPPORTED;
     }
     esp_opus_dec_cfg_t decoder_config = {
@@ -127,6 +180,7 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
     };
     if (esp_opus_dec_open(&decoder_config, sizeof(decoder_config), &audio->decoder) != ESP_AUDIO_ERR_OK) {
         ESP_LOGE(TAG, "Opus decoder init failed");
+        vt_audio_deinit(audio);
         return ESP_ERR_NOT_SUPPORTED;
     }
     int encoder_frame_bytes = 0;
@@ -134,9 +188,13 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
     if (esp_opus_enc_get_frame_size(audio->encoder, &encoder_frame_bytes, &encoder_out_bytes) != ESP_AUDIO_ERR_OK ||
         encoder_frame_bytes != audio->input_frame_bytes) {
         ESP_LOGE(TAG, "unexpected Opus frame size input=%d expected=%d", encoder_frame_bytes, audio->input_frame_bytes);
+        vt_audio_deinit(audio);
         return ESP_ERR_INVALID_SIZE;
     }
-    if (encoder_out_bytes <= 0) return ESP_ERR_INVALID_SIZE;
+    if (encoder_out_bytes <= 0) {
+        vt_audio_deinit(audio);
+        return ESP_ERR_INVALID_SIZE;
+    }
     audio->output_frame_bytes = audio->output_frame_samples * (int)sizeof(int16_t);
     return ESP_OK;
 }
@@ -189,19 +247,30 @@ int vt_audio_encode(vt_audio_t *audio, const int16_t *samples, size_t sample_cou
 }
 
 int vt_audio_decode_and_play(vt_audio_t *audio, const uint8_t *opus, size_t opus_size) {
-    if (audio == NULL || opus == NULL || opus_size == 0 || audio->decoder == NULL || !audio->started) return ESP_ERR_INVALID_ARG;
-    int16_t pcm[audio->output_frame_samples];
+    if (audio == NULL || opus == NULL || opus_size == 0 || audio->decoder == NULL ||
+        audio->decode_pcm == NULL || audio->output_pcm == NULL || !audio->started) return ESP_ERR_INVALID_ARG;
     esp_audio_dec_in_raw_t input = { .buffer = (uint8_t *)opus, .len = (uint32_t)opus_size, .consumed = 0 };
-    esp_audio_dec_out_frame_t output = { .buffer = (uint8_t *)pcm, .len = sizeof(pcm), .needed_size = 0, .decoded_size = 0 };
+    esp_audio_dec_out_frame_t output = {
+        .buffer = (uint8_t *)audio->decode_pcm,
+        .len = (uint32_t)(audio->output_frame_samples * sizeof(*audio->decode_pcm)),
+        .needed_size = 0,
+        .decoded_size = 0,
+    };
     esp_audio_dec_info_t info = {0};
     esp_audio_err_t error = esp_opus_dec_decode(audio->decoder, &input, &output, &info);
     if (error != ESP_AUDIO_ERR_OK || output.decoded_size == 0) return ESP_ERR_INVALID_SIZE;
+    if (output.decoded_size % sizeof(*audio->decode_pcm) != 0 ||
+        output.decoded_size > audio->output_frame_samples * (int)sizeof(*audio->decode_pcm)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
     size_t samples = output.decoded_size / sizeof(int16_t);
-    int32_t expanded[samples];
-    for (size_t index = 0; index < samples; ++index) expanded[index] = (int32_t)pcm[index] << VT_AUDIO_PCM_SHIFT;
+    for (size_t index = 0; index < samples; ++index) {
+        audio->output_pcm[index] = (int32_t)audio->decode_pcm[index] << VT_AUDIO_PCM_SHIFT;
+    }
     size_t bytes_written = 0;
-    error = i2s_channel_write(audio->tx_handle, expanded, samples * sizeof(int32_t), &bytes_written, pdMS_TO_TICKS(250));
-    return error == ESP_OK && bytes_written == samples * sizeof(int32_t) ? ESP_OK : ESP_FAIL;
+    size_t output_bytes = samples * sizeof(*audio->output_pcm);
+    error = i2s_channel_write(audio->tx_handle, audio->output_pcm, output_bytes, &bytes_written, pdMS_TO_TICKS(250));
+    return error == ESP_OK && bytes_written == output_bytes ? ESP_OK : ESP_FAIL;
 }
 
 void vt_audio_reset(vt_audio_t *audio) {
