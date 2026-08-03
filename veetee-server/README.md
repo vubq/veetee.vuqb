@@ -22,6 +22,14 @@ VEETEE_GROQ_SECRET_FILE=../secrets/groq.keys \
 ./.venv/bin/python -m veetee_server
 ```
 
+Khi chạy cùng Manager API, có thể bật history telemetry bằng
+`VEETEE_HISTORY_ENABLED=true`. Reporter dùng chính `VEETEE_MANAGER_API_URL` và
+machine bearer (nếu có), đẩy `POST /internal/v1/conversations/turns` qua queue
+bounded; queue đầy hoặc Manager tạm lỗi không chặn audio critical path. Các
+tham số `VEETEE_HISTORY_QUEUE_SIZE`, `VEETEE_HISTORY_REQUEST_TIMEOUT_MS`,
+`VEETEE_HISTORY_MAX_RETRIES`, `VEETEE_HISTORY_RETRY_BACKOFF_MS` và
+`VEETEE_HISTORY_SHUTDOWN_DRAIN_MS` chỉ là vận hành, không chứa credential.
+
 Các giá trị vận hành đọc từ environment hoặc snapshot. Fixture mặc định dùng
 provider deterministic để contract test không gọi API ngoài. Groq/VieNeu thật chỉ
 được activate bằng snapshot/provider manifest và dependency đã cài. Adapter VieNeu

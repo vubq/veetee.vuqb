@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from veetee_server.config import ServerConfig, load_snapshot
+from veetee_server.config import load_snapshot
 from veetee_server.pipeline import Turn, TurnPipeline
 from veetee_server.providers import LLMDelta, OpusCodec, ProviderRegistry
 

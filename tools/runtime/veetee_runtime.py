@@ -209,7 +209,11 @@ def _with_node_path(environment: dict[str, str]) -> dict[str, str]:
     if node_bin is None:
         npm_path = shutil.which("npm", path=path)
         if npm_path:
-            node_bin = str(Path(npm_path).resolve().parent)
+            # npm is commonly a symlink into lib/node_modules.  Resolve the
+            # command lookup only far enough to find its containing bin dir;
+            # resolving the symlink itself creates a bogus PATH entry under
+            # `bin/node_modules/npm/bin` and breaks npm's own prefix lookup.
+            node_bin = str(Path(npm_path).parent)
     if node_bin is None:
         node_bin = _discover_nvm_node_bin(result)
     if node_bin and node_bin not in path.split(os.pathsep):

@@ -8,7 +8,7 @@ import json
 import logging
 from pathlib import Path
 import tempfile
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
 import httpx
 

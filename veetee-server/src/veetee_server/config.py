@@ -25,6 +25,13 @@ class ServerConfig:
     machine_token_file: Path | None
     allow_insecure_local_config: bool
     manager_runtime_path: str
+    history_enabled: bool
+    history_path: str
+    history_queue_size: int
+    history_request_timeout_ms: int
+    history_max_retries: int
+    history_retry_backoff_ms: int
+    history_shutdown_drain_ms: int
     config_poll_ms: int
     log_level: str
     max_ws_message_bytes: int
@@ -44,6 +51,9 @@ class ServerConfig:
         allow_insecure = os.getenv("VEETEE_ALLOW_INSECURE_LOCAL_CONFIG", "false").strip().lower() in {"1", "true", "yes"}
         if source == "manager" and not token_file and not allow_insecure:
             raise ConfigurationError("VEETEE_MACHINE_TOKEN_FILE is required for manager source")
+        history_enabled = _bool_env("VEETEE_HISTORY_ENABLED", False)
+        if history_enabled and not manager_url:
+            raise ConfigurationError("VEETEE_MANAGER_API_URL is required when history reporting is enabled")
         port = _positive_int("VEETEE_VOICE_PORT", os.getenv("VEETEE_VOICE_PORT", "8000"))
         poll_ms = _positive_int("VEETEE_CONFIG_POLL_MS", os.getenv("VEETEE_CONFIG_POLL_MS", "2000"))
         return cls(
@@ -56,6 +66,13 @@ class ServerConfig:
             machine_token_file=Path(token_file).expanduser() if token_file else None,
             allow_insecure_local_config=allow_insecure,
             manager_runtime_path=_normalise_path(os.getenv("VEETEE_MANAGER_RUNTIME_PATH", "/internal/v1/runtime-config")),
+            history_enabled=history_enabled,
+            history_path=_normalise_path(os.getenv("VEETEE_HISTORY_PATH", "/internal/v1/conversations/turns")),
+            history_queue_size=_bounded_int("VEETEE_HISTORY_QUEUE_SIZE", os.getenv("VEETEE_HISTORY_QUEUE_SIZE", "64"), minimum=1, maximum=4096),
+            history_request_timeout_ms=_bounded_int("VEETEE_HISTORY_REQUEST_TIMEOUT_MS", os.getenv("VEETEE_HISTORY_REQUEST_TIMEOUT_MS", "2000"), minimum=1, maximum=30000),
+            history_max_retries=_bounded_int("VEETEE_HISTORY_MAX_RETRIES", os.getenv("VEETEE_HISTORY_MAX_RETRIES", "2"), minimum=0, maximum=8),
+            history_retry_backoff_ms=_bounded_int("VEETEE_HISTORY_RETRY_BACKOFF_MS", os.getenv("VEETEE_HISTORY_RETRY_BACKOFF_MS", "100"), minimum=0, maximum=10000),
+            history_shutdown_drain_ms=_bounded_int("VEETEE_HISTORY_SHUTDOWN_DRAIN_MS", os.getenv("VEETEE_HISTORY_SHUTDOWN_DRAIN_MS", "500"), minimum=0, maximum=30000),
             config_poll_ms=poll_ms,
             log_level=os.getenv("VEETEE_LOG_LEVEL", "INFO").upper(),
             max_ws_message_bytes=_positive_int(
@@ -128,6 +145,28 @@ def _positive_int(name: str, value: str) -> int:
     if parsed <= 0:
         raise ConfigurationError(f"{name} must be positive")
     return parsed
+
+
+def _bounded_int(name: str, value: str, *, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be an integer") from exc
+    if parsed < minimum or parsed > maximum:
+        raise ConfigurationError(f"{name} must be between {minimum} and {maximum}")
+    return parsed
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigurationError(f"{name} must be a boolean")
 
 
 def _required_string(value: dict[str, Any], name: str) -> str:

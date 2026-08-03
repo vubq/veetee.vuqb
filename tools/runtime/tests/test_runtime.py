@@ -86,3 +86,17 @@ def test_runtime_node_bin_override_wins_over_nvm(tmp_path):
     )
 
     assert result["PATH"].split(os.pathsep)[0] == str(explicit_bin)
+
+
+def test_runtime_preserves_bin_parent_for_symlinked_npm(tmp_path):
+    node_bin = tmp_path / "node" / "bin"
+    npm_target = tmp_path / "node" / "lib" / "node_modules" / "npm" / "bin"
+    node_bin.mkdir(parents=True)
+    npm_target.mkdir(parents=True)
+    (npm_target / "npm-cli.js").write_text("#!/usr/bin/env node\n", encoding="utf-8")
+    (npm_target / "npm-cli.js").chmod(0o755)
+    (node_bin / "npm").symlink_to("../lib/node_modules/npm/bin/npm-cli.js")
+
+    result = _with_node_path({"HOME": str(tmp_path), "PATH": str(node_bin)})
+
+    assert result["PATH"].split(os.pathsep)[0] == str(node_bin)

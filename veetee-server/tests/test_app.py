@@ -41,7 +41,6 @@ async def test_websocket_v3_handshake_and_turn(monkeypatch):
         assert hello["type"] == "hello"
         assert hello["audio_params"]["sample_rate"] == 24000
         await ws.send_json({"type": "listen", "state": "start", "mode": "manual", "session_id": hello["session_id"]})
-        from veetee_server.providers import OpusCodec
         from veetee_server.protocol import AudioFrame, encode_audio
 
         encoder = __import__("opuslib").Encoder(16000, 1, __import__("opuslib").APPLICATION_AUDIO)

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import json
 import time
 from typing import Any, Awaitable, Callable
@@ -26,6 +27,18 @@ class Turn:
     llm_first_at: float | None = None
     tts_started_at: float | None = None
     first_audio_at: float | None = None
+    sequence: int = 1
+    started_at: str = ""
+    conversation_started_at: str = ""
+    started_monotonic: float = field(default_factory=time.perf_counter)
+    ended_at: str | None = None
+    state: str = "completed"
+    finish_reason: str = "completed"
+    conversation_status: str = "active"
+    reported: bool = False
+    transcript: list[dict[str, Any]] = field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    timings: dict[str, int] = field(default_factory=dict)
 
 
 class SemanticSegmenter:
@@ -108,6 +121,7 @@ class TurnPipeline:
         try:
             transcript = await self.registry.asr.finish(self.snapshot.locale)
             self.turn.asr_finished_at = time.perf_counter()
+            self._append_transcript("user", transcript, 0, self._elapsed_ms(self.turn.asr_finished_at))
             await self._send_text(control_message("stt", session_id=self.session_id, text=transcript, turn_id=self.turn.turn_id))
             intent = self.registry.intent.classify(transcript, locale=self.snapshot.locale) if self.registry.intent else None
             if intent is not None:
@@ -130,9 +144,12 @@ class TurnPipeline:
         except asyncio.CancelledError:
             raise
         except ProviderError as exc:
+            self.turn.state = "error"
+            self.turn.finish_reason = exc.code
             self.metrics[f"provider_error_{exc.code}"] = self.metrics.get(f"provider_error_{exc.code}", 0) + 1
             await self._send_text(control_message("alert", session_id=self.session_id, status="error", code=exc.code))
         finally:
+            self.turn.ended_at = self.turn.ended_at or self._utc_now()
             self.metrics["turn_count"] = self.metrics.get("turn_count", 0) + 1
             self.metrics["last_turn_ms"] = round((time.perf_counter() - started) * 1000)
             self._record_timings()
@@ -143,6 +160,38 @@ class TurnPipeline:
         if self.turn.task and not self.turn.task.done():
             self.turn.task.cancel()
         self._egress_pcm.clear()
+
+    def _append_transcript(self, speaker: str, text: str, started_ms: int, ended_ms: int) -> None:
+        value = text.strip()
+        if not value:
+            return
+        if len(self.turn.transcript) >= 128:
+            return
+        self.turn.transcript.append({
+            "speaker": speaker,
+            "text": value,
+            "locale": self.snapshot.locale,
+            "confidence": None,
+            "startedAtMs": max(0, started_ms),
+            "endedAtMs": max(max(0, started_ms), ended_ms),
+            "isFinal": True,
+        })
+
+    def _elapsed_ms(self, timestamp: float | None = None) -> int:
+        return max(0, round(((timestamp or time.perf_counter()) - self.turn.started_monotonic) * 1000))
+
+    @staticmethod
+    def _utc_now() -> str:
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    @staticmethod
+    def _safe_object_shape(value: Any) -> dict[str, Any]:
+        """Keep tool history useful without persisting argument values."""
+
+        if not isinstance(value, dict):
+            return {"type": type(value).__name__}
+        keys = sorted(str(key) for key in value.keys())[:64]
+        return {"keys": keys, "fieldCount": len(value)}
 
     def _cancelled(self) -> bool:
         return self.turn.cancelled is not None and self.turn.cancelled.is_set()
@@ -214,7 +263,7 @@ class TurnPipeline:
                             self.turn.tts_started_at = time.perf_counter()
                             await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
                             answer_started = True
-                        await self._speak_segment(progress_text)
+                        await self._speak_segment(progress_text, speaker="system")
                     try:
                         await handle_delta(await next_delta)
                     except StopAsyncIteration:
@@ -236,7 +285,37 @@ class TurnPipeline:
                     raise ProviderError("TOOL_ARGUMENTS_INVALID", "tool arguments are not valid JSON") from exc
                 if not isinstance(arguments, dict):
                     raise ProviderError("TOOL_ARGUMENTS_INVALID", "tool arguments must be an object")
-                result = await self._execute_tool(tool_name, arguments, self.turn.generation)
+                tool_started = time.perf_counter()
+                tool_record: dict[str, Any] = {
+                    "toolName": tool_name,
+                    "source": "llm",
+                    "status": "completed",
+                    "startedAt": self._utc_now(),
+                    "endedAt": None,
+                    "latencyMs": None,
+                    "input": self._safe_object_shape(arguments),
+                    "output": None,
+                    "errorCode": None,
+                }
+                try:
+                    result = await self._execute_tool(tool_name, arguments, self.turn.generation)
+                    tool_record["output"] = self._safe_object_shape(result)
+                except asyncio.CancelledError:
+                    tool_record["status"] = "cancelled"
+                    raise
+                except ProviderError as exc:
+                    tool_record["status"] = "error"
+                    tool_record["errorCode"] = exc.code
+                    raise
+                except Exception:
+                    tool_record["status"] = "error"
+                    tool_record["errorCode"] = "TOOL_EXECUTION_FAILED"
+                    raise ProviderError("TOOL_EXECUTION_FAILED", "tool execution failed")
+                finally:
+                    tool_record["endedAt"] = self._utc_now()
+                    tool_record["latencyMs"] = self._elapsed_ms(tool_started)
+                    if len(self.turn.tool_calls) < 64:
+                        self.turn.tool_calls.append(tool_record)
                 current_prompt = f"{current_prompt}\n\nTool result for {tool_name}: {json.dumps(result, ensure_ascii=False)}"
                 continue
             break
@@ -275,9 +354,10 @@ class TurnPipeline:
         text = acknowledgements.get(acknowledgement_id)
         return (deadline, text.strip()) if isinstance(text, str) and text.strip() else (0, "")
 
-    async def _speak_segment(self, segment: str) -> None:
+    async def _speak_segment(self, segment: str, *, speaker: str = "assistant") -> None:
         if self._cancelled():
             return
+        segment_started = time.perf_counter()
         await self._send_text(
             control_message("tts", session_id=self.session_id, state="sentence_start", text=segment, turn_id=self.turn.turn_id)
         )
@@ -291,6 +371,7 @@ class TurnPipeline:
             if self._cancelled():
                 return
         await self._flush_packetizer(final=True)
+        self._append_transcript(speaker, segment, self._elapsed_ms(segment_started), self._elapsed_ms())
 
     async def _write_pcm(self, chunk: AudioChunk) -> None:
         if chunk.sample_rate != self._downlink_rate:
@@ -331,7 +412,10 @@ class TurnPipeline:
         )
         for name, timestamp in fields:
             if timestamp is not None:
-                self.metrics[name] = max(0, round((timestamp - origin) * 1000))
+                value = max(0, round((timestamp - origin) * 1000))
+                self.metrics[name] = value
+                self.turn.timings[name.removeprefix("last_")] = value
+        self.turn.timings["turn_duration_ms"] = self._elapsed_ms()
 
     def _prompt(self, transcript: str) -> str:
         raw_personality = self.snapshot.raw.get("personality")

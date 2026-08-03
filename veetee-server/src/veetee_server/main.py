@@ -11,6 +11,7 @@ from aiohttp import web
 
 from .app import VoiceApplication
 from .config import ServerConfig
+from .history import ConversationHistoryReporter, HistoryReporterSettings
 from .runtime import RuntimeConfigManager
 from .secrets import EncryptedFileSecretResolver
 
@@ -29,7 +30,25 @@ async def serve() -> None:
         secret_resolver = EncryptedFileSecretResolver(Path(secret_store_file), master_material)
     runtime = RuntimeConfigManager(config, secret_file=secret_file, secret_resolver=secret_resolver)
     await runtime.start()
-    voice = VoiceApplication(config, runtime)
+    history = None
+    if config.history_enabled:
+        assert config.manager_api_url is not None
+        token = None
+        if config.machine_token_file is not None:
+            token = config.machine_token_file.read_text(encoding="utf-8").strip()
+        history = ConversationHistoryReporter(
+            HistoryReporterSettings(
+                endpoint=f"{config.manager_api_url.rstrip('/')}{config.history_path.rstrip('/')}",
+                token=token,
+                queue_capacity=config.history_queue_size,
+                request_timeout_ms=config.history_request_timeout_ms,
+                max_retries=config.history_max_retries,
+                retry_backoff_ms=config.history_retry_backoff_ms,
+                shutdown_drain_ms=config.history_shutdown_drain_ms,
+            )
+        )
+        await history.start()
+    voice = VoiceApplication(config, runtime, history_reporter=history)
     runner = web.AppRunner(voice.make_app(), access_log=None)
     await runner.setup()
     site = web.TCPSite(runner, config.host, config.port)
@@ -38,6 +57,8 @@ async def serve() -> None:
     try:
         await asyncio.Event().wait()
     finally:
+        if history is not None:
+            await history.stop()
         await runtime.stop()
         await runner.cleanup()
 

@@ -3,30 +3,36 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable
+from datetime import datetime, timezone
 import json
 import logging
 import secrets
 import time
-from pathlib import Path
 from typing import Any
+from uuid import UUID, uuid4
 
 from aiohttp import WSMsgType, web
 
-VOICE_APP_KEY = web.AppKey("voice", object)
-
-from .config import ConfigurationError, ServerConfig
+from .config import ServerConfig
+from .history import ConversationHistoryReporter
 from .pipeline import Turn, TurnPipeline
 from .mcp import DeviceMcpBridge
 from .protocol import ProtocolError, decode_audio, decode_json, profile_from_version, control_message
 from .providers import IntentMatch, MemorySession, OpusCodec, ProviderError
 from .runtime import RuntimeConfigManager, RuntimeView
 
+VOICE_APP_KEY = web.AppKey("voice", object)
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
 
 class VoiceApplication:
-    def __init__(self, config: ServerConfig, runtime: RuntimeConfigManager) -> None:
+    def __init__(self, config: ServerConfig, runtime: RuntimeConfigManager, *, history_reporter: ConversationHistoryReporter | None = None) -> None:
         self.config = config
         self.runtime = runtime
+        self.history_reporter = history_reporter
         self.log = logging.getLogger("veetee.voice")
         self.metrics: dict[str, int] = {
             "connections": 0,
@@ -68,7 +74,10 @@ class VoiceApplication:
         )
 
     async def metrics_view(self, request: web.Request) -> web.Response:
-        return web.json_response(dict(self.metrics))
+        payload = dict(self.metrics)
+        if self.history_reporter is not None:
+            payload.update({f"history_{key}": value for key, value in self.history_reporter.metrics().items()})
+        return web.json_response(payload)
 
     async def websocket(self, request: web.Request) -> web.WebSocketResponse:
         device_id = request.headers.get("Device-Id") or request.headers.get("device-id")
@@ -116,6 +125,9 @@ class VoiceSession:
         self._speech_frames = 0
         self._closed = False
         self._lock = asyncio.Lock()
+        self.conversation_id = str(uuid4())
+        self.conversation_started_at: str | None = None
+        self.turn_sequence = 0
 
     async def run(self) -> None:
         try:
@@ -227,7 +239,9 @@ class VoiceSession:
             if self.turn and self.pipeline and self.turn.task is None:
                 self.turn.listen_stopped_at = time.perf_counter()
                 self.phase = "thinking"
-                self.turn.task = asyncio.create_task(self.pipeline.finish(), name=f"turn-{self.turn.turn_id}")
+                turn = self.turn
+                pipeline = self.pipeline
+                turn.task = asyncio.create_task(self._finish_turn(turn, pipeline), name=f"turn-{turn.turn_id}")
         elif state == "detect":
             text = message.get("text")
             if isinstance(text, str) and self.app.runtime.view.registry.intent:
@@ -242,7 +256,20 @@ class VoiceSession:
     async def _start_turn(self, mode: str) -> None:
         await self._abort(reason="new_turn", send_stop=False)
         self.generation += 1
-        self.turn = Turn(turn_id=secrets.token_urlsafe(10), generation=self.generation, mode=mode, cancelled=asyncio.Event())
+        now = _utc_now()
+        if self.conversation_started_at is None:
+            self.conversation_started_at = now
+        self.turn_sequence += 1
+        self.turn = Turn(
+            turn_id=secrets.token_urlsafe(10),
+            generation=self.generation,
+            mode=mode,
+            cancelled=asyncio.Event(),
+            sequence=self.turn_sequence,
+            started_at=now,
+            conversation_started_at=self.conversation_started_at,
+            started_monotonic=time.perf_counter(),
+        )
         self.phase = "listening"
         self._speech_frames = 0
         view: RuntimeView = self.app.runtime.view
@@ -263,6 +290,17 @@ class VoiceSession:
         )
         view.registry.vad.reset()
         view.registry.asr.reset()
+
+    async def _finish_turn(self, turn: Turn, pipeline: TurnPipeline) -> None:
+        cancelled = False
+        try:
+            await pipeline.finish()
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+        finally:
+            if not cancelled:
+                await self._report_turn(turn)
 
     async def _audio(self, raw: bytes) -> None:
         if not self.ready or self.pipeline is None or self.turn is None or self.codec is None:
@@ -292,7 +330,10 @@ class VoiceSession:
         # frame as endpointed: finish() must observe that frame.
         if self.phase == "listening" and self.turn.mode == "auto" and self.app.runtime.view.registry.vad.endpoint() and self.turn.task is None:
             self.phase = "thinking"
-            self.turn.task = asyncio.create_task(self.pipeline.finish(), name=f"turn-{self.turn.turn_id}")
+            turn = self.turn
+            pipeline = self.pipeline
+            turn.listen_stopped_at = time.perf_counter()
+            turn.task = asyncio.create_task(self._finish_turn(turn, pipeline), name=f"turn-{turn.turn_id}")
 
     async def _execute_tool(self, name: str, arguments: dict[str, Any], generation: int) -> dict[str, Any]:
         if not self.mcp:
@@ -302,10 +343,14 @@ class VoiceSession:
     async def _handle_intent(self, match: IntentMatch) -> None:
         if match.action not in {"conversation.exit", "turn.cancel"}:
             return
-        if self.turn is not None:
-            self.turn.cancelled.set()
+        turn = self.turn
+        if turn is not None:
+            turn.cancelled.set()
+            turn.state = "completed"
+            turn.finish_reason = match.action
+            turn.conversation_status = "completed"
             if self.mcp:
-                self.mcp.cancel_generation(self.turn.generation)
+                self.mcp.cancel_generation(turn.generation)
         # The callback runs inside the turn task, so do not cancel or await that
         # task here. Clearing ownership is enough to reject any later stale audio.
         self.pipeline = None
@@ -329,8 +374,49 @@ class VoiceSession:
         if task and not task.done():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        if turn is not None:
+            turn.state = "aborted"
+            turn.finish_reason = reason
+            turn.conversation_status = "aborted" if reason == "disconnect" else "active"
+            turn.ended_at = turn.ended_at or _utc_now()
+            await self._report_turn(turn)
         if send_stop and self.ready and not self._closed:
             await self.send_text(control_message("tts", session_id=self.session_id, state="stop", reason=reason))
+
+    async def _report_turn(self, turn: Turn) -> None:
+        reporter = self.app.history_reporter
+        if reporter is None or turn.reported:
+            return
+        turn.reported = True
+        try:
+            UUID(self.app.runtime.view.snapshot.assistant_id)
+        except (ValueError, AttributeError):
+            self.app.metrics["history_invalid_assistant_id"] = self.app.metrics.get("history_invalid_assistant_id", 0) + 1
+            return
+        ended_at = turn.ended_at or _utc_now()
+        event = {
+            "conversationId": self.conversation_id,
+            "assistantId": self.app.runtime.view.snapshot.assistant_id,
+            "deviceKey": self.device_id,
+            "locale": self.app.runtime.view.snapshot.locale,
+            "configRevision": self.app.runtime.view.snapshot.revision,
+            "conversationStartedAt": turn.conversation_started_at or turn.started_at,
+            "conversationEndedAt": ended_at if turn.conversation_status != "active" else None,
+            "conversationStatus": turn.conversation_status,
+            "turnId": turn.turn_id,
+            "sequence": turn.sequence,
+            "state": turn.state,
+            "startedAt": turn.started_at,
+            "endedAt": ended_at,
+            "finishReason": turn.finish_reason,
+            "timings": dict(turn.timings),
+            "transcript": list(turn.transcript),
+            "toolCalls": list(turn.tool_calls),
+        }
+        if event["conversationEndedAt"] is None:
+            del event["conversationEndedAt"]
+        if not reporter.enqueue(event):
+            self.app.metrics["history_enqueue_dropped"] = self.app.metrics.get("history_enqueue_dropped", 0) + 1
 
     async def send_text(self, value: dict[str, Any]) -> None:
         if not self._closed:
