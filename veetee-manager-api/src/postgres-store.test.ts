@@ -10,6 +10,25 @@ import { EncryptedFileSecretStore } from './secret-store.js'
 const databaseUrlFile = process.env.VEETEE_TEST_DATABASE_URL_FILE
 const root = resolve(import.meta.dirname, '..')
 
+test('PostgreSQL rejects malformed resource IDs as validation errors', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8010, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
+  }
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const response = await app.inject({ method: 'GET', url: '/api/v1/assistants/not-a-uuid' })
+    assert.equal(response.statusCode, 400)
+    assert.match(String(response.headers['content-type']), /^application\/problem\+json/)
+    assert.equal(response.json().code, 'VALIDATION_ERROR')
+  } finally {
+    await app.close()
+  }
+})
+
 test('PostgreSQL persists a published assistant across Manager API restart', { skip: !databaseUrlFile }, async () => {
   const env: Environment = {
     VEETEE_API_HOST: '127.0.0.1',

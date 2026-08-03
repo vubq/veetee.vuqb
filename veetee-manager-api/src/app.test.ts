@@ -245,6 +245,26 @@ test('retention purge job removes expired conversation data', async () => {
   }
 })
 
+test('problem responses keep a stable media type and machine-readable code', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const checks = [
+      { response: await app.inject({ method: 'GET', url: '/api/v1/assistants/00000000-0000-4000-8000-000000000000' }), status: 404, code: 'NOT_FOUND' },
+      { response: await app.inject({ method: 'PATCH', url: '/api/v1/retention-policy', payload: { captureTranscript: true, transcriptDays: 30, captureAudio: false, audioDays: null } }), status: 428, code: 'IF_MATCH_REQUIRED' },
+      { response: await app.inject({ method: 'GET', url: '/api/v1/assistants?search=' + 'x'.repeat(121) }), status: 400, code: 'VALIDATION_ERROR' },
+    ]
+    for (const check of checks) {
+      assert.equal(check.response.statusCode, check.status)
+      assert.match(String(check.response.headers['content-type']), /^application\/problem\+json/)
+      assert.equal(check.response.json().code, check.code)
+      assert.equal(typeof check.response.json().detail, 'string')
+    }
+  } finally {
+    await app.close()
+  }
+})
+
 test('OpenAPI is generated from every registered route', async () => {
   const app = await buildApp({ env })
   await app.ready()
@@ -253,7 +273,12 @@ test('OpenAPI is generated from every registered route', async () => {
     assert.equal(response.statusCode, 200)
     const document = response.json() as {
       openapi: string
-      paths: Record<string, Record<string, { operationId?: string; responses?: Record<string, unknown> }>>
+      paths: Record<string, Record<string, {
+        operationId?: string
+        responses?: Record<string, {
+          content?: Record<string, { examples?: Record<string, { value?: Record<string, unknown> }> }>
+        }>
+      }>>
       components?: { securitySchemes?: Record<string, unknown> }
     }
     assert.equal(document.openapi, '3.1.0')
@@ -281,7 +306,36 @@ test('OpenAPI is generated from every registered route', async () => {
             assert.ok(operation.responses?.[status], `missing domain-error response ${status} for ${method} ${path}`)
           }
         }
+        for (const [status, problemResponse] of Object.entries(operation.responses ?? {})) {
+          if (!new Set(['400', '401', '403', '404', '409', '413', '422', '428', '429', '500', '503']).has(status)) continue
+          if (path === '/health/ready' && status === '503') continue
+          const media = problemResponse.content?.['application/problem+json']
+          assert.ok(media, `missing problem media type for ${status} ${method} ${path}`)
+          if (!media) continue
+          const examples = media.examples
+          assert.ok(examples && Object.keys(examples).length > 0, `missing problem example for ${status} ${method} ${path}`)
+          if (!examples) continue
+          for (const [name, example] of Object.entries(examples)) {
+            assert.equal(typeof example.value?.code, 'string', `missing problem code in ${name} ${status} ${method} ${path}`)
+            assert.equal(typeof example.value?.detail, 'string', `missing problem detail in ${name} ${status} ${method} ${path}`)
+          }
+        }
       }
+    }
+    const representativeCases = [
+      { path: '/api/v1/auth/login', method: 'post', status: '401', code: 'INVALID_CREDENTIALS' },
+      { path: '/api/v1/auth/login', method: 'post', status: '429', code: 'LOGIN_THROTTLED' },
+      { path: '/internal/v1/devices/presence', method: 'post', status: '401', code: 'MACHINE_UNAUTHORIZED' },
+      { path: '/api/v1/retention-policy', method: 'patch', status: '428', code: 'IF_MATCH_REQUIRED' },
+      { path: '/api/v1/assistants/{id}', method: 'get', status: '404', code: 'NOT_FOUND' },
+      { path: '/internal/v1/runtime-config', method: 'get', status: '409', code: 'NO_PUBLISHED_CONFIG' },
+      { path: '/internal/v1/conversations/turns', method: 'post', status: '413', code: 'HISTORY_LIMIT_EXCEEDED' },
+    ] as const
+    for (const item of representativeCases) {
+      const operation = document.paths[item.path]?.[item.method]
+      const media = operation?.responses?.[item.status]?.content?.['application/problem+json']
+      const value = media?.examples?.representative?.value
+      assert.equal(value?.code, item.code, `unexpected representative code for ${item.method} ${item.path} ${item.status}`)
     }
     assert.ok(document.components?.securitySchemes?.veeteeSession)
     assert.ok(document.components?.securitySchemes?.machineBearer)

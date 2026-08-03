@@ -134,7 +134,11 @@ const deviceResponseSchema = {
 } as const
 const pairDeviceBodySchema = {
   type: 'object', additionalProperties: false, required: ['assistantId', 'verificationCode'],
-  properties: { assistantId: { type: 'string', minLength: 1 }, verificationCode: { type: 'string', minLength: 7, maxLength: 7 }, displayName: { type: 'string', minLength: 1, maxLength: 80 } },
+  properties: { assistantId: { type: 'string', minLength: 1, maxLength: 128 }, verificationCode: { type: 'string', minLength: 7, maxLength: 7 }, displayName: { type: 'string', minLength: 1, maxLength: 80 } },
+} as const
+const resourceIdParamsSchema = {
+  type: 'object', additionalProperties: false, required: ['id'],
+  properties: { id: { type: 'string', minLength: 1, maxLength: 128 } },
 } as const
 const pairingChallengeBodySchema = {
   type: 'object', additionalProperties: false, required: ['identityHash', 'clientIdHash', 'maskedMac', 'board', 'firmwareVersion'],
@@ -210,6 +214,9 @@ const problemBodySchema = {
   },
 } as const
 
+const problemContentType = 'application/problem+json'
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 export async function buildApp(overrides?: { env?: Environment; store?: Store; authSecret?: string; secretStore?: SecretValueStore }): Promise<FastifyInstance> {
   const env = overrides?.env ?? readEnvironment()
   const store = overrides?.store ?? await createStore(env)
@@ -280,20 +287,21 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       const security = securityFor(url)
       const response = {
         ...(schema?.response ?? { default: { type: 'object', additionalProperties: true } }),
-        '400': problemResponse('Invalid request'),
-        '500': problemResponse('Unexpected server error'),
+        '400': problemResponse('Invalid request', '400', url),
+        '500': problemResponse('Unexpected server error', '500', url),
         ...(url === '/api/v1/auth/login' ? {
-          '401': problemResponse('Invalid credentials'),
-          '429': problemResponse('Login throttled'),
+          '401': problemResponse('Invalid credentials', '401', url),
+          '429': problemResponse('Login throttled', '429', url),
         } : {}),
         ...(security ? {
-          '401': problemResponse('Authentication required'),
-          '403': problemResponse('Forbidden'),
-          '404': problemResponse('Resource not found'),
-          '409': problemResponse('State conflict'),
-          '422': problemResponse('Domain validation failed'),
-          '428': problemResponse('Precondition required'),
-          '503': problemResponse('Dependency unavailable'),
+          '401': problemResponse('Authentication required', '401', url),
+          '403': problemResponse('Forbidden', '403', url),
+          '404': problemResponse('Resource not found', '404', url),
+          '409': problemResponse('State conflict', '409', url),
+          '422': problemResponse('Domain validation failed', '422', url),
+          '428': problemResponse('Precondition required', '428', url),
+          '503': problemResponse('Dependency unavailable', '503', url),
+          ...(url === '/internal/v1/conversations/turns' ? { '413': problemResponse('Conversation event too large', '413', url) } : {}),
         } : {}),
       }
       return {
@@ -320,19 +328,36 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       return
     }
     const token = request.cookies['veetee_session']
-    if (!token || !authSecret) return reply.code(401).send({ type: 'about:blank', code: 'UNAUTHORIZED', title: 'Unauthorized' })
+    if (!token || !authSecret) return sendProblemCode(reply, 401, 'UNAUTHORIZED', 'Authentication required')
     const session = await store.findSession(hashAuthValue(authSecret, token, 'session'))
-    if (!session) return reply.code(401).send({ type: 'about:blank', code: 'UNAUTHORIZED', title: 'Unauthorized' })
+    if (!session) return sendProblemCode(reply, 401, 'UNAUTHORIZED', 'Authentication required')
     request.ownerId = session.ownerId
     request.sessionToken = token
     request.csrfToken = deriveCsrfToken(authSecret, token)
     request.sessionExpiresAt = session.expiresAt
     if (isUnsafe(request.method)) {
       const origin = request.headers.origin
-      if (typeof origin !== 'string' || !allowedOrigins.includes(origin)) return reply.code(403).send({ code: 'CSRF_ORIGIN_INVALID' })
+      if (typeof origin !== 'string' || !allowedOrigins.includes(origin)) return sendProblemCode(reply, 403, 'CSRF_ORIGIN_INVALID', 'Request origin is not allowed')
       const supplied = request.headers['x-veetee-csrf']
       const suppliedValue = typeof supplied === 'string' ? supplied : undefined
-      if (!suppliedValue || !safeEqual(hashAuthValue(authSecret, suppliedValue, 'csrf'), session.csrfHash)) return reply.code(403).send({ code: 'CSRF_INVALID' })
+      if (!suppliedValue || !safeEqual(hashAuthValue(authSecret, suppliedValue, 'csrf'), session.csrfHash)) return sendProblemCode(reply, 403, 'CSRF_INVALID', 'CSRF token is invalid')
+    }
+  })
+
+  app.addHook('preValidation', async (request, reply) => {
+    /* The memory/fixture adapter intentionally accepts opaque fixture IDs. The
+       PostgreSQL schema uses UUID columns, so reject malformed IDs before the
+       driver can turn a client validation error into a 500. */
+    if (env.VEETEE_DATABASE_MODE !== 'postgres') return
+    const params = request.params as { id?: unknown } | undefined
+    if (typeof params?.id === 'string' && !uuidPattern.test(params.id)) {
+      return sendProblemCode(reply, 400, 'VALIDATION_ERROR', 'id must be a UUID')
+    }
+    const path = request.url.split('?', 1)[0] ?? request.url
+    if (path !== '/api/v1/devices/pair' && path !== '/internal/v1/conversations/turns') return
+    const body = request.body as { assistantId?: unknown } | undefined
+    if (typeof body?.assistantId === 'string' && !uuidPattern.test(body.assistantId)) {
+      return sendProblemCode(reply, 400, 'VALIDATION_ERROR', 'assistantId must be a UUID')
     }
   })
 
@@ -347,7 +372,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     if (env.VEETEE_AUTH_MODE === 'disabled') return { user: { id: 'local-owner', email: request.body.email } }
     const identity = normalizeLoginIdentity(request.body.email)
     const current = loginThrottle.check(request.ip, identity)
-    if (!current.allowed) return reply.code(429).header('Retry-After', current.retryAfterSeconds).send({ code: 'LOGIN_THROTTLED' })
+    if (!current.allowed) return sendProblemCode(reply.header('Retry-After', current.retryAfterSeconds), 429, 'LOGIN_THROTTLED', 'Login temporarily throttled')
     const identityMatches = Boolean(env.VEETEE_OWNER_EMAIL) && identity === normalizeLoginIdentity(env.VEETEE_OWNER_EMAIL ?? '')
     let passwordMatches = false
     if (env.VEETEE_OWNER_PASSWORD_HASH) {
@@ -355,8 +380,8 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     }
     if (!env.VEETEE_OWNER_PASSWORD_HASH || !authSecret || !identityMatches || !passwordMatches) {
       const failed = loginThrottle.recordFailure(request.ip, identity)
-      if (!failed.allowed) return reply.code(429).header('Retry-After', failed.retryAfterSeconds).send({ code: 'LOGIN_THROTTLED' })
-      return reply.code(401).send({ code: 'INVALID_CREDENTIALS' })
+      if (!failed.allowed) return sendProblemCode(reply.header('Retry-After', failed.retryAfterSeconds), 429, 'LOGIN_THROTTLED', 'Login temporarily throttled')
+      return sendProblemCode(reply, 401, 'INVALID_CREDENTIALS', 'Credentials are invalid')
     }
     loginThrottle.recordSuccess(request.ip, identity)
     const token = cryptoRandomToken()
@@ -370,7 +395,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   app.get('/api/v1/auth/me', { schema: { response: { 200: authResponseSchema, 401: problemBodySchema } } }, async (request, reply) => {
     const current = request as OwnerRequest
     if (env.VEETEE_AUTH_MODE === 'disabled') return { user: { id: 'local-owner', email: env.VEETEE_OWNER_EMAIL ?? '' }, sessionExpiresAt: null, csrfToken: null }
-    if (!current.ownerId || !current.csrfToken || !current.sessionExpiresAt) return reply.code(401).send({ code: 'UNAUTHORIZED' })
+    if (!current.ownerId || !current.csrfToken || !current.sessionExpiresAt) return sendProblemCode(reply, 401, 'UNAUTHORIZED', 'Authentication required')
     return { user: { id: current.ownerId, email: env.VEETEE_OWNER_EMAIL ?? '' }, sessionExpiresAt: current.sessionExpiresAt, csrfToken: current.csrfToken }
   })
   app.post('/api/v1/auth/logout', { schema: { response: { 204: { type: 'null' } } } }, async (request, reply) => {
@@ -382,12 +407,12 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
 
   app.get('/api/v1/secret-references', { schema: { response: { 200: listResponse(secretReferenceResponseSchema) } } }, async (request) => ({ items: await store.listSecretReferences(owner(request)) }))
   app.post<{ Body: { name: string; store: 'encrypted-local'; locator?: string; secretValue?: string } }>('/api/v1/secret-references', { schema: { body: secretReferenceBodySchema, response: { 201: secretReferenceResponseSchema } } }, async (request, reply) => {
-    if (request.body.store !== 'encrypted-local') return reply.code(422).send({ code: 'SECRET_STORE_INVALID' })
+    if (request.body.store !== 'encrypted-local') return sendProblemCode(reply, 422, 'SECRET_STORE_INVALID', 'Secret store is not supported')
     const id = randomUUID()
     let version = 1
     let status: 'available' | 'unavailable' = 'unavailable'
     if (request.body.secretValue !== undefined) {
-      if (!secretStore) return reply.code(503).send({ code: 'SECRET_STORE_UNAVAILABLE' })
+      if (!secretStore) return sendProblemCode(reply, 503, 'SECRET_STORE_UNAVAILABLE', 'Secret store is unavailable')
       try {
         const stored = await secretStore.put(id, request.body.secretValue)
         version = stored.version
@@ -402,17 +427,17 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       return sendProblem(reply, error)
     }
   })
-  app.patch<{ Params: { id: string }; Body: { name?: string; locator?: string } }>('/api/v1/secret-references/:id', { schema: { body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, locator: { type: 'string', maxLength: 256 } } }, response: { 200: secretReferenceResponseSchema } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; locator?: string } }>('/api/v1/secret-references/:id', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, locator: { type: 'string', maxLength: 256 } } }, response: { 200: secretReferenceResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
-    if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
     try {
       const value = await store.updateSecretReference(owner(request), request.params.id, { name: request.body.name, locatorMasked: request.body.locator === undefined ? undefined : 'encrypted-local' }, ifMatch)
       return reply.header('ETag', value.etag).send(value)
     } catch (error) { return sendProblem(reply, error) }
   })
-  app.delete<{ Params: { id: string } }>('/api/v1/secret-references/:id', { schema: { response: { 204: { type: 'null' } } } }, async (request, reply) => {
+  app.delete<{ Params: { id: string } }>('/api/v1/secret-references/:id', { schema: { params: resourceIdParamsSchema, response: { 204: { type: 'null' } } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
-    if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
     try {
       await store.deleteSecretReference(owner(request), request.params.id, ifMatch)
       await secretStore?.delete(request.params.id)
@@ -439,9 +464,9 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       return reply.code(201).header('ETag', value.etag).send(value)
     } catch (error) { return sendProblem(reply, error) }
   })
-  app.patch<{ Params: { id: string }; Body: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] } }>('/api/v1/provider-configs/:id', { schema: { body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, config: { type: 'object', additionalProperties: {} }, secretRefs: { type: 'array', items: { type: 'string' } } } }, response: { 200: providerConfigResponseSchema } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] } }>('/api/v1/provider-configs/:id', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, config: { type: 'object', additionalProperties: {} }, secretRefs: { type: 'array', items: { type: 'string' } } } }, response: { 200: providerConfigResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
-    if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
     try { const value = await store.updateProviderConfig(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
   })
 
@@ -455,43 +480,43 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     return { items: items.filter((item) => item.name.toLocaleLowerCase().includes(search)) }
   })
   app.post<{ Body: { name: string } }>('/api/v1/assistants', { schema: { body: assistantBodySchema, response: { 201: assistantResponseSchema } } }, async (request, reply) => reply.code(201).send(await store.createAssistant(owner(request), request.body.name)))
-  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id', { schema: { response: { 200: assistantResponseSchema } } }, async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id', { schema: { params: resourceIdParamsSchema, response: { 200: assistantResponseSchema } } }, async (request, reply) => {
     const item = await store.getAssistant(owner(request), request.params.id)
-    if (!item) return reply.code(404).send({ code: 'NOT_FOUND' })
+    if (!item) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Assistant not found')
     return reply.header('ETag', item.etag).send(item)
   })
-  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/role-config', { schema: { response: { 200: { type: 'object', additionalProperties: true } } } }, async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/role-config', { schema: { params: resourceIdParamsSchema, response: { 200: { type: 'object', additionalProperties: true } } } }, async (request, reply) => {
     const item = await store.getAssistant(owner(request), request.params.id)
-    if (!item) return reply.code(404).send({ code: 'NOT_FOUND' })
+    if (!item) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Assistant not found')
     return reply.header('ETag', item.etag).send(item.role)
   })
-  app.patch<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/v1/assistants/:id/role-config', { schema: { body: roleBodySchema, response: { 200: { type: 'object', additionalProperties: true } } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/v1/assistants/:id/role-config', { schema: { params: resourceIdParamsSchema, body: roleBodySchema, response: { 200: { type: 'object', additionalProperties: true } } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
-    if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
     try { const item = await store.updateRole(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', item.etag).send(item.role) } catch (error) { return sendProblem(reply, error) }
   })
-  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/model-memory', { schema: { response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/model-memory', { schema: { params: resourceIdParamsSchema, response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
     try {
       const item = await store.getAssistant(owner(request), request.params.id)
-      if (!item) return reply.code(404).send({ code: 'NOT_FOUND' })
+      if (!item) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Assistant not found')
       return reply.header('ETag', item.etag).send(await store.getModelMemory(owner(request), request.params.id))
     } catch (error) { return sendProblem(reply, error) }
   })
-  app.patch<{ Params: { id: string }; Body: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string } }>('/api/v1/assistants/:id/model-memory/provider', { schema: { body: { type: 'object', additionalProperties: false, required: ['kind', 'mode'], properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, mode: { type: 'string', enum: ['selected', 'disabled'] }, providerConfigId: { type: 'string' } } }, response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string } }>('/api/v1/assistants/:id/model-memory/provider', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, required: ['kind', 'mode'], properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, mode: { type: 'string', enum: ['selected', 'disabled'] }, providerConfigId: { type: 'string' } } }, response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
-    if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
     try { const value = await store.updateProviderSelection(owner(request), request.params.id, request.body, ifMatch); const assistant = await store.getAssistant(owner(request), request.params.id); return reply.header('ETag', assistant?.etag ?? '').send(value) } catch (error) { return sendProblem(reply, error) }
   })
-  app.patch<{ Params: { id: string }; Body: { enabled: boolean } }>('/api/v1/assistants/:id/model-memory/memory', { schema: { body: { type: 'object', additionalProperties: false, required: ['enabled'], properties: { enabled: { type: 'boolean' } } }, response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { enabled: boolean } }>('/api/v1/assistants/:id/model-memory/memory', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, required: ['enabled'], properties: { enabled: { type: 'boolean' } } }, response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
-    if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
     try { const value = await store.setMemoryEnabled(owner(request), request.params.id, request.body.enabled, ifMatch); const assistant = await store.getAssistant(owner(request), request.params.id); return reply.header('ETag', assistant?.etag ?? '').send(value) } catch (error) { return sendProblem(reply, error) }
   })
-  app.post<{ Params: { id: string } }>('/api/v1/assistants/:id/publish', { schema: { response: { 200: runtimePublicationResponseSchema } } }, async (request, reply) => {
+  app.post<{ Params: { id: string } }>('/api/v1/assistants/:id/publish', { schema: { params: resourceIdParamsSchema, response: { 200: runtimePublicationResponseSchema } } }, async (request, reply) => {
     try { const publication = await store.publish(owner(request), request.params.id, typeof request.headers['if-match'] === 'string' ? request.headers['if-match'] : undefined); return reply.header('ETag', publication.etag).send(publication) } catch (error) { return sendProblem(reply, error) }
   })
-  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/devices', { schema: { response: { 200: listResponse(deviceResponseSchema, true) } } }, async (request, reply) => {
-    if (!(await store.getAssistant(owner(request), request.params.id))) return reply.code(404).send({ code: 'NOT_FOUND' })
+  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/devices', { schema: { params: resourceIdParamsSchema, response: { 200: listResponse(deviceResponseSchema, true) } } }, async (request, reply) => {
+    if (!(await store.getAssistant(owner(request), request.params.id))) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Assistant not found')
     const items = await store.listDevices(owner(request), request.params.id)
     return { items, total: items.length }
   })
@@ -511,28 +536,29 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     response: { 200: retentionPolicyResponseSchema },
   } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
-    if (typeof ifMatch !== 'string') return reply.code(428).send({ code: 'IF_MATCH_REQUIRED' })
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
     try {
       const value = await store.updateRetentionPolicy(owner(request), request.body, ifMatch)
       return reply.header('ETag', value.etag).send(value)
     } catch (error) { return sendProblem(reply, error) }
   })
   app.get<{ Params: { id: string }; Querystring: { limit?: number } }>('/api/v1/assistants/:id/conversations', { schema: {
+    params: resourceIdParamsSchema,
     querystring: { type: 'object', additionalProperties: false, properties: { limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 } } },
     response: { 200: listResponse(conversationSummarySchema, true) },
   } }, async (request, reply) => {
-    if (!(await store.getAssistant(owner(request), request.params.id))) return reply.code(404).send({ code: 'NOT_FOUND' })
+    if (!(await store.getAssistant(owner(request), request.params.id))) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Assistant not found')
     const items = await store.listConversations(owner(request), request.params.id, request.query.limit ?? 20)
     return { items, total: items.length }
   })
-  app.get<{ Params: { id: string } }>('/api/v1/conversations/:id', { schema: { response: { 200: conversationDetailResponseSchema } } }, async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/api/v1/conversations/:id', { schema: { params: resourceIdParamsSchema, response: { 200: conversationDetailResponseSchema } } }, async (request, reply) => {
     const value = await store.getConversation(owner(request), request.params.id)
-    if (!value) return reply.code(404).send({ code: 'NOT_FOUND' })
+    if (!value) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Conversation not found')
     return value
   })
 
   app.post<{ Body: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string } }>('/internal/v1/devices/pairing-challenges', { schema: { body: pairingChallengeBodySchema, response: { 201: pairingChallengeResponseSchema } } }, async (request, reply) => {
-    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return sendProblemCode(reply, 401, 'MACHINE_UNAUTHORIZED', 'Machine authentication required')
     const challenge = await store.createPairingChallenge(request.body)
     return reply.code(201).send(challenge)
   })
@@ -540,14 +566,14 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     body: devicePresenceBodySchema,
     response: { 202: devicePresenceResponseSchema, 401: problemBodySchema },
   } }, async (request, reply) => {
-    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return sendProblemCode(reply, 401, 'MACHINE_UNAUTHORIZED', 'Machine authentication required')
     try {
       const result = await store.reportDevicePresence(request.body)
       return reply.code(202).send(result)
     } catch (error) { return sendProblem(reply, error) }
   })
   app.post('/internal/v1/retention/purge', { schema: { response: { 202: retentionPurgeResponseSchema, 401: problemBodySchema } } }, async (request, reply) => {
-    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return sendProblemCode(reply, 401, 'MACHINE_UNAUTHORIZED', 'Machine authentication required')
     try {
       return reply.code(202).send(await runRetention())
     } catch (error) { return sendProblem(reply, error) }
@@ -556,7 +582,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     body: conversationTurnBodySchema,
     response: { 202: { type: 'object', additionalProperties: false, required: ['accepted', 'conversationId', 'turnId', 'status'], properties: { accepted: { type: 'boolean' }, conversationId: { type: 'string' }, turnId: { type: 'string' }, status: { type: 'string', enum: ['active', 'completed', 'aborted', 'error'] } } } },
   } }, async (request, reply) => {
-    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return sendProblemCode(reply, 401, 'MACHINE_UNAUTHORIZED', 'Machine authentication required')
     try {
       const detail = await store.ingestConversationTurn(request.body)
       return reply.code(202).send({ accepted: true, conversationId: detail.summary.id, turnId: request.body.turnId, status: detail.summary.status })
@@ -566,9 +592,9 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     querystring: { type: 'object', additionalProperties: false, properties: { assistantId: { type: 'string', minLength: 1, maxLength: 120 } } },
     response: { 200: runtimeSnapshotResponseSchema },
   } }, async (request, reply) => {
-    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return reply.code(401).send({ code: 'MACHINE_UNAUTHORIZED' })
+    if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return sendProblemCode(reply, 401, 'MACHINE_UNAUTHORIZED', 'Machine authentication required')
     const publication = await store.runtime(request.query.assistantId)
-    if (!publication) return reply.code(409).send({ code: 'NO_PUBLISHED_CONFIG' })
+    if (!publication) return sendProblemCode(reply, 409, 'NO_PUBLISHED_CONFIG', 'No published configuration is available')
     if (request.headers['if-none-match'] === publication.etag) return reply.code(304).send()
     return reply.header('ETag', publication.etag).send(publication.snapshot)
   })
@@ -576,9 +602,9 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   app.get('/openapi.json', { schema: { hide: true } }, async () => app.swagger())
   app.setErrorHandler((error, _request, reply) => {
     const value = error as { validation?: unknown; message?: string }
-    if (value.validation) return reply.code(400).type('application/problem+json').send({ code: 'VALIDATION_ERROR', detail: value.message })
+    if (value.validation) return sendProblemCode(reply, 400, 'VALIDATION_ERROR', value.message ?? 'Request validation failed')
     app.log.error({ err: error }, 'unhandled request error')
-    return reply.code(500).send({ code: 'INTERNAL_ERROR' })
+    return sendProblemCode(reply, 500, 'INTERNAL_ERROR', 'Unexpected server error')
   })
   app.addHook('onClose', async () => {
     clearInterval(retentionTimer)
@@ -603,7 +629,11 @@ function owner(request: FastifyRequest): string { return (request as OwnerReques
 
 function sendProblem(reply: FastifyReply, error: unknown): FastifyReply {
   const value = error as { code?: string; statusCode?: number; message?: string }
-  return reply.code(value.statusCode ?? 500).type('application/problem+json').send({ code: value.code ?? 'INTERNAL_ERROR', detail: value.message ?? 'Request failed' })
+  return sendProblemCode(reply, value.statusCode ?? 500, value.code ?? 'INTERNAL_ERROR', value.message ?? 'Request failed')
+}
+
+function sendProblemCode(reply: FastifyReply, statusCode: number, code: string, detail?: string): FastifyReply {
+  return reply.code(statusCode).type(problemContentType).send({ code, ...(detail ? { detail } : {}) })
 }
 
 function authorizeMachine(header: string | undefined, expected: string | undefined, required: boolean): boolean {
@@ -671,11 +701,12 @@ function securityFor(url: string): ReadonlyArray<Record<string, readonly string[
   return [{ veeteeSession: [] }]
 }
 
-function problemResponse(description: string): Record<string, unknown> {
+function problemResponse(description: string, status: string, url: string): Record<string, unknown> {
+  const example = problemExample(status, url)
   return {
     description,
     content: {
-      'application/problem+json': {
+      [problemContentType]: {
         schema: {
           type: 'object',
           required: ['code'],
@@ -687,7 +718,34 @@ function problemResponse(description: string): Record<string, unknown> {
           },
           additionalProperties: false,
         },
+        examples: { representative: example },
       },
     },
   }
+}
+
+function problemExample(status: string, url: string): Record<string, unknown> {
+  if (status === '401' && url === '/api/v1/auth/login') {
+    return { summary: 'Invalid credentials', value: { code: 'INVALID_CREDENTIALS', detail: 'Credentials are invalid' } }
+  }
+  if (status === '401' && url.startsWith('/internal/')) {
+    return { summary: 'Machine authentication required', value: { code: 'MACHINE_UNAUTHORIZED', detail: 'Machine authentication required' } }
+  }
+  if (status === '409' && url === '/internal/v1/runtime-config') {
+    return { summary: 'Published configuration missing', value: { code: 'NO_PUBLISHED_CONFIG', detail: 'No published configuration is available' } }
+  }
+  const defaults: Record<string, Record<string, unknown>> = {
+    '400': { summary: 'Request validation failed', value: { code: 'VALIDATION_ERROR', detail: 'Request validation failed' } },
+    '401': { summary: 'Authentication required', value: { code: 'UNAUTHORIZED', detail: 'Authentication required' } },
+    '403': { summary: 'Request forbidden', value: { code: 'FORBIDDEN', detail: 'The authenticated principal is not allowed to perform this operation' } },
+    '404': { summary: 'Resource not found', value: { code: 'NOT_FOUND', detail: 'The requested resource was not found' } },
+    '409': { summary: 'State conflict', value: { code: 'REVISION_CONFLICT', detail: 'The resource changed; reload the current revision' } },
+    '413': { summary: 'Conversation event too large', value: { code: 'HISTORY_LIMIT_EXCEEDED', detail: 'Conversation event exceeds the configured size limit' } },
+    '422': { summary: 'Domain validation failed', value: { code: 'CONFIG_INVALID', detail: 'The supplied configuration is not valid' } },
+    '428': { summary: 'Precondition required', value: { code: 'IF_MATCH_REQUIRED', detail: 'If-Match header is required' } },
+    '429': { summary: 'Rate limit reached', value: { code: 'LOGIN_THROTTLED', detail: 'Login temporarily throttled' } },
+    '500': { summary: 'Unexpected server error', value: { code: 'INTERNAL_ERROR', detail: 'Unexpected server error' } },
+    '503': { summary: 'Dependency unavailable', value: { code: 'SERVICE_UNAVAILABLE', detail: 'A required dependency is unavailable' } },
+  }
+  return defaults[status] ?? { summary: 'Request failed', value: { code: 'REQUEST_FAILED', detail: 'Request failed' } }
 }
