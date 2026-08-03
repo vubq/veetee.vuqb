@@ -33,6 +33,20 @@ static void test_state(void) {
     assert(machine.generation == 1U);
 }
 
+static void test_repeated_manual_turns(void) {
+    vt_device_state_machine_t machine = {.state = VT_DEVICE_IDLE, .generation = 0U};
+    assert(vt_state_apply(&machine, VT_EVENT_CONNECT));
+    assert(vt_state_apply(&machine, VT_EVENT_HELLO_READY));
+    for (unsigned int turn = 0U; turn < 30U; ++turn) {
+        assert(vt_state_apply(&machine, VT_EVENT_LISTEN_START));
+        assert(vt_state_apply(&machine, VT_EVENT_LISTEN_STOP));
+        assert(vt_state_apply(&machine, VT_EVENT_TTS_START));
+        assert(vt_state_apply(&machine, VT_EVENT_TTS_STOP));
+        assert(machine.state == VT_DEVICE_LISTENING);
+    }
+    assert(machine.generation == 0U);
+}
+
 static void test_config_gate(void) {
     vt_runtime_config_t config = {.profile_id = "board.example", .endpoint = "wss://configured", .device_id = "device", .client_id = "client", .protocol_version = 3, .uplink_sample_rate = 16000, .downlink_sample_rate = 24000, .frame_duration_ms = 60, .verified_hardware = false};
     assert(!vt_config_is_flash_safe(&config));
@@ -43,6 +57,7 @@ static void test_config_gate(void) {
 int main(void) {
     test_protocol();
     test_state();
+    test_repeated_manual_turns();
     test_config_gate();
     puts("firmware host tests passed");
     return 0;
