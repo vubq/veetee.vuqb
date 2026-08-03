@@ -62,6 +62,29 @@ async def test_websocket_v3_handshake_and_turn(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_health_reports_last_activation_error_type_without_detail(monkeypatch):
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        response = await client.get("/health/ready")
+        payload = await response.json()
+        assert response.status == 200
+        assert payload["lastActivationErrorType"] is None
+        assert "lastActivationError" not in payload
+    finally:
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_auto_endpoint_ingests_last_frame_and_ignores_late_audio(monkeypatch):
     """Auto endpointing must not finalize before the frame that triggered VAD."""
 

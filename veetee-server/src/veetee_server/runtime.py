@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import json
+import logging
 from pathlib import Path
 import tempfile
 from typing import Any, Awaitable, Callable
@@ -14,6 +15,9 @@ import httpx
 from .config import ConfigurationError, RuntimeSnapshot, ServerConfig, load_snapshot
 from .providers import ProviderError, ProviderRegistry
 from .secrets import EncryptedFileSecretResolver
+
+
+LOG = logging.getLogger("veetee.voice.runtime")
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +43,7 @@ class RuntimeConfigManager:
         self._task: asyncio.Task[None] | None = None
         self._listeners: list[Callable[[RuntimeView], Awaitable[None]]] = []
         self.activation_failures = 0
+        self.last_activation_error_type: str | None = None
 
     @property
     def view(self) -> RuntimeView:
@@ -74,8 +79,10 @@ class RuntimeConfigManager:
                 await self.refresh_now()
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
                 self.activation_failures += 1
+                self.last_activation_error_type = type(exc).__name__
+                LOG.warning("runtime refresh failed error_type=%s", self.last_activation_error_type)
 
     async def _read_source(self) -> RuntimeSnapshot:
         if self.config.config_source == "fixture":
@@ -124,11 +131,14 @@ class RuntimeConfigManager:
                 registry = ProviderRegistry(snapshot, secret_file=self.secret_file, secret_resolver=self.secret_resolver)
                 await registry.prepare()
                 view = RuntimeView(snapshot=snapshot, registry=registry)
-            except (ConfigurationError, ProviderError):
+            except (ConfigurationError, ProviderError) as exc:
                 self.activation_failures += 1
+                self.last_activation_error_type = type(exc).__name__
+                LOG.warning("runtime activation failed error_type=%s", self.last_activation_error_type)
                 return False
             old = self._view
             self._view = view
+            self.last_activation_error_type = None
             if old is not None:
                 for listener in self._listeners:
                     await listener(view)

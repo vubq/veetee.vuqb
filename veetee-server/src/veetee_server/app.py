@@ -63,6 +63,7 @@ class VoiceApplication:
                 "configChecksum": view.snapshot.checksum,
                 "activeConnections": self.metrics["active_connections"],
                 "activationFailures": self.runtime.activation_failures,
+                "lastActivationErrorType": self.runtime.last_activation_error_type,
             }
         )
 
