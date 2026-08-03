@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { BrainCircuit, Database, ShieldAlert } from '@lucide/vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
 import { PROVIDER_KINDS, type ModelMemoryWorkspace, type ProviderKind, type RevisionConflictProblem, type UpdateProviderSelectionInput, type Versioned } from '@/domain'
@@ -8,6 +8,7 @@ import { managerGatewayKey } from '@/gateways'
 import FormSection from '@/ui/patterns/FormSection.vue'
 import PreviewScenarioToolbar from '@/ui/patterns/PreviewScenarioToolbar.vue'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
+import VtButton from '@/ui/primitives/VtButton.vue'
 import VtCard from '@/ui/primitives/VtCard.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
 import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
@@ -28,6 +29,10 @@ const mutatingKind = ref<ProviderKind>()
 const memoryLoading = ref(false)
 const conflict = ref<RevisionConflictProblem<ModelMemoryWorkspace, UpdateProviderSelectionInput | { enabled: boolean }>>()
 const copying = ref(false)
+const loadState = ref<'loading' | 'ready' | 'error' | 'offline'>('loading')
+const loadError = ref('')
+const stateHeading = ref<HTMLElement | null>(null)
+let loadGeneration = 0
 
 function cloneWorkspace(workspace: ModelMemoryWorkspace): ModelMemoryWorkspace {
   return {
@@ -71,10 +76,37 @@ function configFor(kind: ProviderKind) {
 }
 
 async function load() {
+  const generation = ++loadGeneration
   loading.value = true
-  const result = await gateway.getModelMemory(props.assistantId)
-  if (result.ok) { resource.value = result.data; emit('revision', result.data.revision) }
-  loading.value = false
+  loadState.value = 'loading'
+  loadError.value = ''
+  try {
+    const result = await gateway.getModelMemory(props.assistantId)
+    if (generation !== loadGeneration) return
+    if (!result.ok) {
+      loadState.value = result.meta.offline ? 'offline' : 'error'
+      loadError.value = result.meta.offline
+        ? 'Đang ngoại tuyến; chưa thể đồng bộ provider và bộ nhớ.'
+        : 'Không tải được provider selection và bộ nhớ từ Manager API.'
+      await focusStateHeading()
+      return
+    }
+    resource.value = result.data
+    emit('revision', result.data.revision)
+    loadState.value = 'ready'
+  } catch {
+    if (generation !== loadGeneration) return
+    loadState.value = 'offline'
+    loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+    await focusStateHeading()
+  } finally {
+    if (generation === loadGeneration) loading.value = false
+  }
+}
+
+async function focusStateHeading() {
+  await nextTick()
+  stateHeading.value?.focus()
 }
 
 function applyResult(next: Versioned<ModelMemoryWorkspace>) {
@@ -130,8 +162,11 @@ onMounted(load)
     @reset="load"
   />
   <div
-    v-if="loading"
+    v-if="loadState === 'loading'"
     class="workspace-loading"
+    role="status"
+    aria-live="polite"
+    aria-label="Đang tải provider và bộ nhớ"
   >
     <VtSkeleton
       v-for="index in 3"
@@ -139,8 +174,28 @@ onMounted(load)
       height="112px"
     />
   </div>
+  <VtCard
+    v-else-if="loadState === 'error' || loadState === 'offline'"
+    class="model-state model-state-error"
+    role="alert"
+  >
+    <h2
+      ref="stateHeading"
+      tabindex="-1"
+    >
+      {{ loadState === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được model & memory' }}
+    </h2>
+    <p>{{ loadError }}</p>
+    <VtButton
+      variant="secondary"
+      :loading="loading"
+      @click="load"
+    >
+      Thử lại
+    </VtButton>
+  </VtCard>
   <div
-    v-else-if="resource"
+    v-else-if="loadState === 'ready' && resource"
     class="model-memory"
   >
     <FormSection
@@ -240,6 +295,10 @@ onMounted(load)
 
 <style scoped>
 .workspace-loading, .model-memory { display: grid; gap: 14px; }
+.model-state { display: grid; justify-items: center; gap: 4px; color: var(--vt-text-muted); padding: 24px; text-align: center; }
+.model-state h2 { margin: 0; color: var(--vt-text); font-size: 14px; }
+.model-state p { max-width: 460px; margin: 3px auto 10px; font-size: 11px; line-height: 1.5; }
+.model-state h2:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--vt-focus); border-radius: 3px; }
 .provider-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .provider-card { min-width: 0; border-radius: 7px; padding: 12px; }
 .provider-heading { display: flex; min-height: 42px; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
