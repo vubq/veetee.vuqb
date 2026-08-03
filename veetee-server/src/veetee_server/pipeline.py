@@ -137,6 +137,9 @@ class TurnPipeline:
             self.turn.task.cancel()
         self._egress_pcm.clear()
 
+    def _cancelled(self) -> bool:
+        return self.turn.cancelled is not None and self.turn.cancelled.is_set()
+
     async def _stream_answer(self, prompt: str) -> str:
         tools = self.snapshot.raw.get("tools") or []
         max_rounds = max(1, int((self.snapshot.raw.get("toolPolicy") or {}).get("maxRounds", 3)))
@@ -149,7 +152,7 @@ class TurnPipeline:
             tool_arguments = ""
             async def handle_delta(delta: Any) -> None:
                 nonlocal answer_started, tool_name, tool_arguments
-                if self.turn.cancelled and self.turn.cancelled.is_set():
+                if self._cancelled():
                     return
                 if delta.tool_name:
                     tool_name = delta.tool_name
@@ -157,6 +160,8 @@ class TurnPipeline:
                     await self._send_text(control_message("llm", session_id=self.session_id, turn_id=self.turn.turn_id, tool_name=delta.tool_name))
                     return
                 for segment in segmenter.push(delta.text, final=delta.final):
+                    if self._cancelled():
+                        return
                     answer_parts.append(segment)
                     if not answer_started:
                         await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
@@ -193,6 +198,8 @@ class TurnPipeline:
                     next_delta.cancel()
                 await asyncio.gather(*(task for task in (timer, next_delta) if task is not None), return_exceptions=True)
             if tool_name and self._execute_tool is not None:
+                if self._cancelled():
+                    return " ".join(answer_parts).strip()
                 try:
                     arguments = json.loads(tool_arguments or "{}")
                 except json.JSONDecodeError as exc:
@@ -203,7 +210,7 @@ class TurnPipeline:
                 current_prompt = f"{current_prompt}\n\nTool result for {tool_name}: {json.dumps(result, ensure_ascii=False)}"
                 continue
             break
-        if answer_started:
+        if answer_started and not self._cancelled():
             await self._flush_packetizer()
             await self._send_text(control_message("tts", session_id=self.session_id, state="stop", turn_id=self.turn.turn_id))
         return " ".join(answer_parts).strip()
@@ -224,6 +231,8 @@ class TurnPipeline:
         return (deadline, text.strip()) if isinstance(text, str) and text.strip() else (0, "")
 
     async def _speak_segment(self, segment: str) -> None:
+        if self._cancelled():
+            return
         await self._send_text(
             control_message("tts", session_id=self.session_id, state="sentence_start", text=segment, turn_id=self.turn.turn_id)
         )
@@ -231,9 +240,11 @@ class TurnPipeline:
         if not isinstance(voice, dict):
             voice = {}
         async for chunk in self.registry.tts.stream(segment, locale=self.snapshot.locale, voice=voice):
-            if self.turn.cancelled and self.turn.cancelled.is_set():
+            if self._cancelled():
                 return
             await self._write_pcm(chunk)
+            if self._cancelled():
+                return
         await self._flush_packetizer(final=True)
 
     async def _write_pcm(self, chunk: AudioChunk) -> None:
@@ -255,6 +266,8 @@ class TurnPipeline:
             await self._send_packet(pcm)
 
     async def _send_packet(self, pcm: bytes) -> None:
+        if self._cancelled():
+            return
         packet = self.codec.encode_downlink(pcm, self._frame_samples)
         await self._send_binary(encode_audio(AudioFrame(profile=self.profile, payload=packet)))
         self.metrics["audio_frames_out"] = self.metrics.get("audio_frames_out", 0) + 1

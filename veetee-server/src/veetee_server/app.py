@@ -233,7 +233,7 @@ class VoiceSession:
             session_id=self.session_id,
             turn=self.turn,
             send_text=self.send_text,
-            send_binary=self.send_binary,
+            send_binary=lambda value, turn_id=self.turn.turn_id: self.send_binary(value, turn_id=turn_id),
             execute_tool=self._execute_tool,
             memory=self.memory,
             on_intent=self._handle_intent,
@@ -280,28 +280,37 @@ class VoiceSession:
         await self.send_text(control_message("alert", session_id=self.session_id, status="ok", code=match.action.replace(".", "_")))
 
     async def _abort(self, *, reason: str, send_stop: bool = True) -> None:
-        if self.pipeline:
-            self.pipeline.cancel()
-        if self.mcp and self.turn:
-            self.mcp.cancel_generation(self.turn.generation)
-        if self.turn and self.turn.task and not self.turn.task.done():
-            self.turn.task.cancel()
-            await asyncio.gather(self.turn.task, return_exceptions=True)
+        pipeline = self.pipeline
+        turn = self.turn
+        task = turn.task if turn else None
+        if pipeline:
+            pipeline.cancel()
+        if self.mcp and turn:
+            self.mcp.cancel_generation(turn.generation)
+        # Clear ownership before awaiting a provider task. A misbehaving or
+        # late provider callback must not be allowed to write frames for the
+        # cancelled turn while a new turn is being created.
         self.pipeline = None
         self.turn = None
+        if task and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         if send_stop and self.ready and not self._closed:
             await self.send_text(control_message("tts", session_id=self.session_id, state="stop", reason=reason))
 
     async def send_text(self, value: dict[str, Any]) -> None:
         if not self._closed:
+            turn_id = value.get("turn_id")
+            if isinstance(turn_id, str) and (self.turn is None or self.turn.turn_id != turn_id):
+                return
             if value.get("type") == "tts" and value.get("state") == "start":
                 self.phase = "speaking"
             elif value.get("type") == "tts" and value.get("state") == "stop":
                 self.phase = "listening"
             await self.ws.send_str(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
 
-    async def send_binary(self, value: bytes) -> None:
-        if not self._closed:
+    async def send_binary(self, value: bytes, *, turn_id: str | None = None) -> None:
+        if not self._closed and (turn_id is None or (self.turn is not None and self.turn.turn_id == turn_id)):
             await self.ws.send_bytes(value)
 
     async def close(self, code: int, message: str) -> None:

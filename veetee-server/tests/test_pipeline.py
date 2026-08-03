@@ -113,5 +113,28 @@ async def test_configured_exit_intent_stops_before_llm(tmp_path):
     assert binary == []
 
 
+@pytest.mark.asyncio
+async def test_cancelled_turn_drops_queued_audio_packet():
+    snapshot = load_snapshot(Path(__file__).parents[1] / "config/fixtures/m0.json")
+    registry = ProviderRegistry(snapshot)
+    codec = OpusCodec(16000, 24000)
+    turn = Turn(turn_id="cancelled-turn", generation=1, mode="manual", cancelled=asyncio.Event())
+    binary = []
+    pipeline = TurnPipeline(
+        snapshot=snapshot,
+        registry=registry,
+        codec=codec,
+        profile="ws-v3",
+        session_id="cancelled-session",
+        turn=turn,
+        send_text=lambda value: _append([], value),
+        send_binary=lambda value: _append(binary, value),
+        metrics={},
+    )
+    turn.cancelled.set()
+    await pipeline._send_packet(b"\0" * (24000 * 60 // 1000 * 2))
+    assert binary == []
+
+
 async def _append(target, value):
     target.append(value)
