@@ -1,9 +1,10 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
 
-from veetee_runtime import ManifestError, RuntimeSupervisor
+from veetee_runtime import ManifestError, RuntimeSupervisor, _with_node_path
 
 
 def write_manifest(tmp_path: Path, services):
@@ -52,3 +53,36 @@ def test_manifest_accepts_tcp_readiness_probe(tmp_path):
 def test_manifest_accepts_one_shot_service(tmp_path):
     path = write_manifest(tmp_path, [{"name": "migration", "command": ["python3"], "waitForExit": True}])
     assert RuntimeSupervisor(path).specs[0].wait_for_exit is True
+
+
+def test_runtime_discovers_nvm_node_for_minimal_service_path(tmp_path):
+    node_bin = tmp_path / ".nvm" / "versions" / "node" / "v24.18.0" / "bin"
+    node_bin.mkdir(parents=True)
+    npm = node_bin / "npm"
+    npm.write_text("#!/bin/sh\n", encoding="utf-8")
+    npm.chmod(0o755)
+    legacy_bin = tmp_path / ".nvm" / "versions" / "node" / "v9.9.9" / "bin"
+    legacy_bin.mkdir(parents=True)
+    (legacy_bin / "npm").write_text("#!/bin/sh\n", encoding="utf-8")
+    (legacy_bin / "npm").chmod(0o755)
+
+    result = _with_node_path({"HOME": str(tmp_path), "PATH": "/usr/bin"})
+
+    assert result["PATH"].split(os.pathsep)[0] == str(node_bin)
+
+
+def test_runtime_node_bin_override_wins_over_nvm(tmp_path):
+    explicit_bin = tmp_path / "node-bin"
+    explicit_bin.mkdir()
+    (explicit_bin / "npm").write_text("#!/bin/sh\n", encoding="utf-8")
+    (explicit_bin / "npm").chmod(0o755)
+    nvm_bin = tmp_path / ".nvm" / "versions" / "node" / "v24.18.0" / "bin"
+    nvm_bin.mkdir(parents=True)
+    (nvm_bin / "npm").write_text("#!/bin/sh\n", encoding="utf-8")
+    (nvm_bin / "npm").chmod(0o755)
+
+    result = _with_node_path(
+        {"HOME": str(tmp_path), "PATH": "/usr/bin", "VEETEE_NODE_BIN": str(explicit_bin)}
+    )
+
+    assert result["PATH"].split(os.pathsep)[0] == str(explicit_bin)

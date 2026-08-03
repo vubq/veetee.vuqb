@@ -8,7 +8,9 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import re
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -98,6 +100,7 @@ class RuntimeSupervisor:
         for spec in self._order():
             env = os.environ.copy()
             env.update(spec.environment)
+            env = _with_node_path(env)
             env.setdefault("PYTHONUNBUFFERED", "1")
             process = subprocess.Popen(
                 list(spec.command),
@@ -188,6 +191,63 @@ class RuntimeSupervisor:
 
 def _expand(value: str, root: Path) -> str:
     return value.replace("${VEETEE_ROOT}", str(root)).replace("${PYTHON}", sys.executable)
+
+
+def _with_node_path(environment: dict[str, str]) -> dict[str, str]:
+    """Make host-installed Node tools available to non-interactive services.
+
+    User systemd services commonly receive a minimal PATH and therefore do not
+    inherit an interactive nvm activation.  Prefer the explicit deployment
+    override, then the current PATH, then the user's nvm installation.  The
+    returned mapping is a copy so a service-specific environment cannot mutate
+    the supervisor process environment.
+    """
+
+    result = dict(environment)
+    path = result.get("PATH", os.defpath)
+    node_bin = _configured_node_bin(result)
+    if node_bin is None:
+        npm_path = shutil.which("npm", path=path)
+        if npm_path:
+            node_bin = str(Path(npm_path).resolve().parent)
+    if node_bin is None:
+        node_bin = _discover_nvm_node_bin(result)
+    if node_bin and node_bin not in path.split(os.pathsep):
+        result["PATH"] = f"{node_bin}{os.pathsep}{path}"
+    return result
+
+
+def _configured_node_bin(environment: dict[str, str]) -> str | None:
+    configured = environment.get("VEETEE_NODE_BIN")
+    if not configured:
+        return None
+    candidate = Path(configured).expanduser()
+    if candidate.is_file():
+        candidate = candidate.parent
+    if (candidate / "npm").is_file():
+        return str(candidate.resolve())
+    return None
+
+
+def _discover_nvm_node_bin(environment: dict[str, str]) -> str | None:
+    home = Path(environment.get("HOME", str(Path.home()))).expanduser()
+    nvm_root = Path(environment.get("NVM_DIR", str(home / ".nvm"))).expanduser()
+    versions_root = nvm_root / "versions" / "node"
+    if not versions_root.is_dir():
+        return None
+    for version_dir in sorted(versions_root.iterdir(), key=_node_version_key, reverse=True):
+        candidate = version_dir / "bin"
+        if (candidate / "npm").is_file():
+            return str(candidate.resolve())
+    return None
+
+
+def _node_version_key(path: Path) -> tuple[int, int, int, str]:
+    match = re.match(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?", path.name)
+    if match is None:
+        return (-1, -1, -1, path.name)
+    major, minor, patch = (int(part or 0) for part in match.groups())
+    return (major, minor, patch, path.name)
 
 
 def main() -> int:

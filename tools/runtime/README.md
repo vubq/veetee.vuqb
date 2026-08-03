@@ -15,6 +15,12 @@ python3 tools/runtime/veetee_runtime.py \
 `--once` start + health-check rồi giữ process đến SIGINT; dùng khi muốn chạy
 server xuyên suốt phiên kiểm thử. Không chạy lệnh này nếu chưa muốn mở service.
 
+Supervisor tự bổ sung Node bin vào `PATH` cho service không tương tác: ưu tiên
+`VEETEE_NODE_BIN`, sau đó Node đã có trong PATH, rồi thư mục nvm dưới
+`$HOME/.nvm/versions/node/*/bin` (chọn version semantic lớn nhất có `npm`). Vì vậy
+user-systemd không cần dựa vào shell profile; deployment production vẫn nên đặt
+`VEETEE_NODE_BIN` rõ ràng trong unit/environment của máy.
+
 ## PostgreSQL riêng cho Veetee
 
 Veetee không dùng PostgreSQL/data directory/port của bất kỳ project khác. Trên
