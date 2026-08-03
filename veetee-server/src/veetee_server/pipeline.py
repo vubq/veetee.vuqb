@@ -10,7 +10,7 @@ from typing import Any, Awaitable, Callable
 
 from .config import RuntimeSnapshot
 from .protocol import AudioFrame, Profile, control_message, encode_audio
-from .providers import AudioChunk, OpusCodec, ProviderError, ProviderRegistry
+from .providers import AudioChunk, IntentMatch, MemorySession, OpusCodec, ProviderError, ProviderRegistry
 
 
 @dataclass(slots=True)
@@ -67,6 +67,8 @@ class TurnPipeline:
         send_text: Callable[[dict[str, Any]], Awaitable[None]],
         send_binary: Callable[[bytes], Awaitable[None]],
         execute_tool: Callable[[str, dict[str, Any], int], Awaitable[dict[str, Any]]] | None = None,
+        memory: MemorySession | None = None,
+        on_intent: Callable[[IntentMatch], Awaitable[None]] | None = None,
         metrics: dict[str, int],
     ) -> None:
         self.snapshot = snapshot
@@ -78,6 +80,8 @@ class TurnPipeline:
         self._send_text = send_text
         self._send_binary = send_binary
         self._execute_tool = execute_tool
+        self._memory = memory
+        self._on_intent = on_intent
         self.metrics = metrics
         wire = snapshot.raw.get("wire") or {}
         self._uplink_rate = int(wire.get("uplinkSampleRate", 16000))
@@ -99,8 +103,24 @@ class TurnPipeline:
         try:
             transcript = await self.registry.asr.finish(self.snapshot.locale)
             await self._send_text(control_message("stt", session_id=self.session_id, text=transcript, turn_id=self.turn.turn_id))
+            intent = self.registry.intent.classify(transcript, locale=self.snapshot.locale) if self.registry.intent else None
+            if intent is not None:
+                await self._send_text(control_message(
+                    "intent",
+                    session_id=self.session_id,
+                    turn_id=self.turn.turn_id,
+                    intent_id=intent.intent_id,
+                    action=intent.action,
+                    confidence=intent.confidence,
+                ))
+                if intent.action in {"conversation.exit", "turn.cancel"}:
+                    if self._on_intent is not None:
+                        await self._on_intent(intent)
+                    return
             prompt = self._prompt(transcript)
-            await self._stream_answer(prompt)
+            answer = await self._stream_answer(prompt)
+            if self._memory is not None:
+                self._memory.add_turn(transcript, answer)
         except asyncio.CancelledError:
             raise
         except ProviderError as exc:
@@ -117,28 +137,61 @@ class TurnPipeline:
             self.turn.task.cancel()
         self._egress_pcm.clear()
 
-    async def _stream_answer(self, prompt: str) -> None:
+    async def _stream_answer(self, prompt: str) -> str:
         tools = self.snapshot.raw.get("tools") or []
         max_rounds = max(1, int((self.snapshot.raw.get("toolPolicy") or {}).get("maxRounds", 3)))
         answer_started = False
+        answer_parts: list[str] = []
         current_prompt = prompt
         for _round in range(max_rounds):
             segmenter = SemanticSegmenter(self.snapshot.raw.get("segmentation") or {})
             tool_name: str | None = None
             tool_arguments = ""
-            async for delta in self.registry.llm.stream(prompt=current_prompt, locale=self.snapshot.locale, tools=tools):
+            async def handle_delta(delta: Any) -> None:
+                nonlocal answer_started, tool_name, tool_arguments
                 if self.turn.cancelled and self.turn.cancelled.is_set():
                     return
                 if delta.tool_name:
                     tool_name = delta.tool_name
                     tool_arguments += delta.tool_arguments or ""
                     await self._send_text(control_message("llm", session_id=self.session_id, turn_id=self.turn.turn_id, tool_name=delta.tool_name))
-                    continue
+                    return
                 for segment in segmenter.push(delta.text, final=delta.final):
+                    answer_parts.append(segment)
                     if not answer_started:
                         await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
                         answer_started = True
                     await self._speak_segment(segment)
+
+            stream = self.registry.llm.stream(prompt=current_prompt, locale=self.snapshot.locale, tools=tools).__aiter__()
+            next_delta = asyncio.create_task(stream.__anext__(), name=f"llm-first-{self.turn.turn_id}")
+            progress_timer, progress_text = self._progress_ack()
+            timer = asyncio.create_task(asyncio.sleep(progress_timer / 1000), name=f"progress-{self.turn.turn_id}") if progress_timer and progress_text else None
+            try:
+                if timer is None:
+                    try:
+                        await handle_delta(await next_delta)
+                    except StopAsyncIteration:
+                        pass
+                else:
+                    done, _ = await asyncio.wait({next_delta, timer}, return_when=asyncio.FIRST_COMPLETED)
+                    if timer in done and next_delta not in done:
+                        if not answer_started:
+                            await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
+                            answer_started = True
+                        await self._speak_segment(progress_text)
+                    try:
+                        await handle_delta(await next_delta)
+                    except StopAsyncIteration:
+                        pass
+                async for delta in stream:
+                    await handle_delta(delta)
+            finally:
+                if timer and not timer.done():
+                    timer.cancel()
+                if not next_delta.done():
+                    next_delta.cancel()
+                await asyncio.gather(*(task for task in (timer, next_delta) if task is not None), return_exceptions=True)
             if tool_name and self._execute_tool is not None:
                 try:
                     arguments = json.loads(tool_arguments or "{}")
@@ -153,6 +206,22 @@ class TurnPipeline:
         if answer_started:
             await self._flush_packetizer()
             await self._send_text(control_message("tts", session_id=self.session_id, state="stop", turn_id=self.turn.turn_id))
+        return " ".join(answer_parts).strip()
+
+    def _progress_ack(self) -> tuple[int, str]:
+        policy = self.snapshot.raw.get("progress")
+        if not isinstance(policy, dict) or policy.get("enabled") is not True:
+            return 0, ""
+        try:
+            deadline = int(policy.get("deadlineMs", 0))
+        except (TypeError, ValueError):
+            return 0, ""
+        acknowledgement_id = policy.get("acknowledgementId")
+        acknowledgements = policy.get("acknowledgements")
+        if deadline <= 0 or not isinstance(acknowledgement_id, str) or not isinstance(acknowledgements, dict):
+            return 0, ""
+        text = acknowledgements.get(acknowledgement_id)
+        return (deadline, text.strip()) if isinstance(text, str) and text.strip() else (0, "")
 
     async def _speak_segment(self, segment: str) -> None:
         await self._send_text(
@@ -194,4 +263,5 @@ class TurnPipeline:
         raw_personality = self.snapshot.raw.get("personality")
         personality = raw_personality.get("prompt", "") if isinstance(raw_personality, dict) else ""
         base = str(self.snapshot.raw.get("basePrompt", ""))
-        return "\n\n".join(value for value in (base, personality, transcript) if value)
+        memory = self._memory.context() if self._memory is not None else ""
+        return "\n\n".join(value for value in (base, personality, memory, transcript) if value)

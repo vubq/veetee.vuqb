@@ -18,7 +18,7 @@ from .config import ConfigurationError, ServerConfig
 from .pipeline import Turn, TurnPipeline
 from .mcp import DeviceMcpBridge
 from .protocol import ProtocolError, decode_audio, decode_json, profile_from_version, control_message
-from .providers import OpusCodec, ProviderError
+from .providers import IntentMatch, MemorySession, OpusCodec, ProviderError
 from .runtime import RuntimeConfigManager, RuntimeView
 
 
@@ -105,6 +105,7 @@ class VoiceSession:
         self.generation = 0
         self.codec: OpusCodec | None = None
         self.mcp: DeviceMcpBridge | None = None
+        self.memory: MemorySession | None = None
         self.phase = "ready_idle"
         self._speech_frames = 0
         self._closed = False
@@ -151,6 +152,7 @@ class VoiceSession:
         snapshot = self.app.runtime.view.snapshot
         wire = snapshot.raw.get("wire") or {}
         self.codec = OpusCodec(int(wire.get("uplinkSampleRate", 16000)), int(wire.get("downlinkSampleRate", 24000)))
+        self.memory = self.app.runtime.view.registry.memory.create_session() if self.app.runtime.view.registry.memory else None
         await self.send_text(
             {
                 "type": "hello",
@@ -205,6 +207,12 @@ class VoiceSession:
                 self.phase = "thinking"
                 self.turn.task = asyncio.create_task(self.pipeline.finish(), name=f"turn-{self.turn.turn_id}")
         elif state == "detect":
+            text = message.get("text")
+            if isinstance(text, str) and self.app.runtime.view.registry.intent:
+                match = self.app.runtime.view.registry.intent.classify(text, locale=self.app.runtime.view.snapshot.locale)
+                if match:
+                    await self.send_text(control_message("intent", session_id=self.session_id, intent_id=match.intent_id, action=match.action, confidence=match.confidence))
+                    await self._handle_intent(match)
             return
         else:
             raise ProtocolError("unsupported listen state")
@@ -227,6 +235,8 @@ class VoiceSession:
             send_text=self.send_text,
             send_binary=self.send_binary,
             execute_tool=self._execute_tool,
+            memory=self.memory,
+            on_intent=self._handle_intent,
             metrics=self.app.metrics,
         )
         view.registry.vad.reset()
@@ -254,6 +264,20 @@ class VoiceSession:
         if not self.mcp:
             raise ProviderError("MCP_UNAVAILABLE", "device MCP is not enabled for this session")
         return await self.mcp.call(name, arguments, generation)
+
+    async def _handle_intent(self, match: IntentMatch) -> None:
+        if match.action not in {"conversation.exit", "turn.cancel"}:
+            return
+        if self.turn is not None:
+            self.turn.cancelled.set()
+            if self.mcp:
+                self.mcp.cancel_generation(self.turn.generation)
+        # The callback runs inside the turn task, so do not cancel or await that
+        # task here. Clearing ownership is enough to reject any later stale audio.
+        self.pipeline = None
+        self.turn = None
+        self.phase = "ready_idle"
+        await self.send_text(control_message("alert", session_id=self.session_id, status="ok", code=match.action.replace(".", "_")))
 
     async def _abort(self, *, reason: str, send_stop: bool = True) -> None:
         if self.pipeline:

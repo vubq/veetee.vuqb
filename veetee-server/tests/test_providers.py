@@ -5,7 +5,7 @@ import types
 import numpy as np
 import pytest
 
-from veetee_server.providers import AudioChunk, GroqLLM, PhoWhisperASR, VieNeuTTS
+from veetee_server.providers import AudioChunk, GroqLLM, PatternIntent, PhoWhisperASR, SessionWindowMemory, VieNeuTTS
 
 
 @pytest.mark.asyncio
@@ -122,6 +122,8 @@ async def test_phowhisper_adapter_uses_configured_runtime(monkeypatch):
     assert calls[0] == "cuda-preload"
     assert calls[1] == ("/models/phowhisper", {"device": "cuda", "compute_type": "float16", "cpu_threads": 2, "num_workers": 1})
     assert calls[2][1]["language"] == "vi"
+    assert calls[2][1]["condition_on_previous_text"] is False
+    assert calls[2][1]["without_timestamps"] is True
 
 
 def test_groq_provider_resolves_one_secret_ref_without_file(tmp_path):
@@ -137,3 +139,24 @@ def test_groq_provider_resolves_one_secret_ref_without_file(tmp_path):
         ["secret-1"],
     )
     assert provider._key() == "key-from-manager"
+
+
+def test_pattern_intent_and_session_memory_are_config_driven():
+    intent = PatternIntent({
+        "rules": [
+            {"id": "exit.vi", "action": "conversation.exit", "locales": ["vi"], "patterns": ["tạm biệt", "bye"]},
+        ],
+    })
+    match = intent.classify("  BYE nhé ", locale="vi-VN")
+    assert match is not None
+    assert match.intent_id == "exit.vi"
+    assert match.action == "conversation.exit"
+    assert intent.classify("xin chào", locale="en-US") is None
+
+    memory = SessionWindowMemory({"maxTurns": 2, "maxCharacters": 1000}).create_session()
+    memory.add_turn("một", "hai")
+    memory.add_turn("ba", "bốn")
+    memory.add_turn("năm", "sáu")
+    context = memory.context()
+    assert '"user":"một"' not in context
+    assert '"user":"năm"' in context

@@ -43,7 +43,11 @@
           "computeType": { "type": "string", "enum": ["float16", "int8_float16", "int8" ] },
           "cpuThreads": { "type": "integer", "minimum": 1, "maximum": 32 },
           "numWorkers": { "type": "integer", "minimum": 1, "maximum": 4 },
-          "sampleRate": { "type": "integer", "minimum": 1, "maximum": 48000 }
+          "sampleRate": { "type": "integer", "minimum": 1, "maximum": 48000 },
+          "beamSize": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "conditionOnPreviousText": { "type": "boolean" },
+          "withoutTimestamps": { "type": "boolean" },
+          "vadFilter": { "type": "boolean" }
         }
       }
     },
@@ -110,6 +114,37 @@
       "version": "1.0.0",
       "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsCancel": true },
       "configSchema": { "type": "object", "additionalProperties": false, "required": ["sampleRate", "toneHz", "chunkMs", "amplitude"], "properties": { "sampleRate": { "type": "integer", "minimum": 1 }, "toneHz": { "type": "number", "minimum": 1 }, "chunkMs": { "type": "integer", "minimum": 1 }, "amplitude": { "type": "number", "minimum": 0, "maximum": 1 } } }
+    },
+    {
+      "id": "veetee.intent.patterns",
+      "kind": "intent",
+      "displayNameKey": "provider.intent.patterns",
+      "version": "1.0.0",
+      "manifest": { "locales": ["*"], "supportsCancel": true },
+      "configSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rules"],
+        "properties": {
+          "rules": { "type": "array", "minItems": 1, "maxItems": 128, "items": { "type": "object" } }
+        }
+      }
+    },
+    {
+      "id": "veetee.memory.session-window",
+      "kind": "memory",
+      "displayNameKey": "provider.memory.sessionWindow",
+      "version": "1.0.0",
+      "manifest": { "locales": ["*"], "supportsCancel": true },
+      "configSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["maxTurns", "maxCharacters"],
+        "properties": {
+          "maxTurns": { "type": "integer", "minimum": 1, "maximum": 64 },
+          "maxCharacters": { "type": "integer", "minimum": 256, "maximum": 100000 }
+        }
+      }
     }
   ]
 }

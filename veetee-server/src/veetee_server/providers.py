@@ -16,9 +16,12 @@ import math
 import os
 from pathlib import Path
 import queue as thread_queue
+import re
 import struct
 import sys
 import threading
+import tempfile
+from collections import deque
 from typing import Any, AsyncIterator, Protocol
 
 import httpx
@@ -48,6 +51,26 @@ class LLMDelta:
     tool_name: str | None = None
     tool_arguments: str | None = None
     final: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class IntentMatch:
+    intent_id: str
+    action: str
+    confidence: float
+
+
+class IntentProvider(Protocol):
+    def classify(self, text: str, *, locale: str) -> IntentMatch | None: ...
+
+
+class MemorySession(Protocol):
+    def add_turn(self, user_text: str, assistant_text: str) -> None: ...
+    def context(self) -> str: ...
+
+
+class MemoryProvider(Protocol):
+    def create_session(self) -> MemorySession: ...
 
 
 class VADProvider(Protocol):
@@ -123,6 +146,78 @@ class FixtureASR:
         return self._text
 
 
+class PatternIntent:
+    """Config-only low-latency matcher for system intents.
+
+    Rules, locale gates and actions are data. Business intent remains with the
+    configured LLM/tool loop; this provider is deliberately deterministic.
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        raw_rules = config.get("rules")
+        if not isinstance(raw_rules, list):
+            raise ConfigurationError("pattern intent requires config.rules")
+        self._rules: list[dict[str, Any]] = []
+        for rule in raw_rules:
+            if not isinstance(rule, dict):
+                raise ConfigurationError("intent rules must be objects")
+            intent_id = rule.get("id")
+            action = rule.get("action")
+            patterns = rule.get("patterns")
+            if not isinstance(intent_id, str) or not intent_id.strip() or not isinstance(action, str) or not action.strip():
+                raise ConfigurationError("intent rule requires id and action")
+            if not isinstance(patterns, list) or not patterns or not all(isinstance(item, str) and item.strip() for item in patterns):
+                raise ConfigurationError("intent rule patterns must be a non-empty string array")
+            mode = rule.get("mode", "contains")
+            if mode not in {"contains", "regex"}:
+                raise ConfigurationError("intent rule mode must be contains or regex")
+            locales = rule.get("locales", ["*"])
+            if not isinstance(locales, list) or not all(isinstance(item, str) and item for item in locales):
+                raise ConfigurationError("intent rule locales must be a string array")
+            confidence = float(rule.get("confidence", 1.0))
+            if not 0 <= confidence <= 1:
+                raise ConfigurationError("intent rule confidence must be between 0 and 1")
+            self._rules.append({"id": intent_id, "action": action, "patterns": patterns, "mode": mode, "locales": locales, "confidence": confidence})
+
+    def classify(self, text: str, *, locale: str) -> IntentMatch | None:
+        normalized = " ".join(text.casefold().split())
+        if not normalized:
+            return None
+        for rule in self._rules:
+            locales = rule["locales"]
+            if "*" not in locales and locale not in locales and locale.split("-")[0] not in locales:
+                continue
+            for pattern in rule["patterns"]:
+                matched = re.search(pattern, normalized) is not None if rule["mode"] == "regex" else pattern.casefold() in normalized
+                if matched:
+                    return IntentMatch(rule["id"], rule["action"], rule["confidence"])
+        return None
+
+
+class SessionWindowMemory:
+    def __init__(self, config: dict[str, Any]) -> None:
+        self._max_turns = _positive_int(config, "maxTurns", fallback=8)
+        self._max_characters = _positive_int(config, "maxCharacters", fallback=12000)
+
+    def create_session(self) -> MemorySession:
+        return _SessionWindow(self._max_turns, self._max_characters)
+
+
+class _SessionWindow:
+    def __init__(self, max_turns: int, max_characters: int) -> None:
+        self._max_turns = max_turns
+        self._max_characters = max_characters
+        self._turns: deque[dict[str, str]] = deque(maxlen=max_turns)
+
+    def add_turn(self, user_text: str, assistant_text: str) -> None:
+        self._turns.append({"user": user_text, "assistant": assistant_text})
+        while len(json.dumps(list(self._turns), ensure_ascii=False)) > self._max_characters and self._turns:
+            self._turns.popleft()
+
+    def context(self) -> str:
+        return json.dumps(list(self._turns), ensure_ascii=False, separators=(",", ":"))
+
+
 class PhoWhisperASR:
     """Optional adapter; model artifact and compute mode are config-only."""
 
@@ -147,29 +242,71 @@ class PhoWhisperASR:
             )
         except Exception as exc:  # noqa: BLE001
             raise ProviderError("ASR_MODEL_LOAD_FAILED", "PhoWhisper model could not be loaded") from exc
-        self._chunks: list[bytes] = []
+        self._audio_path: Path | None = None
+        self._audio_file: Any | None = None
+        self._sample_count = 0
         self._sample_rate = _positive_int(config, "sampleRate", fallback=16000)
+        self._beam_size = _positive_int(config, "beamSize", fallback=1)
+        self._condition_on_previous_text = bool(config.get("conditionOnPreviousText", False))
+        self._without_timestamps = bool(config.get("withoutTimestamps", True))
+        self._vad_filter = bool(config.get("vadFilter", False))
 
     def reset(self) -> None:
-        self._chunks.clear()
+        self._close_audio(remove=True)
+        self._sample_count = 0
 
     async def accept(self, pcm: bytes, sample_rate: int) -> None:
+        import numpy as np
+
         self._sample_rate = sample_rate
-        self._chunks.append(bytes(pcm))
+        if len(pcm) % 2:
+            raise ProviderError("ASR_PCM_ALIGNMENT", "ASR input must be signed 16-bit PCM")
+        if self._audio_file is None:
+            temporary = tempfile.NamedTemporaryFile(prefix="veetee-asr-", suffix=".f32", delete=False)
+            self._audio_file = temporary
+            self._audio_path = Path(temporary.name)
+        samples = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
+        self._audio_file.write(samples.tobytes())
+        self._audio_file.flush()
+        self._sample_count += int(samples.size)
 
     async def finish(self, locale: str) -> str:
         import numpy as np
 
-        pcm = b"".join(self._chunks)
-        samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
-        segments, _ = await asyncio.to_thread(
-            self._model.transcribe,
-            samples,
-            language=locale.split("-")[0],
-            vad_filter=False,
-            beam_size=1,
-        )
-        return " ".join(segment.text.strip() for segment in segments).strip()
+        path = self._audio_path
+        sample_count = self._sample_count
+        self._close_audio(remove=False)
+        if path is None or sample_count <= 0:
+            if path is not None:
+                path.unlink(missing_ok=True)
+            self._audio_path = None
+            self._sample_count = 0
+            return ""
+        samples = np.memmap(path, dtype="<f4", mode="r", shape=(sample_count,))
+        try:
+            segments, _ = await asyncio.to_thread(
+                self._model.transcribe,
+                samples,
+                language=locale.split("-")[0],
+                vad_filter=self._vad_filter,
+                beam_size=self._beam_size,
+                condition_on_previous_text=self._condition_on_previous_text,
+                without_timestamps=self._without_timestamps,
+            )
+            return " ".join(segment.text.strip() for segment in segments).strip()
+        finally:
+            del samples
+            path.unlink(missing_ok=True)
+            self._audio_path = None
+            self._sample_count = 0
+
+    def _close_audio(self, *, remove: bool) -> None:
+        if self._audio_file is not None:
+            self._audio_file.close()
+            self._audio_file = None
+        if remove and self._audio_path is not None:
+            self._audio_path.unlink(missing_ok=True)
+            self._audio_path = None
 
 
 class FixtureLLM:
@@ -448,6 +585,8 @@ class ProviderRegistry:
         self.asr = self._asr(snapshot.provider("asr"))
         self.llm = self._llm(snapshot.provider("llm"))
         self.tts = self._tts(snapshot.provider("tts"))
+        self.intent = self._optional(snapshot, "intent", self._intent)
+        self.memory = self._optional(snapshot, "memory", self._memory)
 
     def _selection(self, item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         provider_id = item["providerId"]
@@ -488,6 +627,25 @@ class ProviderRegistry:
         if provider_id == "vieneu.v3-turbo":
             return VieNeuTTS(config)
         raise ProviderError("TTS_PROVIDER_UNAVAILABLE", f"selected TTS provider unavailable: {provider_id}")
+
+    def _intent(self, item: dict[str, Any]) -> IntentProvider:
+        provider_id, config = self._selection(item)
+        if provider_id == "veetee.intent.patterns":
+            return PatternIntent(config)
+        raise ProviderError("INTENT_PROVIDER_UNAVAILABLE", f"selected intent provider unavailable: {provider_id}")
+
+    def _memory(self, item: dict[str, Any]) -> MemoryProvider:
+        provider_id, config = self._selection(item)
+        if provider_id == "veetee.memory.session-window":
+            return SessionWindowMemory(config)
+        raise ProviderError("MEMORY_PROVIDER_UNAVAILABLE", f"selected memory provider unavailable: {provider_id}")
+
+    @staticmethod
+    def _optional(snapshot: RuntimeSnapshot, kind: str, factory: Any) -> Any | None:
+        item = snapshot.raw.get("providers", {}).get(kind)
+        if not isinstance(item, dict) or item.get("mode") == "disabled":
+            return None
+        return factory(item)
 
 
 def _required_string(config: dict[str, Any], key: str) -> str:

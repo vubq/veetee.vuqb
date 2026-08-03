@@ -151,6 +151,12 @@ Progress policy dùng deadline và explicit turn state:
 - Sau tool result, LLM tiếp tục cùng turn và TTS đọc answer thật.
 - Phrase, voice/style và threshold đều là config; code chỉ biết policy/event ID.
 
+Runtime baseline thực hiện policy này bằng `progress.acknowledgementId` cùng map
+`progress.acknowledgements` trong snapshot. Khi LLM chưa phát delta có nghĩa sau
+deadline, server phát đúng text đã cấu hình như một `sentence_start`; không có
+text map thì không tự chèn câu mặc định. Ack và câu trả lời dùng cùng
+`turn_id`, cùng cancellation barrier và bị bỏ khi barge-in/abort.
+
 Timer bắt đầu tại `speech_endpointed`; baseline
 `progress_ack_deadline_ms = 900`. Config activation chỉ hợp lệ khi
 `0 < progress_ack_deadline_ms < lab_ttfa_target_ms` và
