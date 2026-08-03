@@ -271,6 +271,13 @@ test('OpenAPI is generated from every registered route', async () => {
       for (const [method, operation] of Object.entries(methods)) {
         assert.ok(operation.operationId, `missing operationId for ${method} ${path}`)
         assert.ok(operation.responses && Object.keys(operation.responses).length > 0, `missing responses for ${method} ${path}`)
+        assert.ok(operation.responses?.['400'], `missing validation response for ${method} ${path}`)
+        assert.ok(operation.responses?.['500'], `missing server-error response for ${method} ${path}`)
+        const secured = !path.startsWith('/health/') && path !== '/openapi.json' && path !== '/api/v1/auth/login'
+        if (secured) {
+          assert.ok(operation.responses?.['401'], `missing auth response for ${method} ${path}`)
+          assert.ok(operation.responses?.['403'], `missing forbidden response for ${method} ${path}`)
+        }
       }
     }
     assert.ok(document.components?.securitySchemes?.veeteeSession)
