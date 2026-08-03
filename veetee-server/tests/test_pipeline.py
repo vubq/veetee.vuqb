@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+import time
 
 import pytest
 
@@ -17,6 +18,7 @@ async def test_fixture_pipeline_streams_start_sentence_audio_stop():
     turn = Turn(turn_id="turn", generation=1, mode="manual", cancelled=asyncio.Event())
     text = []
     binary = []
+    metrics = {}
     pipeline = TurnPipeline(
         snapshot=snapshot,
         registry=registry,
@@ -26,8 +28,9 @@ async def test_fixture_pipeline_streams_start_sentence_audio_stop():
         turn=turn,
         send_text=lambda value: _append(text, value),
         send_binary=lambda value: _append(binary, value),
-        metrics={},
+        metrics=metrics,
     )
+    turn.listen_stopped_at = time.perf_counter()
     await pipeline.ingest(b"\0" * 1920)
     await pipeline.finish()
     types = [event["type"] for event in text]
@@ -36,6 +39,10 @@ async def test_fixture_pipeline_streams_start_sentence_audio_stop():
     assert any(event.get("state") == "start" for event in text)
     assert any(event.get("state") == "stop" for event in text)
     assert binary
+    assert metrics["last_asr_finalize_ms"] >= 0
+    assert metrics["last_llm_first_token_ms"] >= 0
+    assert metrics["last_tts_start_ms"] >= 0
+    assert metrics["last_ttfa_ms"] >= 0
 
 
 @pytest.mark.asyncio

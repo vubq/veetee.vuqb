@@ -21,6 +21,11 @@ class Turn:
     pcm_bytes: int = 0
     task: asyncio.Task[None] | None = None
     cancelled: asyncio.Event | None = None
+    listen_stopped_at: float | None = None
+    asr_finished_at: float | None = None
+    llm_first_at: float | None = None
+    tts_started_at: float | None = None
+    first_audio_at: float | None = None
 
 
 class SemanticSegmenter:
@@ -102,6 +107,7 @@ class TurnPipeline:
         started = time.perf_counter()
         try:
             transcript = await self.registry.asr.finish(self.snapshot.locale)
+            self.turn.asr_finished_at = time.perf_counter()
             await self._send_text(control_message("stt", session_id=self.session_id, text=transcript, turn_id=self.turn.turn_id))
             intent = self.registry.intent.classify(transcript, locale=self.snapshot.locale) if self.registry.intent else None
             if intent is not None:
@@ -129,6 +135,7 @@ class TurnPipeline:
         finally:
             self.metrics["turn_count"] = self.metrics.get("turn_count", 0) + 1
             self.metrics["last_turn_ms"] = round((time.perf_counter() - started) * 1000)
+            self._record_timings()
 
     def cancel(self) -> None:
         if self.turn.cancelled:
@@ -154,6 +161,8 @@ class TurnPipeline:
                 nonlocal answer_started, tool_name, tool_arguments
                 if self._cancelled():
                     return
+                if self.turn.llm_first_at is None and (delta.text or delta.tool_name):
+                    self.turn.llm_first_at = time.perf_counter()
                 if delta.tool_name:
                     tool_name = delta.tool_name
                     tool_arguments += delta.tool_arguments or ""
@@ -164,6 +173,7 @@ class TurnPipeline:
                         return
                     answer_parts.append(segment)
                     if not answer_started:
+                        self.turn.tts_started_at = time.perf_counter()
                         await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
                         answer_started = True
                     await self._speak_segment(segment)
@@ -182,6 +192,7 @@ class TurnPipeline:
                     done, _ = await asyncio.wait({next_delta, timer}, return_when=asyncio.FIRST_COMPLETED)
                     if timer in done and next_delta not in done:
                         if not answer_started:
+                            self.turn.tts_started_at = time.perf_counter()
                             await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
                             answer_started = True
                         await self._speak_segment(progress_text)
@@ -268,9 +279,25 @@ class TurnPipeline:
     async def _send_packet(self, pcm: bytes) -> None:
         if self._cancelled():
             return
+        if self.turn.first_audio_at is None:
+            self.turn.first_audio_at = time.perf_counter()
         packet = self.codec.encode_downlink(pcm, self._frame_samples)
         await self._send_binary(encode_audio(AudioFrame(profile=self.profile, payload=packet)))
         self.metrics["audio_frames_out"] = self.metrics.get("audio_frames_out", 0) + 1
+
+    def _record_timings(self) -> None:
+        origin = self.turn.listen_stopped_at
+        if origin is None:
+            return
+        fields = (
+            ("last_asr_finalize_ms", self.turn.asr_finished_at),
+            ("last_llm_first_token_ms", self.turn.llm_first_at),
+            ("last_tts_start_ms", self.turn.tts_started_at),
+            ("last_ttfa_ms", self.turn.first_audio_at),
+        )
+        for name, timestamp in fields:
+            if timestamp is not None:
+                self.metrics[name] = max(0, round((timestamp - origin) * 1000))
 
     def _prompt(self, transcript: str) -> str:
         raw_personality = self.snapshot.raw.get("personality")

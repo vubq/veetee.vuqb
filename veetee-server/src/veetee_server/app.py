@@ -7,6 +7,7 @@ from collections.abc import Awaitable
 import json
 import logging
 import secrets
+import time
 from pathlib import Path
 from typing import Any
 
@@ -204,6 +205,7 @@ class VoiceSession:
             await self._start_turn(str(message.get("mode", "manual")))
         elif state == "stop":
             if self.turn and self.pipeline and self.turn.task is None:
+                self.turn.listen_stopped_at = time.perf_counter()
                 self.phase = "thinking"
                 self.turn.task = asyncio.create_task(self.pipeline.finish(), name=f"turn-{self.turn.turn_id}")
         elif state == "detect":
