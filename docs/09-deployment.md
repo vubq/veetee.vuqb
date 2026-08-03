@@ -18,6 +18,24 @@ Không dùng Docker, Compose hoặc container runtime trong baseline. Bốn comp
 vẫn là deployable độc lập; host-native không có nghĩa chạy source tùy ý. Mỗi service
 pin artifact/lockfile, env schema, absolute data paths và service unit riêng.
 
+### 1.1 Runtime contract xuyên suốt quá trình
+
+M0 trở đi, các server process được dựng và health-check trong cùng host-native
+runtime harness; không chờ đến cuối mới khởi động control plane. Voice Server là
+critical data plane và có thể tiếp tục giữ session khi Manager API/Web restart.
+Manifest runtime (đường dẫn qua `VEETEE_RUNTIME_MANIFEST`) mô tả command,
+working directory, env allow-list, dependency và health URL. Supervisor không nhận
+shell string từ UI, không sinh container, không tự đổi provider/model và không log
+secret. Readiness report ghi service, config revision, pid, version và lỗi đã
+redact.
+
+| Service | Health/readiness | Dependency |
+|---|---|---|
+| `veetee-server` | `/health/live`, `/health/ready` | model fixture/manager snapshot |
+| `veetee-manager-api` | `/health/live`, `/health/ready` | PostgreSQL |
+| `veetee-manager-web` | configured static HTTP probe | Manager API (runtime config) |
+| PostgreSQL | configured SQL probe | host service |
+
 ## 2. Topology
 
 ```mermaid
@@ -128,6 +146,12 @@ Mọi process validate env bằng schema trước bind socket. Không có per-en
 `fixture` và `manager` chỉ là hai adapter của cùng snapshot schema. Release M2+
 không được chạy `fixture`; source mismatch/thiếu input làm startup fail, không
 fallback sang source còn lại.
+
+`.env` chỉ chứa bootstrap: bind/port, process paths, database/secret-store
+locations, machine-auth bootstrap và feature gates. Provider/model/voice/locale,
+prompt/personality, endpoint policy, VAD thresholds, device capability và các
+selection vận hành không được thêm vào `.env`; chúng được chỉnh trên Manager Web,
+validate/probe rồi publish thành snapshot revision.
 
 ### 5.3 Groq test keys
 
@@ -347,6 +371,32 @@ chỉ cần nhánh fixture → models → voice; M2+ dùng nhánh control plane.
 - Blue-green giữ ready bằng old generation tới atomic swap. Quiesce-swap và
   rollback reload trả non-ready trong toàn interval; không mở admission chỉ vì
   model object đã load trước khi representative probe pass.
+
+## 11.1 Tailscale Serve private HTTPS
+
+Tailscale là lớp truy cập riêng cho việc kiểm tra, không phải cách đổi Wi-Fi hay
+route của máy. Người dùng phải cài/đăng nhập Tailscale trước; AI không tự chạy
+`tailscale up`, không tạo AP/captive portal và không dùng Funnel/public exposure.
+
+Sau khi operator xác nhận `tailscale status` đã có tailnet, reverse proxy hoặc
+configured web listener được expose bằng `tailscale serve`. Port và local target
+đọc từ environment, còn hostname thật phải lấy từ output `tailscale serve status`:
+
+```bash
+tailscale serve --https=${VEETEE_TAILSCALE_PORT} http://${VEETEE_BIND_HOST}:${VEETEE_WEB_PORT}
+tailscale serve status
+```
+
+Không hard-code `tail*.ts.net` trong firmware, UI hoặc docs runtime. Checklist:
+
+1. `tailscale status` chỉ ra interface/peer trong tailnet dự kiến.
+2. `tailscale serve status` chỉ có HTTPS Serve, không có Funnel.
+3. `curl -fsS https://<domain-tu-status>/<health-path>` trả readiness.
+4. Chỉ đổi endpoint ESP32 khi người dùng yêu cầu; không sửa NetworkManager,
+   Wi-Fi, default route hoặc interface host.
+
+Nếu binary chưa cài hoặc tailnet chưa enable, giữ LAN/loopback deployment và ghi
+trạng thái blocked trong runtime note; không cài tự động để tránh thay đổi mạng.
 
 ## 12. Observability trên host
 

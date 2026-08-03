@@ -18,6 +18,10 @@
 *.key
 *.p12
 
+# Test-only credential lists. Keep the tracked shape in secrets/*.example.
+secrets/*.keys
+secrets/*.secret
+
 # Host-local agent/tool state and visual artifacts
 .agents/
 .claude/

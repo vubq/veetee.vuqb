@@ -364,6 +364,26 @@ Nếu Manager tạm unavailable, Voice Server chỉ dùng last-known-good snapsh
 cache theo internal device ID và binding revision; đây là config cache, **không
 phải provider fallback**.
 
+### 5.4 Web-published runtime apply (không cần restart)
+
+Mọi trường vận hành mà UI cho phép chỉnh đều đi qua draft → validate/probe →
+publish revision. Sau publish, Manager phát invalidation marker (poll fallback
+được phép ở transport config) và Voice Server gọi lại runtime-config bằng ETag.
+Provider host warm generation mới trong bounded activation job; chỉ sau khi
+representative probe, resource lease và capability check pass mới atomic swap.
+
+- Session/turn đã mở giữ nguyên snapshot revision đã pin, không đổi provider giữa
+  chừng và không bị cắt chỉ vì có publish.
+- Session mới dùng revision published mới mà không restart process.
+- Firmware nhận runtime snapshot theo device binding và áp dụng ở safe boundary;
+  các field bị board manifest khóa sẽ bị API reject, không gửi GPIO tuỳ ý xuống
+  thiết bị.
+- Lỗi validate/probe/warm giữ revision đang active, tạo `CONFIG_ACTIVATION_FAILED`
+  có path/code và hiển thị trong Web; đây là config rollback, không phải runtime
+  provider fallback.
+- `.env` chỉ bootstrap process. UI không sửa bind/port/secret file path trực tiếp;
+  những giá trị đó cần operator/service change có audit và restart có chủ ý.
+
 ## 6. API conventions
 
 ### 6.1 Common rules
