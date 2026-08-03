@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { Bot, Component, LayoutGrid, Menu, Puzzle, RotateCcw } from '@lucide/vue'
+import { Bot, Component, LayoutGrid, LogOut, Menu, Puzzle, RotateCcw } from '@lucide/vue'
+import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
+import { authSession } from '@/auth/auth-session'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
+import VtButton from '@/ui/primitives/VtButton.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
 import VtIconButton from '@/ui/primitives/VtIconButton.vue'
 import VtMenu, { type VtMenuItem } from '@/ui/primitives/VtMenu.vue'
 
 const router = useRouter()
+const { t } = useI18n()
 const isApiMode = Boolean(import.meta.env.VITE_MANAGER_API_URL)
+const logoutLoading = ref(false)
+const isAuthenticated = computed(() => authSession.status.value === 'authenticated')
 const mobileItems: VtMenuItem[] = [
   { id: 'assistants', label: 'Trợ lý' },
   { id: 'components', label: 'Thư viện giao diện' },
@@ -18,6 +25,13 @@ const mobileItems: VtMenuItem[] = [
 function navigate(id: string) {
   if (id === 'assistants') void router.push('/assistants')
   if (id === 'components') void router.push('/_preview/components')
+}
+
+async function logout() {
+  logoutLoading.value = true
+  const ok = await authSession.logout()
+  logoutLoading.value = false
+  if (ok) await router.replace({ name: 'login' })
 }
 </script>
 
@@ -78,10 +92,35 @@ function navigate(id: string) {
         <VtBadge tone="primary">
           {{ isApiMode ? 'Manager API' : 'UI preview' }}
         </VtBadge>
-        <span class="mock-marker"><VtIcon
-          :icon="RotateCcw"
-          :size="13"
-        /> Dữ liệu mẫu</span>
+        <span
+          v-if="isApiMode && isAuthenticated && authSession.user.value?.email"
+          class="account-label"
+          :title="authSession.user.value.email"
+        >{{ authSession.user.value.email }}</span>
+        <VtButton
+          v-if="isApiMode && isAuthenticated"
+          variant="ghost"
+          size="sm"
+          :loading="logoutLoading"
+          @click="logout"
+        >
+          <template #leading>
+            <VtIcon
+              :icon="LogOut"
+              :size="14"
+            />
+          </template>
+          {{ t('auth.logout') }}
+        </VtButton>
+        <span
+          v-else
+          class="mock-marker"
+        >
+          <VtIcon
+            :icon="RotateCcw"
+            :size="13"
+          /> Dữ liệu mẫu
+        </span>
       </div>
 
       <div class="mobile-menu">
@@ -116,6 +155,7 @@ function navigate(id: string) {
 .nav-link.router-link-active { background: #e9eef3; color: var(--vt-text); font-weight: 600; }
 .nav-link:focus-visible { box-shadow: 0 0 0 3px var(--vt-focus); }
 .top-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.account-label { max-width: 170px; overflow: hidden; color: var(--vt-text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .mock-marker { display: inline-flex; align-items: center; gap: 5px; color: var(--vt-text-faint); font-size: 10px; }
 .mobile-menu { display: none; }
 @media (max-width: 760px) {

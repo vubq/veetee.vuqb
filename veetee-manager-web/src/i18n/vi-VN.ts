@@ -16,6 +16,25 @@ export default {
     reset: 'Đặt lại dữ liệu mẫu',
     back: 'Quay lại',
   },
+  auth: {
+    eyebrow: 'Không gian quản trị',
+    title: 'Đăng nhập',
+    description: 'Đăng nhập để quản lý trợ lý, provider và thiết bị Veetee.',
+    email: 'Email',
+    emailPlaceholder: 'owner@example.com',
+    password: 'Mật khẩu',
+    passwordPlaceholder: 'Nhập mật khẩu',
+    submit: 'Vào Manager',
+    logout: 'Đăng xuất',
+    previewNote: 'Đang chạy UI preview: bạn có thể bỏ qua bước này.',
+    errors: {
+      invalidCredentials: 'Email hoặc mật khẩu chưa đúng.',
+      throttled: 'Bạn thử đăng nhập quá nhiều lần. Hãy chờ rồi thử lại.',
+      network: 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.',
+      preview: 'UI preview không yêu cầu đăng nhập.',
+      generic: 'Đăng nhập chưa thành công. Hãy thử lại.',
+    },
+  },
   preview: {
     scenario: {
       happy: {
