@@ -87,7 +87,11 @@
           "endpoint": { "type": "string", "format": "uri" },
           "model": { "type": "string", "minLength": 1 },
           "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
-          "maxTokens": { "type": "integer", "minimum": 1, "maximum": 32768 }
+          "maxTokens": { "type": "integer", "minimum": 1, "maximum": 32768 },
+          "timeoutSeconds": { "type": "number", "minimum": 1, "maximum": 300 },
+          "maxConnections": { "type": "integer", "minimum": 1, "maximum": 64 },
+          "maxKeepaliveConnections": { "type": "integer", "minimum": 0, "maximum": 64 },
+          "keepaliveExpirySeconds": { "type": "number", "minimum": 0, "maximum": 300 }
         }
       }
     },

@@ -216,7 +216,7 @@ Prompt assembly order là data contract, không nối chuỗi ad hoc:
 5. Tool catalog đã authorize cho assistant/device.
 6. Conversation window và final user transcript.
 
-Groq request bật streaming. Model ID, temperature, token policy và tool choice nằm trong provider config; server core không chứa model literal. Token/text delta và tool-call delta được parse thành hai channels; tool JSON chưa hoàn chỉnh không đi qua speech segmenter.
+Groq request bật streaming. Model ID, temperature, token policy và tool choice nằm trong provider config; server core không chứa model literal. Token/text delta và tool-call delta được parse thành hai channels; tool JSON chưa hoàn chỉnh không đi qua speech segmenter. Mỗi provider generation giữ một `httpx.AsyncClient` pool dùng chung cho các session, với `maxConnections`, `maxKeepaliveConnections`, `keepaliveExpirySeconds` và timeout do manifest cấu hình; pool đóng sau khi generation lease cuối drain để không bỏ connection đang dùng.
 
 ### 7.4 Tool loop
 

@@ -199,6 +199,64 @@ def test_groq_provider_resolves_one_secret_ref_without_file(tmp_path):
     assert provider._key() == "key-from-manager"
 
 
+@pytest.mark.asyncio
+async def test_groq_provider_reuses_generation_scoped_http_pool_and_closes_it(monkeypatch):
+    created = []
+    requests = []
+
+    class Response:
+        status_code = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            del exc_type, exc, traceback
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"content":"Xin chào"}}]}'
+            yield 'data: [DONE]'
+
+    class Client:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+            self.closed = False
+
+        def stream(self, method, endpoint, *, headers, json):
+            requests.append((method, endpoint, headers, json))
+            return Response()
+
+        async def aclose(self):
+            self.closed = True
+
+    monkeypatch.setattr("veetee_server.providers.httpx.AsyncClient", Client)
+    provider = GroqLLM(
+        {
+            "endpoint": "https://example.invalid/v1/chat/completions",
+            "model": "configured-model",
+            "maxConnections": 3,
+            "maxKeepaliveConnections": 2,
+            "keepaliveExpirySeconds": 12,
+        },
+        None,
+        types.SimpleNamespace(resolve=lambda reference_id: "key-from-manager"),
+        ["secret-1"],
+    )
+
+    first = [delta async for delta in provider.stream(prompt="một", locale="vi-VN", tools=[])]
+    second = [delta async for delta in provider.stream(prompt="hai", locale="vi-VN", tools=[])]
+
+    assert len(created) == 1
+    assert len(requests) == 2
+    assert first[-1].final is True
+    assert second[0].text == "Xin chào"
+    await provider.close()
+    assert created[0]["limits"].max_connections == 3
+    assert created[0]["limits"].max_keepalive_connections == 2
+    assert created[0]["limits"].keepalive_expiry == 12
+    assert provider._client is None
+
+
 def test_pattern_intent_and_session_memory_are_config_driven():
     intent = PatternIntent({
         "rules": [

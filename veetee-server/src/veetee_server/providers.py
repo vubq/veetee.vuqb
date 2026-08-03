@@ -445,9 +445,34 @@ class GroqLLM:
         self._endpoint = _required_string(config, "endpoint")
         self._temperature = float(config.get("temperature", 0.3))
         self._max_tokens = int(config.get("maxTokens", 512))
+        self._timeout_seconds = _bounded_float(
+            config,
+            "timeoutSeconds",
+            fallback=float(os.getenv("VEETEE_LLM_TIMEOUT_SECONDS", "30")),
+            minimum=1,
+            maximum=300,
+        )
+        self._max_connections = _bounded_int(config, "maxConnections", fallback=8, minimum=1, maximum=64)
+        self._max_keepalive_connections = _bounded_int(
+            config,
+            "maxKeepaliveConnections",
+            fallback=min(4, self._max_connections),
+            minimum=0,
+            maximum=self._max_connections,
+        )
+        self._keepalive_expiry_seconds = _bounded_float(
+            config,
+            "keepaliveExpirySeconds",
+            fallback=30,
+            minimum=0,
+            maximum=300,
+        )
         self._secret_file = secret_file
         self._secret_resolver = secret_resolver
         self._secret_ref = secret_refs[0] if secret_refs else None
+        self._client: httpx.AsyncClient | None = None
+        self._client_lock = asyncio.Lock()
+        self._closed = False
 
     def _key(self) -> str:
         if self._secret_ref and self._secret_resolver:
@@ -469,6 +494,36 @@ class GroqLLM:
             raise ProviderError("LLM_SINGLE_SECRET_REQUIRED", "production Groq config requires exactly one key")
         return values[0]
 
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._closed:
+            raise ProviderError("LLM_PROVIDER_CLOSED", "Groq provider is closed")
+        client = self._client
+        if client is not None:
+            return client
+        async with self._client_lock:
+            if self._closed:
+                raise ProviderError("LLM_PROVIDER_CLOSED", "Groq provider is closed")
+            if self._client is None:
+                self._client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(self._timeout_seconds),
+                    limits=httpx.Limits(
+                        max_connections=self._max_connections,
+                        max_keepalive_connections=self._max_keepalive_connections,
+                        keepalive_expiry=self._keepalive_expiry_seconds,
+                    ),
+                )
+            return self._client
+
+    async def close(self) -> None:
+        """Close the generation-scoped HTTP pool after all session leases drain."""
+
+        async with self._client_lock:
+            self._closed = True
+            client = self._client
+            self._client = None
+        if client is not None:
+            await client.aclose()
+
     async def stream(self, *, prompt: str, locale: str, tools: list[dict[str, Any]]) -> AsyncIterator[LLMDelta]:
         payload: dict[str, Any] = {
             "model": self._model,
@@ -480,38 +535,39 @@ class GroqLLM:
         if tools:
             payload["tools"] = tools
         headers = {"Authorization": f"Bearer {self._key()}", "Content-Type": "application/json"}
-        timeout = httpx.Timeout(float(os.getenv("VEETEE_LLM_TIMEOUT_SECONDS", "30")))
+        client = await self._get_client()
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                async with client.stream("POST", self._endpoint, headers=headers, json=payload) as response:
-                    if response.status_code == 429:
-                        raise ProviderError("LLM_RATE_LIMITED", "Groq rate limit", retryable=True)
-                    if response.status_code >= 400:
-                        raise ProviderError("LLM_HTTP_ERROR", f"Groq HTTP {response.status_code}")
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data = line[5:].strip()
-                        if data == "[DONE]":
-                            yield LLMDelta(final=True)
-                            return
-                        try:
-                            event = json.loads(data)
-                        except json.JSONDecodeError:
-                            continue
-                        delta = event.get("choices", [{}])[0].get("delta", {})
-                        text = delta.get("content") or ""
-                        tool_calls = delta.get("tool_calls") or []
-                        if text:
-                            yield LLMDelta(text=text)
-                        for call in tool_calls:
-                            function = call.get("function") or {}
-                            yield LLMDelta(
-                                tool_name=function.get("name"),
-                                tool_arguments=function.get("arguments", ""),
-                            )
+            async with client.stream("POST", self._endpoint, headers=headers, json=payload) as response:
+                if response.status_code == 429:
+                    raise ProviderError("LLM_RATE_LIMITED", "Groq rate limit", retryable=True)
+                if response.status_code >= 400:
+                    raise ProviderError("LLM_HTTP_ERROR", f"Groq HTTP {response.status_code}")
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        yield LLMDelta(final=True)
+                        return
+                    try:
+                        event = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = event.get("choices", [{}])[0].get("delta", {})
+                    text = delta.get("content") or ""
+                    tool_calls = delta.get("tool_calls") or []
+                    if text:
+                        yield LLMDelta(text=text)
+                    for call in tool_calls:
+                        function = call.get("function") or {}
+                        yield LLMDelta(
+                            tool_name=function.get("name"),
+                            tool_arguments=function.get("arguments", ""),
+                        )
         except httpx.TimeoutException as exc:
             raise ProviderError("LLM_TIMEOUT", "Groq request timed out", retryable=True) from exc
+        except httpx.RequestError as exc:
+            raise ProviderError("LLM_NETWORK_ERROR", "Groq request failed", retryable=True) from exc
 
 
 class FixtureToneTTS:
@@ -854,3 +910,37 @@ def _float(config: dict[str, Any], key: str) -> float:
     if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
         raise ConfigurationError(f"provider config {key} must be finite number")
     return float(value)
+
+
+def _bounded_int(
+    config: dict[str, Any],
+    key: str,
+    *,
+    fallback: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    value = config.get(key, fallback)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or int(value) != value:
+        raise ConfigurationError(f"provider config {key} must be an integer")
+    result = int(value)
+    if not minimum <= result <= maximum:
+        raise ConfigurationError(f"provider config {key} must be between {minimum} and {maximum}")
+    return result
+
+
+def _bounded_float(
+    config: dict[str, Any],
+    key: str,
+    *,
+    fallback: float,
+    minimum: float,
+    maximum: float,
+) -> float:
+    value = config.get(key, fallback)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise ConfigurationError(f"provider config {key} must be a finite number")
+    result = float(value)
+    if not minimum <= result <= maximum:
+        raise ConfigurationError(f"provider config {key} must be between {minimum} and {maximum}")
+    return result
