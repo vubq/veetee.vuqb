@@ -11,6 +11,7 @@ import asyncio
 import ctypes
 from dataclasses import dataclass
 import importlib
+import inspect
 import json
 import math
 import os
@@ -168,6 +169,12 @@ class SileroVAD:
         self._speech_ms = 0
         self._silence_ms = 0
         self._active = False
+
+    def close(self) -> None:
+        """Drop the ONNX session after all sessions using this generation drain."""
+
+        self._carry.clear()
+        self._session = None
 
     def accept(self, pcm: bytes, sample_rate: int) -> bool:
         if sample_rate != self._sample_rate:
@@ -345,6 +352,12 @@ class PhoWhisperASR:
     def reset(self) -> None:
         self._close_audio(remove=True)
         self._sample_count = 0
+
+    def close(self) -> None:
+        """Release the model reference after the generation lease reaches zero."""
+
+        self.reset()
+        self._model = None
 
     async def accept(self, pcm: bytes, sample_rate: int) -> None:
         import numpy as np
@@ -578,6 +591,23 @@ class VieNeuTTS:
         if self._prewarm:
             await self._get_engine()
 
+    async def close(self) -> None:
+        """Close an engine when supported, then drop the generation reference."""
+
+        async with self._engine_lock:
+            engine = self._engine
+            self._engine = None
+        if engine is None:
+            return
+        for method_name in ("close", "shutdown", "unload"):
+            method = getattr(engine, method_name, None)
+            if not callable(method):
+                continue
+            result = method()
+            if inspect.isawaitable(result):
+                await result
+            break
+
     async def stream(self, text: str, *, locale: str, voice: dict[str, Any]) -> AsyncIterator[AudioChunk]:
         del locale  # VieNeu's Vietnamese model infers language from configured text/voice.
         engine = await self._get_engine()
@@ -678,6 +708,7 @@ class ProviderRegistry:
         self.snapshot = snapshot
         self.secret_file = secret_file
         self.secret_resolver = secret_resolver
+        self._closed = False
         self.vad = self._vad(snapshot.provider("vad"))
         self.asr = self._asr(snapshot.provider("asr"))
         self.llm = self._llm(snapshot.provider("llm"))
@@ -689,6 +720,25 @@ class ProviderRegistry:
         preparer = getattr(self.tts, "prepare", None)
         if callable(preparer):
             await preparer()
+
+    async def close(self) -> None:
+        """Release provider-owned models, workers and temporary state once."""
+
+        if self._closed:
+            return
+        self._closed = True
+        seen: set[int] = set()
+        providers = (self.vad, self.asr, self.llm, self.tts, self.intent, self.memory)
+        for provider in providers:
+            if provider is None or id(provider) in seen:
+                continue
+            seen.add(id(provider))
+            closer = getattr(provider, "close", None)
+            if not callable(closer):
+                continue
+            result = closer()
+            if inspect.isawaitable(result):
+                await result
 
     def _selection(self, item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         provider_id = item["providerId"]

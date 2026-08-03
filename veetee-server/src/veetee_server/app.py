@@ -126,6 +126,7 @@ class VoiceSession:
         self.codec: OpusCodec | None = None
         self.mcp: DeviceMcpBridge | None = None
         self.memory: MemorySession | None = None
+        self.view: RuntimeView | None = None
         self.phase = "ready_idle"
         self._speech_frames = 0
         self._closed = False
@@ -166,8 +167,13 @@ class VoiceSession:
             self.app.metrics["protocol_errors"] += 1
             await self.close(1002, "protocol error")
         finally:
-            await self._report_presence("offline")
-            await self._abort(reason="disconnect", send_stop=False)
+            try:
+                await self._report_presence("offline")
+                await self._abort(reason="disconnect", send_stop=False)
+            finally:
+                if self.view is not None:
+                    await self.app.runtime.release_view(self.view)
+                    self.view = None
 
     async def _hello(self, message: dict[str, Any]) -> None:
         if message.get("type") != "hello":
@@ -190,10 +196,11 @@ class VoiceSession:
             raise ProtocolError("client audio must be opus mono 16kHz/60ms")
         self.client_hello = message
         self.device_info = self._parse_device_info(message.get("device_info"))
-        snapshot = self.app.runtime.view.snapshot
+        self.view = await self.app.runtime.acquire_view()
+        snapshot = self.view.snapshot
         wire = snapshot.raw.get("wire") or {}
         self.codec = OpusCodec(int(wire.get("uplinkSampleRate", 16000)), int(wire.get("downlinkSampleRate", 24000)))
-        self.memory = self.app.runtime.view.registry.memory.create_session() if self.app.runtime.view.registry.memory else None
+        self.memory = self.view.registry.memory.create_session() if self.view.registry.memory else None
         await self.send_text(
             {
                 "type": "hello",
@@ -218,6 +225,12 @@ class VoiceSession:
             await self.mcp.list_tools()
         self.ready = True
         self._report_presence("online")
+
+    def _session_view(self) -> RuntimeView:
+        view = self.view
+        if view is None:
+            raise ProtocolError("session provider generation is unavailable")
+        return view
 
     async def _control(self, message: dict[str, Any]) -> None:
         if not self.ready:
@@ -253,8 +266,9 @@ class VoiceSession:
                 turn.task = asyncio.create_task(self._finish_turn(turn, pipeline), name=f"turn-{turn.turn_id}")
         elif state == "detect":
             text = message.get("text")
-            if isinstance(text, str) and self.app.runtime.view.registry.intent:
-                match = self.app.runtime.view.registry.intent.classify(text, locale=self.app.runtime.view.snapshot.locale)
+            view = self._session_view()
+            if isinstance(text, str) and view.registry.intent:
+                match = view.registry.intent.classify(text, locale=view.snapshot.locale)
                 if match:
                     await self.send_text(control_message("intent", session_id=self.session_id, intent_id=match.intent_id, action=match.action, confidence=match.confidence))
                     await self._handle_intent(match)
@@ -281,7 +295,7 @@ class VoiceSession:
         )
         self.phase = "listening"
         self._speech_frames = 0
-        view: RuntimeView = self.app.runtime.view
+        view = self._session_view()
         assert self.codec is not None
         self.pipeline = TurnPipeline(
             snapshot=view.snapshot,
@@ -324,12 +338,13 @@ class VoiceSession:
             self.app.metrics["audio_frames_ignored"] = self.app.metrics.get("audio_frames_ignored", 0) + 1
             return
         frame = decode_audio(self.profile, raw)  # type: ignore[arg-type]
-        pcm = self.codec.decode_uplink(frame.payload, int(self.app.runtime.view.snapshot.raw.get("wire", {}).get("uplinkSampleRate", 16000)) * 60 // 1000)
+        view = self._session_view()
+        pcm = self.codec.decode_uplink(frame.payload, int(view.snapshot.raw.get("wire", {}).get("uplinkSampleRate", 16000)) * 60 // 1000)
         self.app.metrics["audio_frames_in"] += 1
-        speech = self.app.runtime.view.registry.vad.accept(pcm, 16000)
+        speech = view.registry.vad.accept(pcm, 16000)
         if self.phase == "speaking" and self.turn.mode == "realtime" and speech:
             self._speech_frames += 1
-            threshold = int((self.app.runtime.view.snapshot.raw.get("bargeIn") or {}).get("minSpeechFrames", 2))
+            threshold = int((view.snapshot.raw.get("bargeIn") or {}).get("minSpeechFrames", 2))
             if self._speech_frames >= max(1, threshold):
                 await self._abort(reason="barge_in")
                 await self._start_turn("realtime")
@@ -337,7 +352,7 @@ class VoiceSession:
         # Ingest the endpointing frame before scheduling ASR finalization. This
         # ordering is important for short utterances where VAD marks the last
         # frame as endpointed: finish() must observe that frame.
-        if self.phase == "listening" and self.turn.mode == "auto" and self.app.runtime.view.registry.vad.endpoint() and self.turn.task is None:
+        if self.phase == "listening" and self.turn.mode == "auto" and view.registry.vad.endpoint() and self.turn.task is None:
             self.phase = "thinking"
             turn = self.turn
             pipeline = self.pipeline
@@ -398,17 +413,18 @@ class VoiceSession:
             return
         turn.reported = True
         try:
-            UUID(self.app.runtime.view.snapshot.assistant_id)
+            view = self._session_view()
+            UUID(view.snapshot.assistant_id)
         except (ValueError, AttributeError):
             self.app.metrics["history_invalid_assistant_id"] = self.app.metrics.get("history_invalid_assistant_id", 0) + 1
             return
         ended_at = turn.ended_at or _utc_now()
         event = {
             "conversationId": self.conversation_id,
-            "assistantId": self.app.runtime.view.snapshot.assistant_id,
+            "assistantId": view.snapshot.assistant_id,
             "deviceKey": self.device_id,
-            "locale": self.app.runtime.view.snapshot.locale,
-            "configRevision": self.app.runtime.view.snapshot.revision,
+            "locale": view.snapshot.locale,
+            "configRevision": view.snapshot.revision,
             "conversationStartedAt": turn.conversation_started_at or turn.started_at,
             "conversationEndedAt": ended_at if turn.conversation_status != "active" else None,
             "conversationStatus": turn.conversation_status,

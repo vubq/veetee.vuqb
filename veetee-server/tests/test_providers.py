@@ -59,9 +59,13 @@ async def test_vieneu_adapter_is_lazy_and_resamples_stream(monkeypatch):
 @pytest.mark.asyncio
 async def test_vieneu_prepare_prewarm_is_configured(monkeypatch):
     calls = []
+    closed = []
 
     class FakeEngine:
         sample_rate = 48_000
+
+        def close(self):
+            closed.append(True)
 
     def factory(**kwargs):
         calls.append(kwargs)
@@ -72,6 +76,9 @@ async def test_vieneu_prepare_prewarm_is_configured(monkeypatch):
     assert calls == []
     await adapter.prepare()
     assert calls == [{"mode": "v3turbo", "backbone_repo": "test/backbone"}]
+    await adapter.close()
+    await adapter.close()
+    assert closed == [True]
 
 
 @pytest.mark.asyncio

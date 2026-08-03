@@ -42,6 +42,8 @@ class RuntimeConfigManager:
         self._lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self._listeners: list[Callable[[RuntimeView], Awaitable[None]]] = []
+        self._retired: dict[int, RuntimeView] = {}
+        self._leases: dict[int, int] = {}
         self.activation_failures = 0
         self.last_activation_error_type: str | None = None
 
@@ -54,17 +56,49 @@ class RuntimeConfigManager:
     def add_listener(self, listener: Callable[[RuntimeView], Awaitable[None]]) -> None:
         self._listeners.append(listener)
 
+    async def acquire_view(self) -> RuntimeView:
+        """Pin the current provider generation for one WebSocket session."""
+
+        async with self._lock:
+            if self._view is None:
+                raise RuntimeError("runtime configuration is not ready")
+            key = id(self._view)
+            self._leases[key] = self._leases.get(key, 0) + 1
+            return self._view
+
+    async def release_view(self, view: RuntimeView) -> None:
+        """Release a session lease and close a retired generation when drained."""
+
+        retired: RuntimeView | None = None
+        key = id(view)
+        async with self._lock:
+            count = self._leases.get(key, 0)
+            if count <= 1:
+                self._leases.pop(key, None)
+                retired = self._retired.pop(key, None)
+            else:
+                self._leases[key] = count - 1
+        if retired is not None:
+            await self._close_registry(retired.registry)
+
     async def start(self) -> None:
         source = await self._read_source()
         await self._activate(source)
         self._task = asyncio.create_task(self._poll_loop(), name="runtime-config-poll")
 
     async def stop(self) -> None:
-        if self._task is None:
-            return
-        self._task.cancel()
-        await asyncio.gather(self._task, return_exceptions=True)
-        self._task = None
+        task = self._task
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            self._task = None
+        async with self._lock:
+            views = [view for view in (self._view, *self._retired.values()) if view is not None]
+            self._view = None
+            self._retired.clear()
+            self._leases.clear()
+        for view in views:
+            await self._close_registry(view.registry)
 
     async def refresh_now(self) -> bool:
         source = await self._read_source()
@@ -126,12 +160,15 @@ class RuntimeConfigManager:
             return load_snapshot(Path(handle.name))
 
     async def _activate(self, snapshot: RuntimeSnapshot) -> bool:
+        candidate: ProviderRegistry | None = None
         async with self._lock:
             try:
-                registry = ProviderRegistry(snapshot, secret_file=self.secret_file, secret_resolver=self.secret_resolver)
-                await registry.prepare()
-                view = RuntimeView(snapshot=snapshot, registry=registry)
+                candidate = ProviderRegistry(snapshot, secret_file=self.secret_file, secret_resolver=self.secret_resolver)
+                await candidate.prepare()
+                view = RuntimeView(snapshot=snapshot, registry=candidate)
             except (ConfigurationError, ProviderError) as exc:
+                if candidate is not None:
+                    await self._close_registry(candidate)
                 self.activation_failures += 1
                 self.last_activation_error_type = type(exc).__name__
                 LOG.warning("runtime activation failed error_type=%s", self.last_activation_error_type)
@@ -139,7 +176,23 @@ class RuntimeConfigManager:
             old = self._view
             self._view = view
             self.last_activation_error_type = None
+            retired = None
             if old is not None:
-                for listener in self._listeners:
-                    await listener(view)
-            return True
+                old_key = id(old)
+                if self._leases.get(old_key, 0) > 0:
+                    self._retired[old_key] = old
+                else:
+                    retired = old
+            listeners = tuple(self._listeners)
+        if retired is not None:
+            await self._close_registry(retired.registry)
+        for listener in listeners:
+            await listener(view)
+        return True
+
+    @staticmethod
+    async def _close_registry(registry: ProviderRegistry) -> None:
+        try:
+            await registry.close()
+        except Exception as exc:  # noqa: BLE001
+            LOG.warning("provider generation close failed error_type=%s", type(exc).__name__)
