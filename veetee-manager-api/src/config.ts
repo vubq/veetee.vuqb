@@ -12,6 +12,11 @@ const schema = Type.Object({
   VEETEE_AUTH_MODE: Type.Union([Type.Literal('disabled'), Type.Literal('local')], { default: 'disabled' }),
   VEETEE_OWNER_EMAIL: Type.Optional(Type.String()),
   VEETEE_OWNER_PASSWORD_HASH: Type.Optional(Type.String()),
+  VEETEE_AUTH_SECRET_FILE: Type.Optional(Type.String()),
+  VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: Type.Optional(Type.Boolean({ default: false })),
+  VEETEE_SESSION_TTL_SECONDS: Type.Optional(Type.Integer({ minimum: 300, maximum: 2592000, default: 86400 })),
+  VEETEE_SECRET_STORE_FILE: Type.Optional(Type.String()),
+  VEETEE_SECRET_MASTER_KEY_FILE: Type.Optional(Type.String()),
   VEETEE_MACHINE_TOKEN_FILE: Type.Optional(Type.String()),
   VEETEE_LOG_LEVEL: Type.String({ default: 'info' }),
 })

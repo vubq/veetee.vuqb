@@ -24,10 +24,17 @@ Ubuntu, stage binary vào `.runtime` (không cài system service và không Dock
 python3 tools/runtime/bootstrap_postgres.py
 ```
 
+Tạo material cho encrypted local secret store (không in giá trị):
+
+```bash
+python3 tools/runtime/bootstrap_manager_secrets.py
+```
+
 Manifest `host-native-postgres-dev.json` chạy instance riêng ở
 `127.0.0.1:55432`, data directory `.runtime/veetee-postgres-data` và database
 `veetee_vubq`. File bootstrap DSN là `secrets/manager.database-url` (owner-read,
-ignored); migration là one-shot trước khi Manager API khởi động.
+ignored). Material `secrets/manager.secret` cũng owner-read/ignored; migration là
+one-shot trước khi Manager API khởi động.
 
 ```bash
 python3 tools/runtime/veetee_runtime.py \

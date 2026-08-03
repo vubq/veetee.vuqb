@@ -28,5 +28,12 @@ PostgreSQL adapter dùng immutable `assistant_revision` và
 `provider_config_revision`; các row current chỉ giữ pointer/ETag. Secret chỉ là
 reference metadata, không lưu plaintext trong PostgreSQL.
 
+Khi bật `VEETEE_AUTH_MODE=local`, cung cấp `VEETEE_AUTH_SECRET_FILE`, owner
+email/password hash và `VEETEE_ALLOWED_ORIGINS`. Login trả cookie opaque
+`HttpOnly` cùng CSRF token chỉ trong response/ memory; request unsafe phải gửi
+exact `Origin` và `X-Veetee-CSRF`. Encrypted local secret store dùng thêm
+`VEETEE_SECRET_MASTER_KEY_FILE` và `VEETEE_SECRET_STORE_FILE`; UI không bao giờ
+nhận lại secret value.
+
 Health: `/health/live`, `/health/ready`. User API có prefix `/api/v1`, machine
 runtime snapshot là `/internal/v1/runtime-config`. OpenAPI JSON ở `/openapi.json`.

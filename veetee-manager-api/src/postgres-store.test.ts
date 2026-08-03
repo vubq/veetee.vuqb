@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { test } from 'node:test'
 import { buildApp } from './app.js'
 import type { Environment } from './config.js'
+import { EncryptedFileSecretStore } from './secret-store.js'
 
 const databaseUrlFile = process.env.VEETEE_TEST_DATABASE_URL_FILE
 const root = resolve(import.meta.dirname, '..')
@@ -89,5 +92,37 @@ test('PostgreSQL provider edits create immutable revisions and reject stale writ
     assert.equal(persisted.config.minSilenceMs, 360)
   } finally {
     await restarted.close()
+  }
+})
+
+test('PostgreSQL keeps secret references that occur in immutable provider history', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8015, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_LOG_LEVEL: 'silent',
+  }
+  const directory = await mkdtemp(resolve(tmpdir(), 'veetee-postgres-secret-test-'))
+  const secretStore = new EncryptedFileSecretStore(resolve(directory, 'secrets.json'), 'postgres-secret-test-master')
+  const app = await buildApp({ env, secretStore })
+  await app.ready()
+  try {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/secret-references', payload: { name: `Postgres bound ${Date.now()}`, store: 'encrypted-local', secretValue: 'postgres-canary' } })
+    assert.equal(created.statusCode, 201)
+    const secret = created.json() as { id: string; etag: string }
+    const provider = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'groq.chat', name: `Postgres secret binding ${Date.now()}`, config: { endpoint: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant', maxTokens: 64 }, secretRefs: [secret.id],
+    } })
+    assert.equal(provider.statusCode, 201)
+    const providerValue = provider.json() as { id: string; etag: string }
+    const blocked = await app.inject({ method: 'DELETE', url: `/api/v1/secret-references/${secret.id}`, headers: { 'if-match': secret.etag } })
+    assert.equal(blocked.statusCode, 409)
+    const unbound = await app.inject({ method: 'PATCH', url: `/api/v1/provider-configs/${providerValue.id}`, headers: { 'if-match': providerValue.etag }, payload: { secretRefs: [] } })
+    assert.equal(unbound.statusCode, 200)
+    const blockedByHistory = await app.inject({ method: 'DELETE', url: `/api/v1/secret-references/${secret.id}`, headers: { 'if-match': secret.etag } })
+    assert.equal(blockedByHistory.statusCode, 409)
+  } finally {
+    await app.close()
+    await rm(directory, { recursive: true, force: true })
   }
 })

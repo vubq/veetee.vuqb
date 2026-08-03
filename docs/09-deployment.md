@@ -138,6 +138,9 @@ Service requirements:
 | `VEETEE_API_HOST`, `VEETEE_API_PORT` | no | Bind/port. |
 | `VEETEE_DATABASE_URL_FILE` | yes | PostgreSQL DSN secret file. |
 | `VEETEE_AUTH_SECRET_FILE` | yes | Session-token hash pepper + CSRF/key derivation material; không phải JWT key baseline. |
+| `VEETEE_SECRET_MASTER_KEY_FILE` | khi encrypted-local active | Owner-read master material cho encrypted secret file; không lưu trong DB/browser. |
+| `VEETEE_SECRET_STORE_FILE` | khi encrypted-local active | Ciphertext-only local secret file, atomic write, permission 0600. |
+| `VEETEE_SESSION_TTL_SECONDS` | no | Absolute session TTL đã validate; cleanup/revoke ở PostgreSQL. |
 | `VEETEE_MACHINE_AUTH_SECRET_FILE` | yes | Tách khỏi user auth. |
 | `VEETEE_OBJECT_DIR` | yes | Audio/assets root, path tuyệt đối. |
 | `VEETEE_PUBLIC_BASE_URL` | yes | URL qua proxy, không suy từ untrusted Host. |

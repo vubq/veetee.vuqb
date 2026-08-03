@@ -63,8 +63,10 @@ export const secretReferenceTable = managerSchema.table('secret_reference', {
   store: text('store').notNull(),
   locatorMasked: text('locator_masked').notNull(),
   version: integer('version').notNull(),
+  metadataRevision: integer('metadata_revision').notNull(),
   status: text('status').notNull(),
   lastRotatedAt: timestamp('last_rotated_at', { withTimezone: true, mode: 'date' }),
+  etag: text('etag').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
 })

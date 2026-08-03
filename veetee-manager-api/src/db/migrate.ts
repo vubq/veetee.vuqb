@@ -16,13 +16,20 @@ export async function runMigrations(pool: Pool, migrationsDir: string, schema = 
   for (const file of files) {
     const version = Number(file.match(/^\d+/)?.[0])
     const raw = await readFile(join(migrationsDir, file), 'utf8')
-    const checksum = createHash('sha256').update(raw).digest('hex')
+    const normalized = canonicalMigration(raw)
+    const checksum = createHash('sha256').update(normalized).digest('hex')
+    const legacyChecksum = createHash('sha256').update(raw).digest('hex')
     const existing = await pool.query<{ checksum: string; filename: string }>(`SELECT checksum, filename FROM ${identifier}.schema_migrations WHERE version = $1`, [version])
     if (existing.rowCount) {
-      if (existing.rows[0]?.checksum !== checksum || existing.rows[0]?.filename !== file) throw new Error(`migration checksum mismatch for ${file}`)
+      if (existing.rows[0]?.filename !== file) throw new Error(`migration checksum mismatch for ${file}`)
+      if (existing.rows[0]?.checksum === legacyChecksum && legacyChecksum !== checksum) {
+        await pool.query(`UPDATE ${identifier}.schema_migrations SET checksum = $1 WHERE version = $2`, [checksum, version])
+      } else if (existing.rows[0]?.checksum !== checksum) {
+        throw new Error(`migration checksum mismatch for ${file}`)
+      }
       continue
     }
-    const sql = raw.replaceAll('{{VEETEE_SCHEMA}}', identifier)
+    const sql = normalized.replaceAll('{{VEETEE_SCHEMA}}', identifier)
     await pool.query('BEGIN')
     try {
       await pool.query(sql)
@@ -38,4 +45,8 @@ export async function runMigrations(pool: Pool, migrationsDir: string, schema = 
 function quoteIdentifier(value: string): string {
   if (!/^[a-z_][a-z0-9_]{0,62}$/.test(value)) throw new Error('invalid PostgreSQL schema identifier')
   return `"${value}"`
+}
+
+function canonicalMigration(value: string): string {
+  return `${value.replace(/\s+$/u, '')}\n`
 }

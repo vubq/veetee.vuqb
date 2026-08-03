@@ -1,23 +1,28 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import {
   assistantRevisionTable,
   assistantTable,
+  managerSessionTable,
+  providerSecretBindingTable,
   providerConfigRevisionTable,
   providerConfigTable,
   runtimePublicationTable,
+  secretReferenceTable,
 } from './db/schema.js'
 import { openDatabase, readDatabaseUrl, type DatabaseHandle } from './db/client.js'
 import {
   etag,
   problem,
   type Assistant,
+  type ManagerSession,
   type ModelMemoryView,
   type ProviderConfig,
   type ProviderInstallation,
   type ProviderKind,
   type RuntimePublication,
   type RuntimeSnapshot,
+  type SecretReference,
   type Store,
 } from './store.js'
 
@@ -26,6 +31,8 @@ type AssistantRow = typeof assistantTable.$inferSelect
 type AssistantRevisionRow = typeof assistantRevisionTable.$inferSelect
 type ProviderConfigRow = typeof providerConfigTable.$inferSelect
 type ProviderConfigRevisionRow = typeof providerConfigRevisionTable.$inferSelect
+type ManagerSessionRow = typeof managerSessionTable.$inferSelect
+type SecretReferenceRow = typeof secretReferenceTable.$inferSelect
 
 export interface PostgresStoreOptions {
   catalog: ProviderInstallation[]
@@ -77,13 +84,15 @@ export class PostgresStore implements Store {
   async createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: JsonObject; secretRefs?: string[] }): Promise<ProviderConfig> {
     const installation = this.findInstallation(value.installationId)
     validateJsonObject(value.config, installation.configSchema)
+    const secretRefs = [...(value.secretRefs ?? [])]
+    await this.assertSecretRefs(ownerId, secretRefs)
     const id = randomUUID()
     const now = new Date()
     const revision = 1
     const revisionEtag = etag({ ...value.config, revision })
     await this.handle.db.transaction(async (tx) => {
       await tx.insert(providerConfigTable).values({ id, ownerId, installationId: value.installationId, name: value.name, currentRevision: revision, currentEtag: revisionEtag, createdAt: now, updatedAt: now })
-      await tx.insert(providerConfigRevisionTable).values({ providerConfigId: id, revision, config: structuredClone(value.config), secretRefs: [...(value.secretRefs ?? [])], etag: revisionEtag, createdAt: now })
+      await tx.insert(providerConfigRevisionTable).values({ providerConfigId: id, revision, config: structuredClone(value.config), secretRefs, etag: revisionEtag, createdAt: now })
     })
     const identity = await this.findProviderIdentity(ownerId, id)
     const revisionRow = await this.findProviderRevision(id, revision)
@@ -100,11 +109,13 @@ export class PostgresStore implements Store {
     const installation = this.findInstallation(identity.installationId)
     const config = value.config ?? asJsonObject(current.config)
     validateJsonObject(config, installation.configSchema)
+    const secretRefs = [...(value.secretRefs ?? asSecretRefs(current.secretRefs))]
+    await this.assertSecretRefs(ownerId, secretRefs)
     const revision = identity.currentRevision + 1
     const nextEtag = etag({ ...config, revision })
     const now = new Date()
     await this.handle.db.transaction(async (tx) => {
-      await tx.insert(providerConfigRevisionTable).values({ providerConfigId: id, revision, config: structuredClone(config), secretRefs: [...(value.secretRefs ?? asSecretRefs(current.secretRefs))], etag: nextEtag, createdAt: now })
+      await tx.insert(providerConfigRevisionTable).values({ providerConfigId: id, revision, config: structuredClone(config), secretRefs, etag: nextEtag, createdAt: now })
       const updated = await tx.update(providerConfigTable).set({ name: value.name ?? identity.name, currentRevision: revision, currentEtag: nextEtag, updatedAt: now }).where(and(eq(providerConfigTable.id, id), eq(providerConfigTable.ownerId, ownerId), eq(providerConfigTable.currentRevision, identity.currentRevision), eq(providerConfigTable.currentEtag, ifMatch))).returning()
       if (!updated.length) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
     })
@@ -274,6 +285,62 @@ export class PostgresStore implements Store {
     await this.handle.db.insert(runtimePublicationTable).values({ assistantId: publication.snapshot.assistantId, revision: publication.snapshot.revision, snapshot: structuredClone(publication.snapshot), etag: publication.etag, updatedAt: now }).onConflictDoUpdate({ target: runtimePublicationTable.assistantId, set: { revision: publication.snapshot.revision, snapshot: structuredClone(publication.snapshot), etag: publication.etag, updatedAt: now } })
   }
 
+  async createSession(ownerId: string, tokenHash: string, csrfHash: string, expiresAt: Date): Promise<ManagerSession> {
+    const now = new Date()
+    const [row] = await this.handle.db.insert(managerSessionTable).values({ id: randomUUID(), ownerId, tokenHash, csrfHash, expiresAt, createdAt: now, lastSeenAt: now, revokedAt: null }).returning()
+    if (!row) throw new Error('session insert returned no row')
+    return this.mapSession(row)
+  }
+
+  async findSession(tokenHash: string): Promise<ManagerSession | undefined> {
+    const [row] = await this.handle.db.select().from(managerSessionTable).where(eq(managerSessionTable.tokenHash, tokenHash)).limit(1)
+    if (!row || row.revokedAt || row.expiresAt.getTime() <= Date.now()) return undefined
+    const [updated] = await this.handle.db.update(managerSessionTable).set({ lastSeenAt: new Date() }).where(and(eq(managerSessionTable.id, row.id), eq(managerSessionTable.tokenHash, tokenHash), isNull(managerSessionTable.revokedAt))).returning()
+    return this.mapSession(updated ?? row)
+  }
+
+  async revokeSession(tokenHash: string): Promise<void> {
+    await this.handle.db.update(managerSessionTable).set({ revokedAt: new Date() }).where(and(eq(managerSessionTable.tokenHash, tokenHash), isNull(managerSessionTable.revokedAt)))
+  }
+
+  async listSecretReferences(ownerId: string): Promise<SecretReference[]> {
+    const rows = await this.handle.db.select().from(secretReferenceTable).where(eq(secretReferenceTable.ownerId, ownerId)).orderBy(asc(secretReferenceTable.name))
+    return rows.map((row) => this.mapSecretReference(row))
+  }
+
+  async createSecretReference(ownerId: string, value: { id: string; name: string; locatorMasked: string; version: number; status: SecretReference['status'] }): Promise<SecretReference> {
+    const now = new Date()
+    const metadataRevision = 1
+    const nextEtag = etag({ ...value, metadataRevision })
+    const [row] = await this.handle.db.insert(secretReferenceTable).values({ id: value.id, ownerId, name: value.name, store: 'encrypted-local', locatorMasked: value.locatorMasked, version: value.version, metadataRevision, status: value.status, lastRotatedAt: value.status === 'available' ? now : null, etag: nextEtag, createdAt: now, updatedAt: now }).returning()
+    if (!row) throw new Error('secret reference insert returned no row')
+    return this.mapSecretReference(row)
+  }
+
+  async updateSecretReference(ownerId: string, id: string, value: { name?: string; locatorMasked?: string }, ifMatch: string): Promise<SecretReference> {
+    const [current] = await this.handle.db.select().from(secretReferenceTable).where(and(eq(secretReferenceTable.ownerId, ownerId), eq(secretReferenceTable.id, id))).limit(1)
+    if (!current) throw problem('NOT_FOUND', 'Secret reference not found', 404)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Secret reference changed', 409)
+    const metadataRevision = current.metadataRevision + 1
+    const name = value.name ?? current.name
+    const locatorMasked = value.locatorMasked ?? current.locatorMasked
+    const nextEtag = etag({ name, locatorMasked, metadataRevision })
+    const [updated] = await this.handle.db.update(secretReferenceTable).set({ name, locatorMasked, metadataRevision, etag: nextEtag, updatedAt: new Date() }).where(and(eq(secretReferenceTable.id, id), eq(secretReferenceTable.ownerId, ownerId), eq(secretReferenceTable.etag, ifMatch))).returning()
+    if (!updated) throw problem('REVISION_CONFLICT', 'Secret reference changed', 409)
+    return this.mapSecretReference(updated)
+  }
+
+  async deleteSecretReference(ownerId: string, id: string, ifMatch: string): Promise<void> {
+    const [current] = await this.handle.db.select().from(secretReferenceTable).where(and(eq(secretReferenceTable.ownerId, ownerId), eq(secretReferenceTable.id, id))).limit(1)
+    if (!current) throw problem('NOT_FOUND', 'Secret reference not found', 404)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Secret reference changed', 409)
+    const [configBinding] = await this.handle.db.select({ id: providerConfigRevisionTable.providerConfigId }).from(providerConfigRevisionTable).innerJoin(providerConfigTable, eq(providerConfigRevisionTable.providerConfigId, providerConfigTable.id)).where(and(eq(providerConfigTable.ownerId, ownerId), sql`${providerConfigRevisionTable.secretRefs} @> ${JSON.stringify([id])}::jsonb`)).limit(1)
+    if (configBinding) throw problem('RESOURCE_IN_USE', 'Secret reference is still bound to a provider config revision', 409)
+    const [binding] = await this.handle.db.select({ id: providerSecretBindingTable.secretReferenceId }).from(providerSecretBindingTable).where(eq(providerSecretBindingTable.secretReferenceId, id)).limit(1)
+    if (binding) throw problem('RESOURCE_IN_USE', 'Secret reference is still bound to a provider config revision', 409)
+    await this.handle.db.delete(secretReferenceTable).where(and(eq(secretReferenceTable.id, id), eq(secretReferenceTable.ownerId, ownerId), eq(secretReferenceTable.etag, ifMatch)))
+  }
+
   private async assertMigrated(): Promise<void> {
     try {
       await this.handle.db.select({ id: assistantTable.id }).from(assistantTable).limit(1)
@@ -318,6 +385,12 @@ export class PostgresStore implements Store {
     return row
   }
 
+  private async assertSecretRefs(ownerId: string, refs: string[]): Promise<void> {
+    if (!refs.length) return
+    const rows = await this.handle.db.select({ id: secretReferenceTable.id, status: secretReferenceTable.status }).from(secretReferenceTable).where(and(eq(secretReferenceTable.ownerId, ownerId), inArray(secretReferenceTable.id, refs)))
+    if (rows.length !== refs.length || rows.some((row) => row.status !== 'available')) throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
+  }
+
   private findInstallation(id: string): ProviderInstallation {
     const installation = this.installations.find((item) => item.id === id)
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
@@ -330,6 +403,14 @@ export class PostgresStore implements Store {
 
   private mapProviderConfig(identity: ProviderConfigRow, revision: ProviderConfigRevisionRow): ProviderConfig {
     return { id: identity.id, ownerId: identity.ownerId, installationId: identity.installationId, name: identity.name, revision: revision.revision, config: asJsonObject(revision.config), secretRefs: asSecretRefs(revision.secretRefs), etag: revision.etag, updatedAt: revision.createdAt.toISOString() }
+  }
+
+  private mapSession(row: ManagerSessionRow): ManagerSession {
+    return { id: row.id, ownerId: row.ownerId, tokenHash: row.tokenHash, csrfHash: row.csrfHash, expiresAt: row.expiresAt.toISOString(), createdAt: row.createdAt.toISOString(), lastSeenAt: row.lastSeenAt.toISOString(), revokedAt: row.revokedAt?.toISOString() ?? null }
+  }
+
+  private mapSecretReference(row: SecretReferenceRow): SecretReference {
+    return { id: row.id, ownerId: row.ownerId, name: row.name, store: 'encrypted-local', locatorMasked: row.locatorMasked, version: row.version, metadataRevision: row.metadataRevision, status: row.status === 'available' || row.status === 'revoked' ? row.status : 'unavailable', lastRotatedAt: row.lastRotatedAt?.toISOString() ?? null, etag: row.etag, updatedAt: row.updatedAt.toISOString() }
   }
 
   private async modelMemory(current: Assistant): Promise<ModelMemoryView> {

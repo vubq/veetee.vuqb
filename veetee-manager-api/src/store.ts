@@ -55,6 +55,31 @@ export interface RuntimePublication {
   updatedAt: string
 }
 
+export interface ManagerSession {
+  id: string
+  ownerId: string
+  tokenHash: string
+  csrfHash: string
+  expiresAt: string
+  createdAt: string
+  lastSeenAt: string
+  revokedAt: string | null
+}
+
+export interface SecretReference {
+  id: string
+  ownerId: string
+  name: string
+  store: 'encrypted-local'
+  locatorMasked: string
+  version: number
+  metadataRevision: number
+  status: 'available' | 'unavailable' | 'revoked'
+  lastRotatedAt: string | null
+  etag: string
+  updatedAt: string
+}
+
 export interface ModelMemoryView {
   assistantId: string
   selections: Array<{ kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string }>
@@ -79,12 +104,22 @@ export interface Store {
   publish(ownerId: string, id: string, ifMatch?: string): Promise<RuntimePublication>
   runtime(assistantId?: string): Promise<RuntimePublication | undefined>
   setRuntime(publication: RuntimePublication): Promise<void>
+  createSession(ownerId: string, tokenHash: string, csrfHash: string, expiresAt: Date): Promise<ManagerSession>
+  findSession(tokenHash: string): Promise<ManagerSession | undefined>
+  revokeSession(tokenHash: string): Promise<void>
+  listSecretReferences(ownerId: string): Promise<SecretReference[]>
+  createSecretReference(ownerId: string, value: { id: string; name: string; locatorMasked: string; version: number; status: SecretReference['status'] }): Promise<SecretReference>
+  updateSecretReference(ownerId: string, id: string, value: { name?: string; locatorMasked?: string }, ifMatch: string): Promise<SecretReference>
+  deleteSecretReference(ownerId: string, id: string, ifMatch: string): Promise<void>
 }
 
 export class InMemoryStore implements Store {
   private readonly installations: ProviderInstallation[]
   private readonly providerConfigs = new Map<string, ProviderConfig>()
+  private readonly providerConfigSecretRefs = new Map<string, Set<string>>()
   private readonly assistants = new Map<string, Assistant>()
+  private readonly sessions = new Map<string, ManagerSession>()
+  private readonly secretReferences = new Map<string, SecretReference>()
   private publication: RuntimePublication | undefined
 
   constructor(installations: ProviderInstallation[], initial?: RuntimeSnapshot) {
@@ -112,6 +147,7 @@ export class InMemoryStore implements Store {
         const installation = this.installations.find((item) => item.id === value.providerId)
         if (!installation) continue
         this.providerConfigs.set(value.providerId, { id: value.providerId, ownerId: 'local-owner', installationId: value.providerId, name: installation.displayNameKey, revision: 1, config: structuredClone(value.config as Record<string, unknown>), secretRefs: [], etag: etag(value.config), updatedAt: assistant.updatedAt })
+        this.providerConfigSecretRefs.set(value.providerId, new Set())
         void kind
       }
       this.publication = { snapshot: initial, etag: etag(initial), updatedAt: assistant.updatedAt }
@@ -128,9 +164,11 @@ export class InMemoryStore implements Store {
     const installation = this.installations.find((item) => item.id === value.installationId)
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
     validateJsonObject(value.config, installation.configSchema)
+    for (const referenceId of value.secretRefs ?? []) if (!this.secretReferences.has(referenceId) || this.secretReferences.get(referenceId)?.ownerId !== ownerId || this.secretReferences.get(referenceId)?.status !== 'available') throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
     const now = new Date().toISOString()
     const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name, revision: 1, config: structuredClone(value.config), secretRefs: value.secretRefs ?? [], etag: etag({ ...value.config, revision: 1 }), updatedAt: now }
     this.providerConfigs.set(item.id, item)
+    this.providerConfigSecretRefs.set(item.id, new Set(item.secretRefs))
     return structuredClone(item)
   }
 
@@ -142,8 +180,12 @@ export class InMemoryStore implements Store {
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
     const config = value.config ?? current.config
     validateJsonObject(config, installation.configSchema)
+    for (const referenceId of value.secretRefs ?? current.secretRefs) if (!this.secretReferences.has(referenceId) || this.secretReferences.get(referenceId)?.ownerId !== ownerId || this.secretReferences.get(referenceId)?.status !== 'available') throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
     const next: ProviderConfig = { ...current, ...value, config: structuredClone(config), revision: current.revision + 1, etag: etag({ ...config, revision: current.revision + 1 }), updatedAt: new Date().toISOString() }
     this.providerConfigs.set(id, next)
+    const historicalRefs = this.providerConfigSecretRefs.get(id) ?? new Set<string>()
+    for (const referenceId of next.secretRefs) historicalRefs.add(referenceId)
+    this.providerConfigSecretRefs.set(id, historicalRefs)
     return structuredClone(next)
   }
 
@@ -245,6 +287,54 @@ export class InMemoryStore implements Store {
     return this.publication && structuredClone(this.publication)
   }
   async setRuntime(publication: RuntimePublication): Promise<void> { this.publication = structuredClone(publication) }
+
+  async createSession(ownerId: string, tokenHash: string, csrfHash: string, expiresAt: Date): Promise<ManagerSession> {
+    const now = new Date().toISOString()
+    const item: ManagerSession = { id: randomUUID(), ownerId, tokenHash, csrfHash, expiresAt: expiresAt.toISOString(), createdAt: now, lastSeenAt: now, revokedAt: null }
+    this.sessions.set(tokenHash, item)
+    return structuredClone(item)
+  }
+
+  async findSession(tokenHash: string): Promise<ManagerSession | undefined> {
+    const item = this.sessions.get(tokenHash)
+    if (!item || item.revokedAt || Date.parse(item.expiresAt) <= Date.now()) return undefined
+    item.lastSeenAt = new Date().toISOString()
+    return structuredClone(item)
+  }
+
+  async revokeSession(tokenHash: string): Promise<void> {
+    const item = this.sessions.get(tokenHash)
+    if (item) item.revokedAt = new Date().toISOString()
+  }
+
+  async listSecretReferences(ownerId: string): Promise<SecretReference[]> {
+    return [...this.secretReferences.values()].filter((item) => item.ownerId === ownerId).map((item) => structuredClone(item))
+  }
+
+  async createSecretReference(ownerId: string, value: { id: string; name: string; locatorMasked: string; version: number; status: SecretReference['status'] }): Promise<SecretReference> {
+    const now = new Date().toISOString()
+    const item: SecretReference = { ...value, ownerId, store: 'encrypted-local', metadataRevision: 1, lastRotatedAt: value.status === 'available' ? now : null, etag: etag({ ...value, metadataRevision: 1 }), updatedAt: now }
+    this.secretReferences.set(item.id, item)
+    return structuredClone(item)
+  }
+
+  async updateSecretReference(ownerId: string, id: string, value: { name?: string; locatorMasked?: string }, ifMatch: string): Promise<SecretReference> {
+    const current = this.secretReferences.get(id)
+    if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Secret reference not found', 404)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Secret reference changed', 409)
+    const metadataRevision = current.metadataRevision + 1
+    const next: SecretReference = { ...current, ...value, metadataRevision, etag: etag({ name: value.name ?? current.name, locatorMasked: value.locatorMasked ?? current.locatorMasked, metadataRevision }), updatedAt: new Date().toISOString() }
+    this.secretReferences.set(id, next)
+    return structuredClone(next)
+  }
+
+  async deleteSecretReference(ownerId: string, id: string, ifMatch: string): Promise<void> {
+    const current = this.secretReferences.get(id)
+    if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Secret reference not found', 404)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Secret reference changed', 409)
+    if ([...this.providerConfigs.values()].some((item) => item.ownerId === ownerId && this.providerConfigSecretRefs.get(item.id)?.has(id))) throw problem('RESOURCE_IN_USE', 'Secret reference is still bound to a provider config revision', 409)
+    this.secretReferences.delete(id)
+  }
 
   private kind(id: string): ProviderKind | undefined { return this.installations.find((item) => item.id === id)?.kind }
 

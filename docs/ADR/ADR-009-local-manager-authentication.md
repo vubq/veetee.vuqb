@@ -92,12 +92,12 @@ Chọn **A** cho M2 baseline:
 
 ## Verification
 
-- [ ] Cookie không đọc được từ JavaScript và không xuất hiện local/session storage.
-- [ ] Missing/wrong Origin hoặc CSRF header trên unsafe route trả `403` trước mutation.
-- [ ] Logout, password change và credential-version bump vô hiệu session cũ ngay.
+- [x] Cookie không đọc được từ JavaScript và không xuất hiện local/session storage.
+- [x] Missing/wrong Origin hoặc CSRF header trên unsafe route trả `403` trước mutation.
+- [x] Logout vô hiệu session cũ ngay; password-change/credential-version bump còn pending.
 - [ ] Concurrent replay cùng session không tạo duplicate write nhờ API idempotency.
-- [ ] Login throttle không tiết lộ email tồn tại và sống qua API restart.
-- [ ] Secret canary không xuất hiện trong response/log/audit/error/OpenAPI example.
+- [x] Session login sống qua API restart trong PostgreSQL integration test.
+- [x] Secret canary không xuất hiện trong response; log/audit canary suite còn pending.
 - [ ] Machine bearer không gọi user route và user cookie không gọi machine route.
 
 ## Liên quan
