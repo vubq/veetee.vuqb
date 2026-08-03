@@ -50,6 +50,60 @@ config VEETEE_ENABLE_HARDWARE
         Enable only after the board profile has been verified. Host builds do
         not use this option.
 
+config VEETEE_WAKE_ENABLED
+    bool "Enable on-device wake word"
+    default n
+    depends on VEETEE_ENABLE_HARDWARE
+    help
+        Keep microphone processing local while the device is idle. The selected
+        model is packed into the model partition by ESP-SR. If initialization
+        fails at boot, PTT remains available.
+
+choice VEETEE_WAKE_MODEL
+    prompt "Wake word model"
+    default VEETEE_WAKE_MODEL_COMPUTER_TTS
+    depends on VEETEE_WAKE_ENABLED
+
+config VEETEE_WAKE_MODEL_COMPUTER_TTS
+    bool "Computer (ESP-SR English test preset)"
+
+config VEETEE_WAKE_MODEL_HIESP
+    bool "Hi,ESP (ESP-SR preset)"
+
+endchoice
+
+config VEETEE_WAKE_MODEL_NAME
+    string "Wake word model identifier"
+    default "wn9_computer_tts" if VEETEE_WAKE_MODEL_COMPUTER_TTS
+    default "wn9_hiesp" if VEETEE_WAKE_MODEL_HIESP
+    depends on VEETEE_WAKE_ENABLED
+    help
+        The exact ESP-SR model identifier. Keep this in the config/asset
+        manifest; conversation code must not contain a wake phrase literal.
+
+config VEETEE_WAKE_MODEL_PARTITION
+    string "Wake model partition label"
+    default "model"
+    depends on VEETEE_WAKE_ENABLED
+
+config VEETEE_WAKE_DETECTION_MODE
+    int "WakeNet detection mode (90 or 95)"
+    range 90 95
+    default 90
+    depends on VEETEE_WAKE_ENABLED
+
+config VEETEE_WAKE_THRESHOLD_PERCENT
+    int "WakeNet threshold percent"
+    range 40 99
+    default 90
+    depends on VEETEE_WAKE_ENABLED
+
+config VEETEE_WAKE_INPUT_BUFFER_SAMPLES
+    int "Wake input buffer samples"
+    range 1024 16384
+    default 4096
+    depends on VEETEE_WAKE_ENABLED
+
 config VEETEE_PTT_GPIO
     int "Push-to-talk GPIO"
     default -1

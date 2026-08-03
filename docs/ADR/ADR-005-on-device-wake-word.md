@@ -90,6 +90,24 @@ Chọn **Option A**.
 6. Câu wake, localized status và response không nằm trong product code.
 7. Không có provider fallback trong scope hiện tại.
 
+### Implementation gate (2026-08-03)
+
+Lựa chọn on-device đã qua gate model-init trên ESP32-S3. Panic
+`StoreProhibited` ở probe đầu tiên được truy nguyên về việc firmware tắt hoàn toàn
+Octal PSRAM trong khi ESP-SR/WakeNet cần PSRAM; không phải do phrase hay threshold.
+Sau khi bật `CONFIG_SPIRAM`, `CONFIG_SPIRAM_MODE_OCT`, tốc độ 80 MHz và reserve
+internal phù hợp, build/flash model `wn9_computer_tts` đã khởi tạo thành công.
+Serial xác nhận 8 MiB PSRAM, `Successfully load srmodels`, manifest phrase
+`Computer`, `veetee-wake: ready model=wn9_computer_tts`, LCD 240x280, Wi-Fi profile
+từ NVS và WebSocket v3/server hello; không có panic. Evidence chi tiết nằm ở
+`docs/implementation-notes/M1.md`.
+
+Gate còn lại là physical recognition: phát audio phrase, đo false reject/accept,
+shared AFE/AEC/noise suppression và acoustic barge-in. Cho tới khi gate này pass,
+PTT vẫn là đường fallback; nếu runtime model init lỗi, firmware disable wake có
+kiểm soát và báo diagnostic, không tự chuyển sang server-side wake. Flash không
+erase NVS và không đổi Wi-Fi host.
+
 ## Runtime contract
 
 ```mermaid
@@ -150,6 +168,8 @@ bật buffer này khi upload pre-roll được cấu hình; không coi nó là �
 ## Verification
 
 - Boot fail model: PTT vẫn hoàn thành một turn; UI/telemetry báo wake unavailable.
+  Đường `model_create` lỗi phải trả về có kiểm soát; panic ban đầu đã được khắc
+  phục ở lớp PSRAM nhưng vẫn giữ bài kiểm tra fail-safe như một regression gate.
 - 1.000 negative clips gồm speech/TV/music/noise: report false accepts theo model.
 - 200 positive clips, nhiều speaker/khoảng cách/noise: report false rejects và p95
   detection latency.

@@ -4,6 +4,7 @@
 #include "veetee_protocol.h"
 #include "veetee_state.h"
 #include "veetee_transport.h"
+#include "veetee_wake.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -120,6 +121,24 @@
 #ifndef CONFIG_VEETEE_BOOT_CHIME_AMPLITUDE
 #define CONFIG_VEETEE_BOOT_CHIME_AMPLITUDE 9000
 #endif
+#ifndef CONFIG_VEETEE_WAKE_ENABLED
+#define CONFIG_VEETEE_WAKE_ENABLED 0
+#endif
+#ifndef CONFIG_VEETEE_WAKE_MODEL_NAME
+#define CONFIG_VEETEE_WAKE_MODEL_NAME ""
+#endif
+#ifndef CONFIG_VEETEE_WAKE_MODEL_PARTITION
+#define CONFIG_VEETEE_WAKE_MODEL_PARTITION "model"
+#endif
+#ifndef CONFIG_VEETEE_WAKE_DETECTION_MODE
+#define CONFIG_VEETEE_WAKE_DETECTION_MODE 90
+#endif
+#ifndef CONFIG_VEETEE_WAKE_THRESHOLD_PERCENT
+#define CONFIG_VEETEE_WAKE_THRESHOLD_PERCENT 90
+#endif
+#ifndef CONFIG_VEETEE_WAKE_INPUT_BUFFER_SAMPLES
+#define CONFIG_VEETEE_WAKE_INPUT_BUFFER_SAMPLES 4096
+#endif
 
 static const char *TAG = "veetee-fw";
 
@@ -133,12 +152,16 @@ typedef struct {
     vt_display_t display;
     vt_transport_t transport;
     vt_device_state_machine_t state;
+    vt_wake_t wake;
     QueueHandle_t playback_queue;
     SemaphoreHandle_t state_lock;
     EventGroupHandle_t wifi_events;
     volatile bool capture_active;
+    volatile bool wake_pending;
     volatile bool stop_requested;
     volatile bool wifi_stop_requested;
+    bool wake_auto_capture;
+    char wake_phrase[64];
     char device_id[32];
     char client_id[96];
 } vt_app_t;
@@ -161,6 +184,7 @@ static void display_task(void *context);
 static bool state_apply(vt_app_t *app, vt_device_event_t event);
 static vt_device_state_t state_read(vt_app_t *app);
 static int send_control(vt_app_t *app, const char *type, const char *state, const char *reason);
+static int send_listen_start(vt_app_t *app, bool auto_mode);
 static int device_identity(vt_app_t *app);
 
 static bool state_apply(vt_app_t *app, vt_device_event_t event) {
@@ -213,6 +237,22 @@ static int send_control(vt_app_t *app, const char *type, const char *state, cons
     return result;
 }
 
+static int send_listen_start(vt_app_t *app, bool auto_mode) {
+    if (app == NULL || !vt_transport_is_ready(&app->transport)) return ESP_ERR_INVALID_STATE;
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) return ESP_ERR_NO_MEM;
+    cJSON_AddStringToObject(root, "type", "listen");
+    cJSON_AddStringToObject(root, "state", "start");
+    cJSON_AddStringToObject(root, "mode", auto_mode ? "auto" : "manual");
+    const char *session_id = vt_transport_session_id(&app->transport);
+    if (session_id != NULL && session_id[0] != '\0') cJSON_AddStringToObject(root, "session_id", session_id);
+    char *serialized = cJSON_PrintUnformatted(root);
+    int result = serialized == NULL ? ESP_ERR_NO_MEM : vt_transport_send_text(&app->transport, serialized);
+    cJSON_free(serialized);
+    cJSON_Delete(root);
+    return result;
+}
+
 static void websocket_text_callback(const cJSON *message, void *context) {
     vt_app_t *app = (vt_app_t *)context;
     if (app == NULL || message == NULL) return;
@@ -231,12 +271,20 @@ static void websocket_text_callback(const cJSON *message, void *context) {
             vt_audio_reset(&app->audio);
             (void)state_apply(app, VT_EVENT_TTS_START);
         } else if (strcmp(tts_state->valuestring, "stop") == 0) {
+            if (app->wake_auto_capture) {
+                app->capture_active = false;
+                app->wake_auto_capture = false;
+                (void)vt_wake_arm(&app->wake);
+                ESP_LOGI(TAG, "wake capture complete; detector re-armed");
+            }
             (void)state_apply(app, VT_EVENT_TTS_STOP);
         }
         return;
     }
     if (strcmp(type->valuestring, "alert") == 0) {
         app->capture_active = false;
+        app->wake_auto_capture = false;
+        (void)vt_wake_arm(&app->wake);
         (void)xQueueReset(app->playback_queue);
         (void)state_apply(app, VT_EVENT_ABORT);
         cJSON *code = cJSON_GetObjectItemCaseSensitive(message, "code");
@@ -278,12 +326,27 @@ static void capture_task(void *context) {
     int16_t samples[CONFIG_VEETEE_MIC_SAMPLE_RATE * CONFIG_VEETEE_AUDIO_FRAME_DURATION_MS / 1000];
     uint8_t opus[VT_MAX_OPUS_PAYLOAD_BYTES];
     while (!app->stop_requested) {
-        if (!app->capture_active || !vt_transport_is_ready(&app->transport)) {
+        if (!vt_wake_is_ready(&app->wake) && (!app->capture_active || !vt_transport_is_ready(&app->transport))) {
             vTaskDelay(pdMS_TO_TICKS(20));
             continue;
         }
         size_t sample_count = 0;
         if (vt_audio_read_pcm(&app->audio, samples, sizeof(samples) / sizeof(samples[0]), &sample_count) != ESP_OK) continue;
+
+        if (vt_wake_is_ready(&app->wake)) {
+            vt_wake_event_t wake_event = {0};
+            int wake_result = vt_wake_feed(&app->wake, samples, sample_count, &wake_event);
+            if (wake_result != VT_WAKE_OK) {
+                ESP_LOGW(TAG, "wake feed failed result=%d", wake_result);
+            } else if (wake_event.detected && !app->wake_pending) {
+                app->wake_pending = true;
+                (void)snprintf(app->wake_phrase, sizeof(app->wake_phrase), "%s", wake_event.phrase);
+                ESP_LOGI(TAG, "wake detected model=%s phrase=%s index=%u",
+                         vt_wake_model_name(&app->wake), app->wake_phrase, wake_event.word_index);
+            }
+        }
+
+        if (!app->capture_active || !vt_transport_is_ready(&app->transport)) continue;
         size_t opus_size = 0;
         if (vt_audio_encode(&app->audio, samples, sample_count, opus, sizeof(opus), &opus_size) != ESP_OK) {
             ESP_LOGW(TAG, "Opus capture encode failed");
@@ -299,12 +362,27 @@ static void ptt_task(void *context) {
     bool stable = false;
     bool candidate = false;
     bool pending_start = false;
+    bool pending_auto = false;
     int samples = 0;
     TickType_t retry_after = 0;
     ESP_LOGI(TAG, "PTT monitor gpio=%d active_level=%d initial_level=%d",
              CONFIG_VEETEE_PTT_GPIO, CONFIG_VEETEE_PTT_ACTIVE_LEVEL,
              gpio_get_level(CONFIG_VEETEE_PTT_GPIO));
     while (!app->stop_requested) {
+        if (app->wake_pending) {
+            app->wake_pending = false;
+            pending_start = true;
+            pending_auto = true;
+            vt_device_state_t current = state_read(app);
+            if (current == VT_DEVICE_SPEAKING || current == VT_DEVICE_THINKING) {
+                app->capture_active = false;
+                app->wake_auto_capture = false;
+                (void)send_control(app, "abort", NULL, "wake_word_detected");
+                (void)xQueueReset(app->playback_queue);
+                (void)state_apply(app, VT_EVENT_ABORT);
+                ESP_LOGI(TAG, "wake interrupt");
+            }
+        }
         bool active = gpio_get_level(CONFIG_VEETEE_PTT_GPIO) == CONFIG_VEETEE_PTT_ACTIVE_LEVEL;
         if (active != candidate) {
             candidate = active;
@@ -315,8 +393,10 @@ static void ptt_task(void *context) {
                 stable = candidate;
                 if (stable) {
                     pending_start = true;
+                    pending_auto = false;
                     if (state_read(app) == VT_DEVICE_SPEAKING) {
                         app->capture_active = false;
+                        app->wake_auto_capture = false;
                         (void)send_control(app, "abort", NULL, "button_interrupt");
                         (void)xQueueReset(app->playback_queue);
                         (void)state_apply(app, VT_EVENT_ABORT);
@@ -324,24 +404,28 @@ static void ptt_task(void *context) {
                     }
                 } else if (app->capture_active) {
                     pending_start = false;
+                    pending_auto = false;
                     app->capture_active = false;
+                    app->wake_auto_capture = false;
                     int result = send_control(app, "listen", "stop", NULL);
                     (void)state_apply(app, VT_EVENT_LISTEN_STOP);
                     ESP_LOGI(TAG, "PTT stop result=%s", esp_err_to_name(result));
                 } else {
                     pending_start = false;
+                    pending_auto = false;
                 }
             }
         }
-        if (stable && pending_start && !app->capture_active && state_read(app) == VT_DEVICE_LISTENING) {
+        if ((stable || pending_auto) && pending_start && !app->capture_active && state_read(app) == VT_DEVICE_LISTENING) {
             TickType_t now = xTaskGetTickCount();
             if ((int32_t)(now - retry_after) >= 0) {
                 vt_audio_reset(&app->audio);
-                int result = send_control(app, "listen", "start", NULL);
+                int result = send_listen_start(app, pending_auto);
                 if (result == ESP_OK) {
                     app->capture_active = true;
+                    app->wake_auto_capture = pending_auto;
                     pending_start = false;
-                    ESP_LOGI(TAG, "PTT start");
+                    ESP_LOGI(TAG, "%s start", pending_auto ? "wake" : "PTT");
                 } else {
                     retry_after = now + pdMS_TO_TICKS(VT_PTT_RETRY_DELAY_MS);
                     ESP_LOGW(TAG, "PTT start send failed result=%s; retrying", esp_err_to_name(result));
@@ -387,6 +471,8 @@ static void network_task(void *context) {
             ESP_LOGW(TAG, "WebSocket connection did not become ready; retrying");
         }
         app->capture_active = false;
+        app->wake_auto_capture = false;
+        (void)vt_wake_arm(&app->wake);
         (void)vt_transport_stop(&app->transport);
         (void)state_apply(app, VT_EVENT_DISCONNECT);
         if (!app->stop_requested) vTaskDelay(pdMS_TO_TICKS(VT_WS_RETRY_DELAY_MS));
@@ -518,6 +604,19 @@ void app_main(void) {
     };
     ESP_ERROR_CHECK(vt_audio_init(&app->audio, &audio_config));
     ESP_ERROR_CHECK(vt_audio_start(&app->audio));
+#if CONFIG_VEETEE_WAKE_ENABLED
+    vt_wake_config_t wake_config = {
+        .partition_label = CONFIG_VEETEE_WAKE_MODEL_PARTITION,
+        .model_name = CONFIG_VEETEE_WAKE_MODEL_NAME,
+        .threshold_percent = CONFIG_VEETEE_WAKE_THRESHOLD_PERCENT,
+        .detection_mode = CONFIG_VEETEE_WAKE_DETECTION_MODE,
+        .input_buffer_samples = CONFIG_VEETEE_WAKE_INPUT_BUFFER_SAMPLES,
+    };
+    int wake_result = vt_wake_init(&app->wake, &wake_config);
+    if (wake_result != VT_WAKE_OK) {
+        ESP_LOGW(TAG, "wake disabled result=%d; PTT remains available", wake_result);
+    }
+#endif
 #if CONFIG_VEETEE_BOOT_CHIME_ENABLED
     bool chime_ok = true;
     if (vt_audio_play_tone(&app->audio, CONFIG_VEETEE_BOOT_CHIME_FIRST_HZ,

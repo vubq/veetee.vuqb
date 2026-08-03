@@ -10,6 +10,7 @@ bool vt_state_can_transition(vt_device_state_t from, vt_device_state_t to) {
     if (from == VT_DEVICE_CONNECTING && to == VT_DEVICE_LISTENING) return true;
     if (from == VT_DEVICE_LISTENING && to == VT_DEVICE_THINKING) return true;
     if (from == VT_DEVICE_THINKING && to == VT_DEVICE_SPEAKING) return true;
+    if (from == VT_DEVICE_THINKING && to == VT_DEVICE_LISTENING) return true;
     if (from == VT_DEVICE_SPEAKING && to == VT_DEVICE_LISTENING) return true;
     if (from == VT_DEVICE_LISTENING && to == VT_DEVICE_SPEAKING) return true;
     return false;

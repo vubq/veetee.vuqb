@@ -383,6 +383,18 @@ Thứ tự audio → detect giữ compatibility với firmware tham chiếu
 (`references/xiaozhi-esp32/main/application.cc:889-897`). Chi tiết quyết định ở
 ADR-005.
 
+**Trạng thái bring-up (2026-08-03):** abstraction `vt_wake_*` đã được bật trong
+default board build với model `wn9_computer_tts` và phrase do model manifest cung
+cấp là `Computer`. Lần panic `StoreProhibited` ban đầu xảy ra vì firmware tắt
+hoàn toàn Octal PSRAM trong khi ESP-SR/WakeNet cần PSRAM; đã sửa bằng cấu hình
+Octal PSRAM 8 MiB (`CONFIG_SPIRAM`, `CONFIG_SPIRAM_MODE_OCT` và budget internal
+reserve) rồi build/flash lại. Serial hiện xác nhận `Found 8MB PSRAM device`,
+`Successfully load srmodels`, `veetee-wake: ready model=wn9_computer_tts` và
+không panic. Đây mới là model-init/boot evidence; nhận dạng phrase bằng audio thật,
+shared AFE/AEC/noise suppression, false-trigger và acoustic barge-in vẫn là physical
+acceptance gate. Nếu model init lỗi ở runtime, firmware vẫn fail-safe giữ PTT và
+báo diagnostic; không tự chuyển sang server-side wake để che lỗi.
+
 ### 7.4 Barge-in khi AI đang nói
 
 Default là device AEC + local VAD/wake. `realtime` giữ AFE/uplink khi speaker phát.

@@ -33,6 +33,18 @@ static void test_state(void) {
     assert(machine.generation == 1U);
 }
 
+static void test_abort_from_thinking(void) {
+    vt_device_state_machine_t machine = {.state = VT_DEVICE_IDLE, .generation = 0U};
+    assert(vt_state_apply(&machine, VT_EVENT_CONNECT));
+    assert(vt_state_apply(&machine, VT_EVENT_HELLO_READY));
+    assert(vt_state_apply(&machine, VT_EVENT_LISTEN_START));
+    assert(vt_state_apply(&machine, VT_EVENT_LISTEN_STOP));
+    assert(machine.state == VT_DEVICE_THINKING);
+    assert(vt_state_apply(&machine, VT_EVENT_ABORT));
+    assert(machine.state == VT_DEVICE_LISTENING);
+    assert(machine.generation == 1U);
+}
+
 static void test_repeated_manual_turns(void) {
     vt_device_state_machine_t machine = {.state = VT_DEVICE_IDLE, .generation = 0U};
     assert(vt_state_apply(&machine, VT_EVENT_CONNECT));
@@ -57,6 +69,7 @@ static void test_config_gate(void) {
 int main(void) {
     test_protocol();
     test_state();
+    test_abort_from_thinking();
     test_repeated_manual_turns();
     test_config_gate();
     puts("firmware host tests passed");
