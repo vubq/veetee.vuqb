@@ -38,7 +38,11 @@
       "name": "manager-web-preview",
       "command": ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "18081"],
       "cwd": "${VEETEE_ROOT}/veetee-manager-web",
-      "environment": {},
+      "environment": {
+        "VITE_MANAGER_API_URL": "/",
+        "VEETEE_WEB_API_PROXY_TARGET": "http://127.0.0.1:18001",
+        "VEETEE_WEB_VOICE_PROXY_TARGET": "http://127.0.0.1:18000"
+      },
       "healthUrl": "http://127.0.0.1:18081/",
       "readyTimeoutSeconds": 20,
       "dependencies": ["veetee-manager-api"]

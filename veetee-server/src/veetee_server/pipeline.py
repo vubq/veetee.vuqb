@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+import json
 import time
 from typing import Any, Awaitable, Callable
 
@@ -65,6 +66,7 @@ class TurnPipeline:
         turn: Turn,
         send_text: Callable[[dict[str, Any]], Awaitable[None]],
         send_binary: Callable[[bytes], Awaitable[None]],
+        execute_tool: Callable[[str, dict[str, Any], int], Awaitable[dict[str, Any]]] | None = None,
         metrics: dict[str, int],
     ) -> None:
         self.snapshot = snapshot
@@ -75,6 +77,7 @@ class TurnPipeline:
         self.turn = turn
         self._send_text = send_text
         self._send_binary = send_binary
+        self._execute_tool = execute_tool
         self.metrics = metrics
         wire = snapshot.raw.get("wire") or {}
         self._uplink_rate = int(wire.get("uplinkSampleRate", 16000))
@@ -115,20 +118,38 @@ class TurnPipeline:
         self._egress_pcm.clear()
 
     async def _stream_answer(self, prompt: str) -> None:
-        segmenter = SemanticSegmenter(self.snapshot.raw.get("segmentation") or {})
         tools = self.snapshot.raw.get("tools") or []
+        max_rounds = max(1, int((self.snapshot.raw.get("toolPolicy") or {}).get("maxRounds", 3)))
         answer_started = False
-        async for delta in self.registry.llm.stream(prompt=prompt, locale=self.snapshot.locale, tools=tools):
-            if self.turn.cancelled and self.turn.cancelled.is_set():
-                return
-            if delta.tool_name:
-                await self._send_text(control_message("llm", session_id=self.session_id, turn_id=self.turn.turn_id, tool_name=delta.tool_name))
+        current_prompt = prompt
+        for _round in range(max_rounds):
+            segmenter = SemanticSegmenter(self.snapshot.raw.get("segmentation") or {})
+            tool_name: str | None = None
+            tool_arguments = ""
+            async for delta in self.registry.llm.stream(prompt=current_prompt, locale=self.snapshot.locale, tools=tools):
+                if self.turn.cancelled and self.turn.cancelled.is_set():
+                    return
+                if delta.tool_name:
+                    tool_name = delta.tool_name
+                    tool_arguments += delta.tool_arguments or ""
+                    await self._send_text(control_message("llm", session_id=self.session_id, turn_id=self.turn.turn_id, tool_name=delta.tool_name))
+                    continue
+                for segment in segmenter.push(delta.text, final=delta.final):
+                    if not answer_started:
+                        await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
+                        answer_started = True
+                    await self._speak_segment(segment)
+            if tool_name and self._execute_tool is not None:
+                try:
+                    arguments = json.loads(tool_arguments or "{}")
+                except json.JSONDecodeError as exc:
+                    raise ProviderError("TOOL_ARGUMENTS_INVALID", "tool arguments are not valid JSON") from exc
+                if not isinstance(arguments, dict):
+                    raise ProviderError("TOOL_ARGUMENTS_INVALID", "tool arguments must be an object")
+                result = await self._execute_tool(tool_name, arguments, self.turn.generation)
+                current_prompt = f"{current_prompt}\n\nTool result for {tool_name}: {json.dumps(result, ensure_ascii=False)}"
                 continue
-            for segment in segmenter.push(delta.text, final=delta.final):
-                if not answer_started:
-                    await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
-                    answer_started = True
-                await self._speak_segment(segment)
+            break
         if answer_started:
             await self._flush_packetizer()
             await self._send_text(control_message("tts", session_id=self.session_id, state="stop", turn_id=self.turn.turn_id))

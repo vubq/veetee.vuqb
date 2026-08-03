@@ -16,6 +16,7 @@ VOICE_APP_KEY = web.AppKey("voice", object)
 
 from .config import ConfigurationError, ServerConfig
 from .pipeline import Turn, TurnPipeline
+from .mcp import DeviceMcpBridge
 from .protocol import ProtocolError, decode_audio, decode_json, profile_from_version, control_message
 from .providers import OpusCodec, ProviderError
 from .runtime import RuntimeConfigManager, RuntimeView
@@ -103,6 +104,9 @@ class VoiceSession:
         self.pipeline: TurnPipeline | None = None
         self.generation = 0
         self.codec: OpusCodec | None = None
+        self.mcp: DeviceMcpBridge | None = None
+        self.phase = "ready_idle"
+        self._speech_frames = 0
         self._closed = False
         self._lock = asyncio.Lock()
 
@@ -161,6 +165,14 @@ class VoiceSession:
                 "session_id": self.session_id,
             }
         )
+        descriptors = snapshot.raw.get("tools")
+        if not isinstance(descriptors, list):
+            descriptors = []
+        timeout_ms = int((snapshot.raw.get("toolPolicy") or {}).get("timeoutMs", 30000))
+        self.mcp = DeviceMcpBridge(session_id=self.session_id, send=self.send_text, descriptors=descriptors, timeout_ms=timeout_ms)
+        if bool((message.get("features") or {}).get("mcp", False)):
+            await self.mcp.initialize()
+            await self.mcp.list_tools()
         self.ready = True
 
     async def _control(self, message: dict[str, Any]) -> None:
@@ -179,7 +191,9 @@ class VoiceSession:
         elif kind == "ping":
             await self.send_text({"type": "pong", "session_id": self.session_id})
         elif kind == "mcp":
-            await self.send_text(control_message("mcp", session_id=self.session_id, payload=message.get("payload", {})))
+            payload = message.get("payload")
+            if isinstance(payload, dict) and self.mcp and self.mcp.resolve(payload):
+                return
         # Unknown message types are intentionally ignored for additive compatibility.
 
     async def _listen(self, message: dict[str, Any]) -> None:
@@ -188,6 +202,7 @@ class VoiceSession:
             await self._start_turn(str(message.get("mode", "manual")))
         elif state == "stop":
             if self.turn and self.pipeline and self.turn.task is None:
+                self.phase = "thinking"
                 self.turn.task = asyncio.create_task(self.pipeline.finish(), name=f"turn-{self.turn.turn_id}")
         elif state == "detect":
             return
@@ -198,6 +213,8 @@ class VoiceSession:
         await self._abort(reason="new_turn", send_stop=False)
         self.generation += 1
         self.turn = Turn(turn_id=secrets.token_urlsafe(10), generation=self.generation, mode=mode, cancelled=asyncio.Event())
+        self.phase = "listening"
+        self._speech_frames = 0
         view: RuntimeView = self.app.runtime.view
         assert self.codec is not None
         self.pipeline = TurnPipeline(
@@ -209,6 +226,7 @@ class VoiceSession:
             turn=self.turn,
             send_text=self.send_text,
             send_binary=self.send_binary,
+            execute_tool=self._execute_tool,
             metrics=self.app.metrics,
         )
         view.registry.vad.reset()
@@ -220,12 +238,28 @@ class VoiceSession:
         frame = decode_audio(self.profile, raw)  # type: ignore[arg-type]
         pcm = self.codec.decode_uplink(frame.payload, int(self.app.runtime.view.snapshot.raw.get("wire", {}).get("uplinkSampleRate", 16000)) * 60 // 1000)
         self.app.metrics["audio_frames_in"] += 1
-        self.app.runtime.view.registry.vad.accept(pcm, 16000)
+        speech = self.app.runtime.view.registry.vad.accept(pcm, 16000)
+        if self.phase == "speaking" and self.turn.mode == "realtime" and speech:
+            self._speech_frames += 1
+            threshold = int((self.app.runtime.view.snapshot.raw.get("bargeIn") or {}).get("minSpeechFrames", 2))
+            if self._speech_frames >= max(1, threshold):
+                await self._abort(reason="barge_in")
+                await self._start_turn("realtime")
+        elif self.phase == "listening" and self.turn.mode == "auto" and self.app.runtime.view.registry.vad.endpoint() and self.turn.task is None:
+            self.phase = "thinking"
+            self.turn.task = asyncio.create_task(self.pipeline.finish(), name=f"turn-{self.turn.turn_id}")
         await self.pipeline.ingest(pcm)
+
+    async def _execute_tool(self, name: str, arguments: dict[str, Any], generation: int) -> dict[str, Any]:
+        if not self.mcp:
+            raise ProviderError("MCP_UNAVAILABLE", "device MCP is not enabled for this session")
+        return await self.mcp.call(name, arguments, generation)
 
     async def _abort(self, *, reason: str, send_stop: bool = True) -> None:
         if self.pipeline:
             self.pipeline.cancel()
+        if self.mcp and self.turn:
+            self.mcp.cancel_generation(self.turn.generation)
         if self.turn and self.turn.task and not self.turn.task.done():
             self.turn.task.cancel()
             await asyncio.gather(self.turn.task, return_exceptions=True)
@@ -236,6 +270,10 @@ class VoiceSession:
 
     async def send_text(self, value: dict[str, Any]) -> None:
         if not self._closed:
+            if value.get("type") == "tts" and value.get("state") == "start":
+                self.phase = "speaking"
+            elif value.get("type") == "tts" and value.get("state") == "stop":
+                self.phase = "listening"
             await self.ws.send_str(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
 
     async def send_binary(self, value: bytes) -> None:

@@ -14,6 +14,29 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
+    proxy: {
+      ...(process.env.VEETEE_WEB_API_PROXY_TARGET
+        ? {
+            '/api': {
+              target: process.env.VEETEE_WEB_API_PROXY_TARGET,
+              changeOrigin: false,
+            },
+            '/openapi.json': {
+              target: process.env.VEETEE_WEB_API_PROXY_TARGET,
+              changeOrigin: false,
+            },
+          }
+        : {}),
+      ...(process.env.VEETEE_WEB_VOICE_PROXY_TARGET
+        ? {
+            '/veetee': {
+              target: process.env.VEETEE_WEB_VOICE_PROXY_TARGET,
+              changeOrigin: false,
+              ws: true,
+            },
+          }
+        : {}),
+    },
   },
   preview: {
     host: '127.0.0.1',
