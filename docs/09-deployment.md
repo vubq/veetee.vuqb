@@ -124,6 +124,7 @@ Service requirements:
 | `VEETEE_CONFIG_FIXTURE_FILE` | khi `fixture` | Immutable snapshot cùng runtime schema, checksum bắt buộc; M0/M1 only. |
 | `VEETEE_MANAGER_API_URL` | khi `manager` | Loopback/private URL của control plane. |
 | `VEETEE_MACHINE_TOKEN_FILE` | khi `manager` | Read-only path, không phải token literal. |
+| `VEETEE_ALLOW_INSECURE_LOCAL_CONFIG` | dev-only | Chỉ cho phép manager snapshot không bearer khi target là loopback; production MUST để false và dùng machine token. |
 | `VEETEE_CONFIG_CACHE_DIR` | khi `manager` | Last-known-good immutable snapshot. |
 | `VEETEE_MODEL_CACHE_DIR` | yes | Pinned model artifacts/checksums. |
 | `VEETEE_GROQ_SECRET_FILE` | yes khi Groq active | Một production key/secretRef resolution. |
