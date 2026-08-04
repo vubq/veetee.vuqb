@@ -7,10 +7,18 @@ import { test } from 'node:test'
 import { Pool } from 'pg'
 import { buildApp } from './app.js'
 import type { Environment } from './config.js'
+import { assertSafeTestDatabaseUrl, configurePostgresTestIsolation } from './postgres-test-isolation.js'
 import { EncryptedFileSecretStore } from './secret-store.js'
 
 const databaseUrlFile = process.env.VEETEE_TEST_DATABASE_URL_FILE
 const root = resolve(import.meta.dirname, '..')
+
+configurePostgresTestIsolation(databaseUrlFile)
+
+test('PostgreSQL test harness refuses the production database name', () => {
+  assert.throws(() => assertSafeTestDatabaseUrl('postgresql://veetee@127.0.0.1:55432/veetee_vubq'), /must end with _test/)
+  assert.doesNotThrow(() => assertSafeTestDatabaseUrl('postgresql://veetee@127.0.0.1:55432/veetee_vubq_test'))
+})
 
 test('PostgreSQL rejects malformed resource IDs as validation errors', { skip: !databaseUrlFile }, async () => {
   const env: Environment = {
@@ -393,10 +401,8 @@ test('PostgreSQL persists conversation turns and retention policy across restart
   const restarted = await buildApp({ env })
   await restarted.ready()
   try {
-    /* The host test database is intentionally persistent between runs. Ask for
-       the supported upper page bound so an older fixture with the same
-       deterministic timestamp cannot hide the conversation under the default
-       recent-20 page. */
+    /* The test harness resets the dedicated database before each test, so the
+       default page is sufficient and no historical fixture can hide this row. */
     const list = await restarted.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/conversations?limit=100` })
     assert.equal(list.statusCode, 200)
     assert.ok(list.json().items.some((item: { id: string; turnCount: number }) => item.id === conversationId && item.turnCount === 1))

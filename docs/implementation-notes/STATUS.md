@@ -282,6 +282,25 @@
   cấp quyền mới; thời gian còn lại chỉ được làm host/serial-read-only/docs/runtime
   checks không phát âm thanh.
 
+### PostgreSQL test isolation and acoustic-test pause (2026-08-04)
+
+- Test harness Manager API nay fail-closed nếu `VEETEE_TEST_DATABASE_URL_FILE`
+  trỏ tới database không có tên kết thúc `_test`; tên production
+  `veetee_vubq` bị từ chối trước khi mở connection. Test database hiện dùng là
+  `veetee_vubq_test`, tách khỏi runtime production.
+- Trước mỗi PostgreSQL test, harness giữ một PostgreSQL advisory lock chung,
+  reset toàn bộ bảng dữ liệu trong schema `veetee_manager` rồi mới chạy test;
+  `schema_migrations` không bị xóa. Các file test chạy song song vẫn không
+  truncate lẫn nhau, và test không để lại assistant/device/session/history
+  giữa các lần chạy.
+- Verification host-only: Manager API `lint` pass; suite với DSN dedicated
+  `veetee_vubq_test` **33/33 passed**, gồm regression từ chối DSN production.
+  Không restart runtime, không mutate `veetee_vubq`, không flash firmware và
+  không phát audio.
+- Quyền phát audio trực tiếp qua ESP32 vẫn đang **tạm dừng theo yêu cầu**; mọi
+  acoustic/wake/PTT acceptance còn lại chỉ được chạy sau khi operator cấp quyền
+  lại. Host unit, protocol, DB, UI và serial read-only có thể tiếp tục.
+
 ### URL metadata hardening and non-audio regression (2026-08-04)
 
 - `VEETEE_PUBLIC_BASE_URL` đã được thêm vào Manager API environment schema;

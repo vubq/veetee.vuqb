@@ -6,11 +6,13 @@ import { test } from 'node:test'
 import argon2 from 'argon2'
 import { buildApp } from './app.js'
 import type { Environment } from './config.js'
+import { configurePostgresTestIsolation } from './postgres-test-isolation.js'
 import { EncryptedFileSecretStore } from './secret-store.js'
 
 const root = resolve(import.meta.dirname, '..')
 const passwordHash = await argon2.hash('unit-password')
 const databaseUrlFile = process.env.VEETEE_TEST_DATABASE_URL_FILE
+configurePostgresTestIsolation(databaseUrlFile)
 const baseEnv: Environment = {
   VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8013, VEETEE_DATABASE_MODE: 'memory', VEETEE_DATABASE_URL_FILE: undefined,
   VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
