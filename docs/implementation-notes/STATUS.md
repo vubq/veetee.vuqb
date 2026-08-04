@@ -44,6 +44,13 @@
    Tailscale hostname/Serve mapping phải xem bằng `tailscale serve status`; không
    suy đoán hoặc ghi cứng hostname vào source.
 
+   Read-only status hiện tại (binary local Tailscale 1.98.9):
+   `https://veetee-dev.tail52a635.ts.net:18443` là **tailnet-only**, proxy vào
+   Manager Web `18181`; Vite proxy cùng origin chuyển `/api` tới `18101` và
+   `/veetee` tới Voice `18100`. Root `:443` và các cổng `:8443`/`:10000` đang là
+   Funnel mapping cũ tới checkout khác, không dùng để kiểm tra Veetee hiện tại
+   và chưa bị thay đổi trong lượt này.
+
 ## Quy ước cập nhật
 
 - Mỗi mốc thay đổi phải thêm note evidence, kết quả test và commit/push.
