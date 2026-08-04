@@ -309,6 +309,14 @@
   không truy cập mic/loa/serial audio, không flash/reset ESP32, không đổi
   Wi‑Fi/Tailscale và không dùng database production.
 
+### Runtime tooling non-audio check (2026-08-05)
+
+- `tools/runtime/tests`: **20 passed** bằng `uv run pytest -q`.
+- `tools/runtime` và `tools/physical` compileall pass; chỉ kiểm tra parser,
+  fixture/schema và harness guard, không mở audio device hay chạy bài phát âm.
+- Workspace sau kiểm tra vẫn sạch tại `master`/`origin/master`; không restart
+  service hoặc thay đổi network/database/firmware.
+
 ### PostgreSQL test isolation and acoustic-test pause (2026-08-04)
 
 - Test harness Manager API nay fail-closed nếu `VEETEE_TEST_DATABASE_URL_FILE`
