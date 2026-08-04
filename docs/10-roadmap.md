@@ -15,8 +15,8 @@
 
 | Milestone | Đã chứng minh | Còn mở trước khi đánh dấu đạt |
 |---|---|---|
-| M0 | Host protocol/provider path, firmware build/serial và runtime turn đã chạy; database/provider config có revision | Physical PTT/mic/loa và người dùng nghe được một câu, 30-turn trên board thật |
-| M1 | WS v1/v2/v3 compatibility fixtures, streaming/cancellation/admission, WakeNet model init và unattended harness | Phát audio có quyền để xác nhận wake thật, AFE/AEC/noise, barge-in, long physical soak và exact provider promotion |
+| M0 | Host protocol/provider path, firmware build/serial và runtime turn đã chạy; database/provider config có revision; unattended wake đã đưa được audio qua pipeline | Physical PTT/mic/loa và người dùng nghe được một câu, 30-turn trên board thật |
+| M1 | WS v1/v2/v3 compatibility fixtures, streaming/cancellation/admission, WakeNet init và một lượt unattended wake→TTS exact image đã pass | AFE/AEC/noise, barge-in, false accept/reject corpus, long physical soak, TTFA/provider promotion và cross-peer physical conformance |
 | M2 | API/Web/PostgreSQL/ETag/OpenAPI, provider registry schema-driven, auth/retention/presence, E2E/a11y | Provider artifact promotion/VRAM evidence và các physical acceptance không được suy ra từ host test |
 | M3 | Chưa đưa vào critical path; hardware MCP/transport/assets/OTA vẫn deferred theo input | BOM/descriptor/safety policy và golden transport fixtures |
 | M4 | Chưa bắt đầu promotion | Locale thứ hai, capacity/backup/security/soak gates |
