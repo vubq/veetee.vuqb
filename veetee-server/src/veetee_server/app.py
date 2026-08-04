@@ -93,6 +93,8 @@ class VoiceApplication:
                 "maxActiveTurns": self.turn_capacity()[0],
                 "activationFailures": self.runtime.activation_failures,
                 "lastActivationErrorType": self.runtime.last_activation_error_type,
+                "lastActivationMode": self.runtime.last_activation_mode,
+                "lastResourceProjectionMiB": self.runtime.last_resource_projection_mib,
             }
         )
 

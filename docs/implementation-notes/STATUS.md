@@ -451,3 +451,23 @@
   artifact/VRAM promotion evidence.
 - Không phát audio, không mở microphone/speaker, không flash/reset ESP32, không
   restart runtime production, không đổi Wi-Fi/Tailscale hoặc secret.
+
+### Measured resource promotion gate (2026-08-05, host-only)
+
+- Voice Server bổ sung `veetee_server.resources`: snapshot có `resourceBudget`
+  được validate fail-closed trước khi tạo provider/model candidate. Công thức
+  tách `measuredWarmBaselineMiB`, `candidatePeakDeltaMiB`,
+  `candidateWarmPeakMiB`, session reserve và activation margin; promotion limit
+  của profile 4 GiB là 3.500 MiB.
+- Candidate nằm trong dual-residency headroom dùng `BLUE_GREEN`. Candidate chỉ
+  vừa khi đứng riêng dùng `QUIESCE_SWAP` và chỉ unload generation cũ khi không
+  còn session lease; candidate không vừa cả hai mode bị từ chối trước factory/
+  CUDA allocation. Quiesce failure reload đúng snapshot cũ; không có provider
+  fallback.
+- Regression resource/runtime: **23 tests passed** (initial plan, blue-green,
+  reject trước instantiate, lease gate, quiesce promotion và rollback exact old
+  snapshot). Snapshot cũ không có `resourceBudget` vẫn tương thích; field này
+  hiện là deployment benchmark artifact, chưa hiển thị như form owner-facing.
+- Đây hoàn toàn là host-only. Không phát audio, không mở microphone/speaker,
+  không flash/reset firmware, không restart runtime production, không đổi
+  Wi-Fi/Tailscale, không mutate `veetee_vubq`.

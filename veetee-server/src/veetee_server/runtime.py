@@ -14,6 +14,7 @@ import httpx
 
 from .config import ConfigurationError, RuntimeSnapshot, ServerConfig, load_snapshot
 from .providers import ProviderError, ProviderRegistry
+from .resources import ActivationMode, ResourceBudgetError, plan_activation
 from .secrets import EncryptedFileSecretResolver
 
 
@@ -54,6 +55,8 @@ class RuntimeConfigManager:
         self._leases: dict[int, int] = {}
         self.activation_failures = 0
         self.last_activation_error_type: str | None = None
+        self.last_activation_mode: str | None = None
+        self.last_resource_projection_mib: int | None = None
 
     @property
     def view(self) -> RuntimeView:
@@ -189,21 +192,40 @@ class RuntimeConfigManager:
     async def _activate(self, snapshot: RuntimeSnapshot) -> bool:
         async with self._activation_lock:
             candidate: ProviderRegistry | None = None
+            old: RuntimeView | None = None
+            quiesced = False
             try:
                 # Validate additive interaction policy before allocating a
                 # provider generation. A malformed watchdog config must keep
                 # the last-known-good snapshot instead of failing mid-turn.
                 snapshot.auto_turn_policy()
-                candidate = ProviderRegistry(
-                    snapshot,
-                    secret_file=self.secret_file,
-                    secret_resolver=self.secret_resolver,
-                    test_groq_keys_file=self.test_groq_keys_file,
-                )
+                plan = plan_activation(snapshot, has_active_generation=self._view is not None)
+                if plan is not None and plan.mode is ActivationMode.QUIESCE_SWAP:
+                    # A quiesce swap may only unload the old generation after
+                    # every session lease has drained. Never allocate the
+                    # candidate while old and new could exceed the measured
+                    # promotion budget.
+                    async with self._lock:
+                        old = self._view
+                        old_leases = self._leases.get(id(old), 0) if old is not None else 0
+                    if old is not None and old_leases:
+                        raise ResourceBudgetError(
+                            "RESOURCE_QUIESCE_REQUIRED",
+                            "candidate requires quiesce but the active generation still has session leases",
+                        )
+                    if old is not None:
+                        async with self._lock:
+                            # Re-check identity after waiting for the lock; a
+                            # future activation cannot replace the view while
+                            # _activation_lock is held, but a lease can drain.
+                            if self._view is old and self._leases.get(id(old), 0) == 0:
+                                self._view = None
+                                quiesced = True
+                        await self._close_registry(old.registry)
+                candidate = await self._prepare_registry(snapshot)
                 # Never hold the view/lease lock while loading model weights or
                 # opening provider pools. Existing sessions stay responsive and
                 # can release their old generation during a slow warm-up.
-                await candidate.prepare()
                 view = RuntimeView(snapshot=snapshot, registry=candidate)
             except asyncio.CancelledError:
                 # Shutdown can cancel a slow model warm-up. Dispose the
@@ -211,10 +233,14 @@ class RuntimeConfigManager:
                 # so CUDA/HTTP/file resources do not survive the task.
                 if candidate is not None:
                     await self._close_registry(candidate)
+                if quiesced and old is not None:
+                    await self._restore_view(old)
                 raise
             except (ConfigurationError, ProviderError) as exc:
                 if candidate is not None:
                     await self._close_registry(candidate)
+                if quiesced and old is not None:
+                    await self._restore_view(old)
                 self.activation_failures += 1
                 self.last_activation_error_type = type(exc).__name__
                 LOG.warning("runtime activation failed error_type=%s", self.last_activation_error_type)
@@ -226,27 +252,65 @@ class RuntimeConfigManager:
                 # only the exception type in readiness diagnostics.
                 if candidate is not None:
                     await self._close_registry(candidate)
+                if quiesced and old is not None:
+                    await self._restore_view(old)
                 self.activation_failures += 1
                 self.last_activation_error_type = type(exc).__name__
                 LOG.warning("runtime activation failed error_type=%s", self.last_activation_error_type)
                 return False
             async with self._lock:
-                old = self._view
+                previous = self._view
                 self._view = view
                 self.last_activation_error_type = None
+                self.last_activation_mode = plan.mode.value if plan is not None else None
+                self.last_resource_projection_mib = plan.projected_total_mib if plan is not None else None
                 retired = None
-                if old is not None:
-                    old_key = id(old)
+                if previous is not None and previous is not old:
+                    old_key = id(previous)
                     if self._leases.get(old_key, 0) > 0:
-                        self._retired[old_key] = old
+                        self._retired[old_key] = previous
                     else:
-                        retired = old
+                        retired = previous
                 listeners = tuple(self._listeners)
-        if retired is not None:
+        if retired is not None and not quiesced:
             await self._close_registry(retired.registry)
         for listener in listeners:
             await listener(view)
         return True
+
+    async def _prepare_registry(self, snapshot: RuntimeSnapshot) -> ProviderRegistry:
+        candidate = ProviderRegistry(
+            snapshot,
+            secret_file=self.secret_file,
+            secret_resolver=self.secret_resolver,
+            test_groq_keys_file=self.test_groq_keys_file,
+        )
+        try:
+            # Never hold the view/lease lock while loading model weights or
+            # opening provider pools. Existing sessions stay responsive during
+            # blue-green warm-up.
+            await candidate.prepare()
+        except BaseException:
+            await self._close_registry(candidate)
+            raise
+        return candidate
+
+    async def _restore_view(self, old: RuntimeView) -> None:
+        """Reload the exact pinned snapshot after a failed quiesce swap."""
+
+        try:
+            restored = await self._prepare_registry(old.snapshot)
+        except Exception as exc:  # noqa: BLE001 - readiness stays failed
+            self.last_activation_error_type = type(exc).__name__
+            LOG.error("quiesce rollback failed error_type=%s", self.last_activation_error_type)
+            return
+        async with self._lock:
+            if self._view is None:
+                self._view = RuntimeView(snapshot=old.snapshot, registry=restored)
+                self.last_activation_mode = "QUIESCE_ROLLBACK"
+                self.last_resource_projection_mib = None
+                return
+        await self._close_registry(restored)
 
     @staticmethod
     async def _close_registry(registry: ProviderRegistry) -> None:

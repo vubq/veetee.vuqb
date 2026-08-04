@@ -230,9 +230,44 @@ Các số dưới là **reservation để thiết kế**, không phải benchmar
 | OS/desktop | RAM | ≥ 5 GiB RAM | Không cấp cho Veetee. |
 | GPU policy envelope | VRAM | 596 MiB giữa physical 4.096 và promotion limit 3.500 MiB | Không cấp cho model; driver/runtime vẫn được đo trong total usage. |
 
+### 7.3 Runtime promotion gate (đã có host-side)
+
+Một published snapshot có thể mang `resourceBudget` như một **benchmark
+artifact** (không phải provider hint và không phải giá trị tự đo trong lúc hội
+thoại):
+
+```json
+{
+  "resourceBudget": {
+    "physicalVramMiB": 4096,
+    "promotionLimitMiB": 3500,
+    "measuredWarmBaselineMiB": 1200,
+    "candidatePeakDeltaMiB": 900,
+    "candidateWarmPeakMiB": 1800,
+    "sessionWorkspaceReserveMiB": 256,
+    "activationMarginMiB": 128
+  }
+}
+```
+
+`veetee_server.resources` validate toàn bộ record trước khi tạo
+`ProviderRegistry`. `allocatableHeadroomMiB` được tính bằng promotion limit
+trừ warm baseline, session workspace reserve và activation margin. Nếu peak delta
+của candidate nằm trong headroom, runtime chọn `BLUE_GREEN`; nếu không nhưng
+generation mới đứng riêng vẫn vừa budget, runtime chỉ chọn `QUIESCE_SWAP` sau khi
+mọi session lease của generation cũ đã về zero. Candidate không vừa cả hai mode bị
+từ chối typed trước CUDA/model allocation và giữ last-known-good generation.
+
+Quiesce failure đóng candidate, rồi reload đúng snapshot cũ; nếu rollback cũng
+thất bại, readiness vẫn failed thay vì tự chọn provider khác. Snapshot không có
+`resourceBudget` vẫn được parse để giữ compatibility với fixture cũ, nhưng không
+được coi là bằng chứng promotion VRAM. Manager/API chưa hiển thị field này như một
+form owner-facing; operator chỉ publish benchmark record đã đo cho exact
+artifact/runtime/hardware profile.
+
 Baseline preferred combination là Silero CPU + PhoWhisper-small CUDA FP16 + VieNeu v3 Turbo ONNX CPU + on-device wake. Zipformer chỉ có thể thay selection sau license/provenance/accuracy/latency bakeoff; không là runtime fallback. Vì vậy ASR có toàn bộ GPU headroom; TTS không tranh 4 GB VRAM trong short-turn path.
 
-### 7.3 Admission
+### 7.4 Admission
 
 Resource arbiter tính trước:
 

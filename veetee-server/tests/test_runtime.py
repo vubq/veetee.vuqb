@@ -49,6 +49,132 @@ class TrackingRegistry:
         self.close_calls += 1
 
 
+def budgeted_snapshot(fixture: Path, target: Path, **overrides):
+    source = json.loads(fixture.read_text(encoding="utf-8"))
+    source["revision"] = max(2, int(source["revision"]))
+    source["resourceBudget"] = {
+        "physicalVramMiB": 4096,
+        "promotionLimitMiB": 3500,
+        "measuredWarmBaselineMiB": 1200,
+        "candidatePeakDeltaMiB": 900,
+        "candidateWarmPeakMiB": 1800,
+        "sessionWorkspaceReserveMiB": 256,
+        "activationMarginMiB": 128,
+        **overrides,
+    }
+    target.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    return load_snapshot(target)
+
+
+@pytest.mark.asyncio
+async def test_initial_resource_plan_is_recorded_without_dual_residency(monkeypatch, tmp_path):
+    candidate_file = tmp_path / "candidate.json"
+    candidate = budgeted_snapshot(FIXTURE, candidate_file)
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(candidate_file))
+    monkeypatch.setattr("veetee_server.runtime.ProviderRegistry", TrackingRegistry)
+    TrackingRegistry.instances.clear()
+    TrackingRegistry.fail_revisions.clear()
+
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    await runtime.start()
+    try:
+        assert runtime.last_activation_mode == "INITIAL"
+        assert runtime.last_resource_projection_mib == 2184
+        assert runtime.view.snapshot is candidate or runtime.view.snapshot.revision == candidate.revision
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_over_budget_candidate_is_rejected_before_registry_instantiation(monkeypatch, tmp_path):
+    candidate_file = tmp_path / "candidate.json"
+    candidate = budgeted_snapshot(FIXTURE, candidate_file, candidatePeakDeltaMiB=2200, candidateWarmPeakMiB=3200)
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(FIXTURE))
+    monkeypatch.setattr("veetee_server.runtime.ProviderRegistry", TrackingRegistry)
+    TrackingRegistry.instances.clear()
+    TrackingRegistry.fail_revisions.clear()
+
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    await runtime.start()
+    try:
+        old_view = runtime.view
+        assert await runtime._activate(candidate) is False
+        assert runtime.view is old_view
+        assert len(TrackingRegistry.instances) == 1
+        assert runtime.last_activation_error_type == "ResourceBudgetError"
+    finally:
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_quiesce_candidate_waits_for_session_leases(monkeypatch, tmp_path):
+    candidate_file = tmp_path / "candidate.json"
+    candidate = budgeted_snapshot(FIXTURE, candidate_file, candidatePeakDeltaMiB=2200)
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(FIXTURE))
+    monkeypatch.setattr("veetee_server.runtime.ProviderRegistry", TrackingRegistry)
+    TrackingRegistry.instances.clear()
+    TrackingRegistry.fail_revisions.clear()
+
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    await runtime.start()
+    old_view = await runtime.acquire_view()
+    try:
+        assert await runtime._activate(candidate) is False
+        assert runtime.view is old_view
+        assert len(TrackingRegistry.instances) == 1
+        assert runtime.last_activation_error_type == "ResourceBudgetError"
+    finally:
+        await runtime.release_view(old_view)
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_quiesce_candidate_unloads_old_and_promotes_when_no_lease(monkeypatch, tmp_path):
+    candidate_file = tmp_path / "candidate.json"
+    candidate = budgeted_snapshot(FIXTURE, candidate_file, candidatePeakDeltaMiB=2200)
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(FIXTURE))
+    monkeypatch.setattr("veetee_server.runtime.ProviderRegistry", TrackingRegistry)
+    TrackingRegistry.instances.clear()
+    TrackingRegistry.fail_revisions.clear()
+
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    await runtime.start()
+    old_view = runtime.view
+    assert await runtime._activate(candidate) is True
+    assert runtime.view.snapshot.revision == candidate.revision
+    assert runtime.last_activation_mode == "QUIESCE_SWAP"
+    assert old_view.registry.close_calls == 1
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_quiesce_failure_reloads_exact_old_snapshot(monkeypatch, tmp_path):
+    candidate_file = tmp_path / "candidate.json"
+    candidate = budgeted_snapshot(FIXTURE, candidate_file, candidatePeakDeltaMiB=2200)
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(FIXTURE))
+    monkeypatch.setattr("veetee_server.runtime.ProviderRegistry", TrackingRegistry)
+    TrackingRegistry.instances.clear()
+    TrackingRegistry.fail_revisions.clear()
+    TrackingRegistry.fail_revisions.add(candidate.revision)
+
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    await runtime.start()
+    try:
+        old_snapshot = runtime.view.snapshot
+        assert await runtime._activate(candidate) is False
+        assert runtime.view.snapshot is old_snapshot
+        assert runtime.view.snapshot.revision == 1
+        assert len(TrackingRegistry.instances) == 3  # initial, failed candidate, exact old reload
+        assert runtime.last_activation_error_type == "ProviderError"
+    finally:
+        await runtime.stop()
+
+
 @pytest.mark.asyncio
 async def test_retired_generation_closes_only_after_last_session_lease(monkeypatch, tmp_path):
     source = json.loads(FIXTURE.read_text(encoding="utf-8"))

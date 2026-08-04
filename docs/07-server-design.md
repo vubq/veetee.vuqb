@@ -355,7 +355,9 @@ Activation flow:
 3. Chọn `BLUE_GREEN`, `QUIESCE_SWAP` hoặc reject bằng exact measured resource
    record; manifest hint không đủ để cho phép dual residency.
 4. Blue-green warm/probe new khi old còn active; quiesce-swap đóng readiness/admission,
-   drain/cancel lease rồi unload old trước khi warm new.
+   chỉ unload old sau khi lease đã về zero rồi mới warm new. Host slice hiện tại
+   fail-closed nếu còn lease (không tự ép disconnect); bounded drain/cancel và
+   readiness maintenance signal vẫn là hardening follow-up.
 5. Chỉ atomic swap active pointer sau representative readiness probe, và chỉ cho
    `SessionScope` tạo sau swap; baseline không có per-turn live activation.
 6. New warm/probe fail thì unload failed generation. Blue-green giữ old active;
