@@ -61,6 +61,28 @@
 
 ## Cập nhật gần nhất (2026-08-04)
 
+### Regression revalidation hiện tại
+
+- Readiness read-only vẫn ổn định: Voice `18100` revision `87`, Manager API
+  `18101` revision `87`, Manager Web `18181` đều trả HTTP `200`; source tree
+  sạch tại commit `e33ea94`.
+- Voice Server regression: **61 passed**. Manager API với dedicated
+  PostgreSQL `veetee_vubq_test`: **31/31 passed**. Manager Web typecheck,
+  ESLint, Vitest **63/63** và production build pass. Firmware host CTest
+  **1/1** pass. Không restart service và không mutate database runtime
+  `veetee_vubq`.
+- Metrics live sau regression: `active_turns=0`, `turn_releases=15`,
+  `protocol_errors=0`, `history_failed=0`, `presence_failed=0`,
+  `last_ttfa_ms=1292`. Các counter tích lũy như `activationFailures=14` và
+  `audio_frames_ignored=114` là history quan sát được, không phải lỗi readiness
+  mới; cần phân tích riêng trước khi dùng làm promotion evidence.
+- URL kiểm tra chắc chắn trên máy này: `http://127.0.0.1:18181` (UI),
+  `http://127.0.0.1:18101/health/ready` (Manager API),
+  `http://127.0.0.1:18100/health/ready` và `/metrics` (Voice). Endpoint private
+  Tailscale `:18443` vẫn được ghi theo mapping đã kiểm tra trước đó; nếu không
+  truy cập được từ thiết bị đang xem, dùng local UI hoặc kiểm tra tailnet/Serve
+  status trên chính máy host.
+
 - `autoTurn` first-speech watchdog đã publish ở runtime revision `87`; physical
   wake + 6 giây silence pass `NO_SPEECH_TIMEOUT` và `wake detector armed`.
   Sau late-frame drop fix, metrics physical là `activeTurns=0`,
