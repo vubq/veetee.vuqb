@@ -641,6 +641,10 @@
   `18100/health/ready` và Web `18181/` đều HTTP **200**; API OpenAPI đã expose
   `/api/v1/conversations/{id}` DELETE, `/api/v1/retention-delete-jobs/{id}` GET
   và response `410` cho conversation detail.
+- Production database migration was applied additively after an explicit DSN
+  guard for `veetee_vubq`; `schema_migrations` reports version **5**
+  (`005_conversation_delete_jobs.sql`). A read-only unknown-job probe returns
+  `404 application/problem+json`, not a missing-table/500 error.
 - Không restart Voice, không load provider generation mới và không tạo/xóa data
   trên production `veetee_vubq`; endpoint chỉ được xác nhận qua OpenAPI.
 - Audio lock vẫn giữ nguyên: không `pw-play`, wake/audio harness,
