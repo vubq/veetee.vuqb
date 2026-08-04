@@ -399,13 +399,22 @@ tailscale serve --https=${VEETEE_TAILSCALE_PORT} http://${VEETEE_BIND_HOST}:${VE
 tailscale serve status
 ```
 
-Runtime hiện tại đã thêm mapping private additive (không ghi đè mapping cũ):
-`https://veetee-dev.tail52a635.ts.net:18443/` → `http://127.0.0.1:18181`
-(Manager Web; Vite proxy tiếp `/api` và `/veetee` tới API/Voice `18101/18100`).
-`AllowFunnel` không có entry cho port `18443`, nên mapping này chỉ dành cho
-tailnet. Probe từ chính host có userspace Tailscale không tự route được tới địa
-chỉ tailnet của chính nó và đã timeout; cần một peer tailnet khác để xác nhận
-TLS/HTML/WebSocket thực tế. Không coi timeout self-route là lỗi của Manager Web.
+Runtime canonical hiện tại dùng **một private origin**, sau khi operator yêu cầu
+loại bỏ hostname/mapping cũ:
+
+| Public URL trong tailnet | Local target | Vai trò |
+|---|---|---|
+| `https://veetee.tail52a635.ts.net/` | `127.0.0.1:18181` | Manager Web |
+| `https://veetee.tail52a635.ts.net/api/v1/...` | Vite proxy → `127.0.0.1:18101` | Manager API |
+| `wss://veetee.tail52a635.ts.net/veetee/v1/` | Vite WebSocket proxy → `127.0.0.1:18100` | Voice Server |
+
+Hostname hiện tại lấy từ `tailscale status`: `veetee.tail52a635.ts.net`; node
+đã đổi từ `veetee-dev`. Toàn bộ Serve/Funnel mapping cũ đã reset, không còn
+public Funnel. Probe từ chính host có userspace Tailscale không tự route được tới
+địa chỉ tailnet của chính nó và có thể timeout; cần một peer tailnet khác để
+xác nhận TLS/HTML/API/WebSocket thực tế. Không coi self-route timeout là lỗi
+Manager Web. ESP32 không có Tailscale client nên vẫn dùng endpoint LAN
+`ws://<host-lan-ip>:18100/veetee/v1/`, không dùng dashboard HTTPS hostname.
 
 Không hard-code `tail*.ts.net` trong firmware, UI hoặc docs runtime. Checklist:
 

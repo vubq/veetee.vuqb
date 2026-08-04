@@ -45,11 +45,11 @@
    suy đoán hoặc ghi cứng hostname vào source.
 
    Read-only status hiện tại (binary local Tailscale 1.98.9):
-   `https://veetee-dev.tail52a635.ts.net:18443` là **tailnet-only**, proxy vào
-   Manager Web `18181`; Vite proxy cùng origin chuyển `/api` tới `18101` và
-   `/veetee` tới Voice `18100`. Root `:443` và các cổng `:8443`/`:10000` đang là
-   Funnel mapping cũ tới checkout khác, không dùng để kiểm tra Veetee hiện tại
-   và chưa bị thay đổi trong lượt này.
+   `https://veetee.tail52a635.ts.net/` là **tailnet-only**, proxy vào Manager
+   Web `18181`; Vite proxy cùng origin chuyển `/api` tới `18101` và `/veetee`
+   tới Voice `18100`. Hostname đã được operator yêu cầu đổi từ `veetee-dev` sang
+   `veetee`; toàn bộ Funnel/Serve mapping cũ đã reset. ESP32 vẫn dùng LAN WS,
+   vì dashboard hostname không thay thế Tailscale client trên firmware.
 
 ## Quy ước cập nhật
 
@@ -137,6 +137,9 @@
 
 ### Manager Web semantics và Tailscale hostname audit (2026-08-04)
 
+> Historical pre-reallocation snapshot. See **Tailscale canonical origin
+> reallocation** below for the current URL contract.
+
 - Đã thêm `name`, `autocomplete` và các thuộc tính spellcheck phù hợp cho
   login, assistant/device/provider/role forms; schema-generated text inputs
   cũng có field name và `autocomplete="off"`. Placeholder tiếng Việt dùng `…`
@@ -149,3 +152,17 @@
   `https://veetee-dev.tail52a635.ts.net:18443` → `127.0.0.1:18181`; root
   `https://veetee-dev.tail52a635.ts.net/` đi qua Funnel cũ tới `127.0.0.1:8081`
   và trả `502`. Không tự rename node, đổi Serve/Funnel, DNS, route hay mạng.
+
+### Tailscale canonical origin reallocation (2026-08-04)
+
+- Theo yêu cầu operator, đã reset toàn bộ Serve/Funnel mapping cũ, đổi node
+  thành `veetee`, rồi tạo private Serve duy nhất:
+  `https://veetee.tail52a635.ts.net/` → `127.0.0.1:18181`.
+- Contract truy cập cùng origin: `/api/v1/...` → Manager API `18101` và
+  `/veetee/v1/` (WebSocket) → Voice Server `18100`, do Vite proxy đã cấu hình
+  target bằng env. Không mở public Funnel và không đổi NetworkManager/Wi-Fi.
+- Local route verification: UI `200`, `/api/v1/auth/me` qua proxy `200`,
+  `/openapi.json` qua proxy `200`, Voice proxy trả handshake `400` khi không có
+  hello (đúng là route đã tới WebSocket handler). TLS/HTML/WebSocket từ hostname
+  mới cần xác nhận trên peer khác trong tailnet vì userspace Tailscale không
+  self-route từ shell này.
