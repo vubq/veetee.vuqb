@@ -52,6 +52,7 @@ class Scenario:
     wake_clip: Path
     utterance_clip: Path
     stages: tuple[Stage, ...]
+    forbidden_markers: tuple[str, ...]
     utterance_after: str
     startup_wait_seconds: float
     inter_repetition_delay_seconds: float
@@ -88,6 +89,21 @@ def _boolean(value: Any, field: str, *, default: bool) -> bool:
     if not isinstance(value, bool):
         raise HarnessError(f"{field} must be a boolean")
     return value
+
+
+def _string_list(value: Any, field: str, *, maximum: int = 64) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or len(value) > maximum:
+        raise HarnessError(f"{field} must be a list with at most {maximum} items")
+    values: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise HarnessError(f"{field}[{index}] must be a non-empty string")
+        marker = item.strip()
+        if marker not in values:
+            values.append(marker)
+    return tuple(values)
 
 
 def _path(value: Any, *, base: Path, field: str) -> Path:
@@ -150,6 +166,7 @@ def load_scenario(path: Path) -> Scenario:
         wake_clip=_path(clips.get("wake"), base=base, field="clips.wake"),
         utterance_clip=_path(clips.get("utterance"), base=base, field="clips.utterance"),
         stages=tuple(stages),
+        forbidden_markers=_string_list(document.get("forbiddenMarkers", []), "forbiddenMarkers"),
         utterance_after=_string(document.get("utteranceAfter", stages[0].name), "utteranceAfter"),
         startup_wait_seconds=_number(monitor.get("startupWaitSeconds", 1), "monitor.startupWaitSeconds", minimum=0, maximum=30),
         inter_repetition_delay_seconds=_number(document.get("interRepetitionDelaySeconds", 0.25), "interRepetitionDelaySeconds", minimum=0, maximum=10),
@@ -248,6 +265,7 @@ def preflight_firmware_config(scenario: Scenario) -> dict[str, Any]:
 
 class Monitor:
     def __init__(self, scenario: Scenario, *, verbose: bool) -> None:
+        self.scenario = scenario
         command = [
             *scenario.monitor_command,
             "-C", str(scenario.project_dir),
@@ -263,6 +281,7 @@ class Monitor:
         self._pty_master: int | None = None
         self.lines: deque[tuple[float, str]] = deque(maxlen=120)
         self._queue: deque[tuple[float, str]] = deque()
+        self._forbidden_hits: deque[tuple[float, str, str]] = deque(maxlen=32)
         self._condition = threading.Condition()
         self._reader: threading.Thread | None = None
 
@@ -297,6 +316,9 @@ class Monitor:
             with self._condition:
                 self.lines.append((timestamp, line))
                 self._queue.append((timestamp, line))
+                for marker in self.scenario.forbidden_markers:
+                    if marker in line:
+                        self._forbidden_hits.append((timestamp, marker, line))
                 self._condition.notify_all()
             if self.verbose:
                 print(f"serial: {line}", flush=True)
@@ -305,6 +327,9 @@ class Monitor:
         deadline = time.monotonic() + timeout_seconds
         with self._condition:
             while True:
+                if self._forbidden_hits:
+                    _, forbidden, line = self._forbidden_hits[0]
+                    raise HarnessError(f"forbidden serial marker observed: {forbidden!r}: {line}")
                 for index, (timestamp, line) in enumerate(self._queue):
                     if marker in line:
                         del self._queue[index]
@@ -316,6 +341,10 @@ class Monitor:
                 if self.process is not None and self.process.poll() is not None and not self._queue:
                     raise HarnessError(f"serial monitor exited with status {self.process.returncode} before marker {marker!r}")
                 self._condition.wait(timeout=remaining)
+
+    def forbidden_hits(self) -> tuple[tuple[float, str, str], ...]:
+        with self._condition:
+            return tuple(self._forbidden_hits)
 
     def stop(self) -> None:
         process = self.process
@@ -421,6 +450,7 @@ def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) 
             "missingClips": missing,
             "firmwareConfig": firmware_config or {"path": str(scenario.firmware_config), "exists": False},
             "events": [stage.__dict__ for stage in scenario.stages],
+            "forbiddenMarkers": list(scenario.forbidden_markers),
             "utteranceAfter": scenario.utterance_after,
             "interRepetitionDelaySeconds": scenario.inter_repetition_delay_seconds,
             "repetitions": scenario.repetitions,
@@ -494,7 +524,11 @@ def main(argv: list[str] | None = None) -> int:
         scenario = load_scenario(args.scenario)
         results = run(scenario, allow_audio=args.allow_audio, dry_run=args.dry_run, verbose=args.verbose)
         if args.report and not args.dry_run:
-            args.report.expanduser().resolve().write_text(json.dumps({"scenario": str(scenario.source), "events": results}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            args.report.expanduser().resolve().write_text(json.dumps({
+                "scenario": str(scenario.source),
+                "forbiddenMarkers": list(scenario.forbidden_markers),
+                "events": results,
+            }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return 0
     except KeyboardInterrupt:
         print("interrupted; monitor/player cleanup requested", file=sys.stderr)

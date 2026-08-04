@@ -16,6 +16,14 @@
   },
   "repetitions": 1,
   "utteranceAfter": "capture_started",
+  "forbiddenMarkers": [
+    "Guru Meditation Error",
+    "stack overflow",
+    "abort() was called",
+    "Opus capture encode failed",
+    "queue full",
+    "capture read failed"
+  ],
   "events": [
     {"name": "wake_detected", "marker": "wake detected", "timeoutSeconds": 15},
     {"name": "capture_started", "marker": "wake start", "timeoutSeconds": 8},

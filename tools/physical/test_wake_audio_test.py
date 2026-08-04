@@ -48,6 +48,25 @@ class WakeAudioHarnessTest(unittest.TestCase):
             with self.assertRaisesRegex(wake_audio_test.HarnessError, "repetitions"):
                 wake_audio_test.load_scenario(scenario_file)
 
+    def test_forbidden_serial_markers_are_configured_and_fail_fast(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            scenario_file = base / "scenario.json"
+            scenario_file.write_text(json.dumps({
+                "monitor": {"command": ["never-run"], "projectDir": str(base), "serialPort": "/dev/null", "baud": 115200},
+                "player": {"command": ["never-run", "{file}"]},
+                "clips": {"wake": str(base / "wake.wav"), "utterance": str(base / "utterance.wav")},
+                "forbiddenMarkers": ["panic", "stack overflow", "panic"],
+                "events": [{"name": "wake", "marker": "wake detected", "timeoutSeconds": 1}],
+            }), encoding="utf-8")
+            parsed = wake_audio_test.load_scenario(scenario_file)
+            self.assertEqual(parsed.forbidden_markers, ("panic", "stack overflow"))
+            monitor = wake_audio_test.Monitor(parsed, verbose=False)
+            with monitor._condition:
+                monitor._forbidden_hits.append((0.0, "panic", "panic: test"))
+            with self.assertRaisesRegex(wake_audio_test.HarnessError, "forbidden serial marker"):
+                monitor.wait_for("wake detected", 0.01)
+
     def test_run_refuses_audio_without_allow_flag_before_monitor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

@@ -38,6 +38,11 @@ python3 tools/physical/wake_audio_test.py \
 
 The example intentionally reports missing clip files; that is expected.
 
+Scenarios may also define `forbiddenMarkers`. The serial monitor fails fast when
+one of these configured strings appears, so a soak report cannot silently pass
+after a panic, stack overflow, queue/capture failure, or codec error. Keep this
+list board/build-specific and do not put secrets or raw audio in it.
+
 ## Physical run (only after explicit owner permission)
 
 Activate ESP-IDF first so `idf.py` is on `PATH`, then run:
