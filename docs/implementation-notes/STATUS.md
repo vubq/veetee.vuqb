@@ -481,3 +481,17 @@
   `activeConnections=1`, `activeTurns=0`, `activationFailures=0`,
   `protocol_errors=0`, `audio_frames_in=0`, `audio_frames_out=0`. Không chạy
   `pw-play`, wake harness hoặc bất kỳ test phát audio nào.
+
+### Full host regression recheck (2026-08-05, non-audio)
+
+- Voice Server: **81/81**; Ruff và compileall pass.
+- Manager API với dedicated PostgreSQL `veetee_vubq_test`:
+  **36/36** pass; `lint`, `build`, `openapi:check` pass. Production database
+  `veetee_vubq` không được dùng cho test.
+- Manager Web: typecheck, lint, production build và **66/66** unit tests pass;
+  Chromium E2E **9/9** pass, gồm provider schema flow, conflict/offline states,
+  keyboard history và serious/critical a11y gate.
+- Firmware host CTest: **1/1** pass. Không flash, không reset và không mở serial
+  để phát audio.
+- Runtime tools: **20/20** pass. Đây là host/network evidence; M0/M1 physical
+  speaker/LCD/PTT/wake/AEC acceptance vẫn chờ quyền audio của operator.
