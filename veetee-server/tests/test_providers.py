@@ -259,6 +259,54 @@ async def test_groq_provider_reuses_generation_scoped_http_pool_and_closes_it(mo
 
 
 @pytest.mark.asyncio
+async def test_groq_provider_preserves_fragmented_tool_arguments_and_ignores_malformed_events(monkeypatch):
+    class Response:
+        status_code = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            del exc_type, exc, traceback
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"tool_calls":[{"function":{"name":"get_weather","arguments":""}}]}}]}'
+            yield 'data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\\"city\\":"}}]}}]}'
+            yield 'data: {"choices":[]}'
+            yield 'data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\\"Hà Nội\\"}"}}]}}]}'
+            yield "data: [DONE]"
+
+    class Client:
+        def __init__(self, **kwargs):
+            del kwargs
+
+        def stream(self, method, endpoint, *, headers, json):
+            del method, endpoint, headers, json
+            return Response()
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr("veetee_server.providers.httpx.AsyncClient", Client)
+    provider = GroqLLM(
+        {"endpoint": "https://example.invalid/v1/chat/completions", "model": "configured-model"},
+        None,
+        types.SimpleNamespace(resolve=lambda reference_id: "key-from-manager"),
+        ["secret-1"],
+    )
+
+    deltas = [delta async for delta in provider.stream(prompt="weather", locale="vi-VN", tools=[{"name": "get_weather"}])]
+
+    assert [(delta.tool_name, delta.tool_arguments) for delta in deltas[:-1]] == [
+        ("get_weather", ""),
+        (None, '{"city":'),
+        (None, '"Hà Nội"}'),
+    ]
+    assert deltas[-1].final is True
+    await provider.close()
+
+
+@pytest.mark.asyncio
 async def test_test_only_groq_key_pool_rotates_after_pre_stream_rate_limit(tmp_path, monkeypatch):
     key_file = tmp_path / "groq.keys"
     key_file.write_text("FIRST=test-key-one\nSECOND=test-key-two\n", encoding="utf-8")

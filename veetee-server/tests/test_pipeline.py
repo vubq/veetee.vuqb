@@ -258,8 +258,11 @@ async def test_tool_call_round_trip_streams_answer_after_device_result(tmp_path)
             nonlocal calls
             calls += 1
             if calls == 1:
-                yield LLMDelta(tool_name="device.led.set", tool_arguments='{"red":')
-                yield LLMDelta(tool_name="device.led.set", tool_arguments="255}")
+                # OpenAI-compatible providers normally send the function name
+                # once, then argument fragments with tool_name omitted.
+                yield LLMDelta(tool_name="device.led.set", tool_arguments="")
+                yield LLMDelta(tool_arguments='{"red":')
+                yield LLMDelta(tool_arguments="255}")
                 yield LLMDelta(final=True)
                 return
             yield LLMDelta(text="Đèn đã bật. ")

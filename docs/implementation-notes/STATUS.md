@@ -354,6 +354,16 @@
 - Probe chỉ đo capability Internet và không gửi call xuống thiết bị; fragmented
   arguments, authorization và MCP end-to-end vẫn cần test riêng.
 
+### Production Groq fragmented tool-call hardening (2026-08-05)
+
+- Provider SSE parser fail-closed với malformed event/`choices`/`delta` shape.
+- Pipeline giữ argument fragments không lặp `function.name`, fail-closed khi
+  thiếu tool name và không trộn hai tool name trong cùng round.
+- Targeted provider/pipeline: **28 passed**; full Voice Server sau thay đổi:
+  **139 passed**, Ruff/compileall pass.
+- Không mở audio/network carrier, không gọi hardware tool thật, không đổi
+  provider fallback/production key policy.
+
 ### PostgreSQL test isolation and acoustic-test pause (2026-08-04)
 
 - Test harness Manager API nay fail-closed nếu `VEETEE_TEST_DATABASE_URL_FILE`

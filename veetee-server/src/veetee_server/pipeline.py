@@ -248,12 +248,15 @@ class TurnPipeline:
                 nonlocal answer_started, tool_name, tool_arguments
                 if self._cancelled():
                     return
-                if self.turn.llm_first_at is None and (delta.text or delta.tool_name):
+                if self.turn.llm_first_at is None and (delta.text or delta.tool_name or delta.tool_arguments is not None):
                     self.turn.llm_first_at = time.perf_counter()
-                if delta.tool_name:
-                    tool_name = delta.tool_name
+                if delta.tool_name or delta.tool_arguments is not None:
+                    if delta.tool_name:
+                        if tool_name is not None and tool_name != delta.tool_name:
+                            raise ProviderError("MULTIPLE_TOOL_CALLS_UNSUPPORTED", "one turn emitted multiple tool names")
+                        tool_name = delta.tool_name
+                        await self._send_text(control_message("llm", session_id=self.session_id, turn_id=self.turn.turn_id, tool_name=delta.tool_name))
                     tool_arguments += delta.tool_arguments or ""
-                    await self._send_text(control_message("llm", session_id=self.session_id, turn_id=self.turn.turn_id, tool_name=delta.tool_name))
                     return
                 for segment in segmenter.push(delta.text, final=delta.final):
                     if self._cancelled():
@@ -297,6 +300,8 @@ class TurnPipeline:
                     next_delta.cancel()
                 await asyncio.gather(*(task for task in (timer, next_delta) if task is not None), return_exceptions=True)
                 await self._close_stream(stream)
+            if tool_arguments and not tool_name:
+                raise ProviderError("TOOL_NAME_MISSING", "tool arguments arrived without a tool name")
             if tool_name and self._execute_tool is not None:
                 if self._cancelled():
                     return " ".join(answer_parts).strip()

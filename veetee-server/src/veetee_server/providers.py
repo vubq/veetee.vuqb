@@ -671,16 +671,31 @@ class GroqLLM:
                         event = json.loads(data)
                     except json.JSONDecodeError:
                         continue
-                    delta = event.get("choices", [{}])[0].get("delta", {})
-                    text = delta.get("content") or ""
-                    tool_calls = delta.get("tool_calls") or []
+                    choices = event.get("choices")
+                    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+                        continue
+                    delta = choices[0].get("delta")
+                    if not isinstance(delta, dict):
+                        continue
+                    text = delta.get("content") if isinstance(delta.get("content"), str) else ""
+                    tool_calls = delta.get("tool_calls")
+                    if not isinstance(tool_calls, list):
+                        tool_calls = []
                     if text:
                         yield LLMDelta(text=text)
                     for call in tool_calls:
-                        function = call.get("function") or {}
+                        if not isinstance(call, dict):
+                            continue
+                        function = call.get("function")
+                        if not isinstance(function, dict):
+                            continue
+                        name = function.get("name") if isinstance(function.get("name"), str) else None
+                        arguments = function.get("arguments") if isinstance(function.get("arguments"), str) else ""
+                        if not name and not arguments:
+                            continue
                         yield LLMDelta(
-                            tool_name=function.get("name"),
-                            tool_arguments=function.get("arguments", ""),
+                            tool_name=name,
+                            tool_arguments=arguments,
                         )
         except httpx.TimeoutException as exc:
             raise ProviderError("LLM_TIMEOUT", "Groq request timed out", retryable=True) from exc
