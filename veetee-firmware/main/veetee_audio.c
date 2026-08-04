@@ -26,6 +26,9 @@
 #ifndef CONFIG_VEETEE_AEC_ENABLED
 #define CONFIG_VEETEE_AEC_ENABLED 0
 #endif
+#ifndef CONFIG_VEETEE_AEC_PROCESS_WAKE
+#define CONFIG_VEETEE_AEC_PROCESS_WAKE 1
+#endif
 #ifndef CONFIG_VEETEE_AEC_FILTER_LENGTH
 #define CONFIG_VEETEE_AEC_FILTER_LENGTH 4
 #endif
@@ -340,7 +343,7 @@ int vt_audio_process_capture(vt_audio_t *audio, int16_t *samples, size_t sample_
 
 int vt_audio_process_wake(vt_audio_t *audio, int16_t *samples, size_t sample_count) {
     if (audio == NULL || samples == NULL || sample_count == 0U) return ESP_ERR_INVALID_ARG;
-#if CONFIG_VEETEE_AEC_ENABLED
+#if CONFIG_VEETEE_AEC_ENABLED && CONFIG_VEETEE_AEC_PROCESS_WAKE
     if (vt_audio_aec_ready(audio)) {
         int aec_result = vt_aec_process(&audio->aec, samples, sample_count);
         if (aec_result != VT_AEC_OK) return ESP_ERR_INVALID_SIZE;

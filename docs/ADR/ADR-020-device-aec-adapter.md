@@ -57,6 +57,9 @@ Chọn **Option B** cho promotion slice hiện tại.
   `tts/start`; M1 time-to-silence cần physical test riêng.
 - Delay giữa I2S DMA, speaker và mic cần tune theo board revision nếu echo test
   cho thấy residual vượt gate.
+- `CONFIG_VEETEE_AEC_PROCESS_WAKE` là diagnostic-only switch để so sánh đường
+  WakeNet có/không qua AEC trong khi vẫn giữ duplex gate; product profile phải
+  giữ `y`.
 
 ## Verification
 
@@ -66,6 +69,10 @@ Chọn **Option B** cho promotion slice hiện tại.
   repetition khi dùng test-only Groq key pool. Đây là lifecycle/resource
   evidence; acoustic echo cancellation và false accept/reject vẫn chưa được
   đánh dấu pass.
+- Acoustic barge-in report AEC-on và diagnostic bypass đều timeout ở wake lần
+  hai; bypass vẫn có `WAKE_DURING_PLAYBACK=y` và mức mic hữu hạn, nên AEC transform
+  không được coi là nguyên nhân duy nhất. Delay/reference alignment và echo-only
+  corpus vẫn mở.
 
 ## Related
 

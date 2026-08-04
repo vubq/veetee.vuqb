@@ -144,6 +144,15 @@ config VEETEE_WAKE_DURING_PLAYBACK
         available. The default half-duplex policy prevents speaker output from
         contaminating the on-device wake detector.
 
+config VEETEE_AEC_PROCESS_WAKE
+    bool "Apply AEC to wake detector input"
+    default y
+    depends on VEETEE_WAKE_DURING_PLAYBACK
+    help
+        Keep enabled for the product path. Disable only for a bounded diagnostic
+        comparison that keeps WakeNet active during playback but bypasses the
+        AEC transform; do not promote that configuration to a product build.
+
 config VEETEE_PTT_GPIO
     int "Push-to-talk GPIO"
     default -1
