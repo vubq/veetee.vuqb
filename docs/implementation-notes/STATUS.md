@@ -807,3 +807,15 @@
 - Voice Server tests **82 passed**, `compileall` và Ruff `src/tests` pass. Không
   load model thật, không phát audio/mở microphone/speaker, không restart runtime,
   không flash/reset ESP32, không đổi Wi-Fi/Tailscale/production DB.
+
+### Config-driven locale/voice selector (2026-08-05, host-only)
+
+- `RoleConfigFeature` không còn hard-code danh sách locale; select lấy locale
+  explicit từ manifest của các TTS installation (giữ locale hiện tại nếu chưa
+  có catalog) và reload `GET /voices?locale=...` khi owner đổi locale.
+- Provider catalog/read lỗi làm form fail-closed; voice request chuyển locale
+  có loading/error handling, không giữ danh sách voice stale như trạng thái live.
+  Locale wildcard không bị biến thành giá trị `*` để publish.
+- Manager Web unit **92/92**, E2E **11/11**, typecheck/lint/build pass. Không
+  đổi API/wire/provider fallback, không restart runtime, không phát audio/mở
+  microphone/speaker, không flash/reset ESP32, không đổi Wi-Fi/Tailscale.

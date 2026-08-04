@@ -46,6 +46,14 @@ function gateway(overrides: Partial<ManagerGateway> = {}): ManagerGateway {
   return {
     getRoleConfig: vi.fn(async () => success(resource)),
     listVoices: vi.fn(async () => success({ items: voices, total: voices.length })),
+    listProviderInstallations: vi.fn(async () => success([{
+      id: 'preview.provider.vieneu',
+      kind: 'tts',
+      displayNameKey: 'VieNeu',
+      version: '1.0.0',
+      manifest: { locales: ['vi-VN'] },
+      configSchema: {},
+    }])),
     saveRoleConfig: vi.fn(async () => success(resource)),
     publishAssistant: vi.fn(async () => success({ revision: resource.revision + 1 })),
     ...overrides,

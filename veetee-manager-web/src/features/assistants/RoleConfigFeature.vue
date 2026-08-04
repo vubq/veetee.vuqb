@@ -3,7 +3,7 @@ import { Play, Save } from '@lucide/vue'
 import { computed, nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
-import type { RevisionConflictProblem, RoleConfig, RoleConfigDraft, Versioned, VoiceProfile } from '@/domain'
+import type { ProviderInstallationView, RevisionConflictProblem, RoleConfig, RoleConfigDraft, Versioned, VoiceProfile } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import FormSection from '@/ui/patterns/FormSection.vue'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
@@ -27,7 +27,9 @@ const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
 const resource = ref<Versioned<RoleConfig>>()
 const draft = ref<RoleConfigDraft>()
 const voices = ref<VoiceProfile[]>([])
+const installations = ref<ProviderInstallationView[]>([])
 const loading = ref(true)
+const voiceLoading = ref(false)
 const saving = ref(false)
 const publishing = ref(false)
 const customRole = ref(true)
@@ -39,6 +41,7 @@ const actionError = ref('')
 const stateHeading = ref<HTMLElement | null>(null)
 const actionErrorHeading = ref<HTMLElement | null>(null)
 let loadGeneration = 0
+let voiceGeneration = 0
 
 function toDraft(config: RoleConfig): RoleConfigDraft {
   return {
@@ -104,7 +107,24 @@ const noSpeechAlertInvalid = computed(() => {
 const autoTurnError = computed(() => Boolean(draft.value?.autoTurn.enabled && (noSpeechTimeoutInvalid.value || noSpeechAlertInvalid.value)))
 
 const voiceOptions = computed<VtSelectOption[]>(() => voices.value.map((voice) => ({ value: voice.id, label: voice.name, description: `${voice.providerName} · ${voice.description}`, disabled: !voice.available })))
-const localeOptions: VtSelectOption[] = [{ value: 'vi-VN', label: 'Tiếng Việt', description: 'Ưu tiên hiện tại' }, { value: 'en-US', label: 'English (US)', description: 'Kiến trúc đã sẵn sàng mở rộng' }]
+const localeOptions = computed<VtSelectOption[]>(() => {
+  const locales = new Set<string>()
+  if (draft.value?.locale) locales.add(draft.value.locale)
+  installations.value
+    .filter((installation) => installation.kind === 'tts')
+    .forEach((installation) => {
+      const values = installation.manifest.locales
+      if (!Array.isArray(values)) return
+      values.forEach((value) => {
+        if (typeof value === 'string' && value.trim() && value !== '*') locales.add(value.trim())
+      })
+    })
+  return [...locales].sort((left, right) => left.localeCompare(right)).map((locale) => ({
+    value: locale,
+    label: locale,
+    description: locale === draft.value?.locale ? 'Ngôn ngữ hiện tại' : 'Từ catalog provider',
+  }))
+})
 const personalityOptions: VtSelectOption[] = [{ value: '41111111-1111-4111-8111-111111111111', label: 'Người bạn đồng hành', description: 'Tự nhiên, thân thiện và biết hỏi lại' }, { value: '42222222-2222-4222-8222-222222222222', label: 'Trợ lý tập trung', description: 'Ngắn gọn, ưu tiên hành động' }, { value: 'custom', label: 'Tính cách tùy chỉnh', description: 'Prompt quyết định hành vi' }]
 const styleOptions: VtSelectOption[] = [{ value: 'concise', label: 'Ngắn gọn' }, { value: 'natural', label: 'Tự nhiên' }, { value: 'detailed', label: 'Chi tiết' }]
 const rateOptions: VtSelectOption[] = [{ value: '0.9', label: 'Chậm · 0,9×' }, { value: '1', label: 'Tự nhiên · 1,0×' }, { value: '1.05', label: 'Nhanh nhẹ · 1,05×' }, { value: '1.1', label: 'Nhanh · 1,1×' }]
@@ -116,25 +136,37 @@ async function load() {
   loadState.value = 'loading'
   loadError.value = ''
   try {
-    const [configResult, voicesResult] = await Promise.all([
-      gateway.getRoleConfig(props.assistantId),
-      gateway.listVoices('vi-VN'),
+    const configResult = await gateway.getRoleConfig(props.assistantId)
+    if (!configResult.ok) {
+      if (generation !== loadGeneration) return
+      loadState.value = configResult.meta.offline ? 'offline' : 'error'
+      loadError.value = configResult.meta.offline
+        ? 'Đang ngoại tuyến; chưa thể tải role config.'
+        : 'Không tải được role config từ Manager API.'
+      await focusStateHeading()
+      return
+    }
+    const locale = configResult.data.value.locale
+    const [voicesResult, installationsResult] = await Promise.all([
+      gateway.listVoices(locale),
+      gateway.listProviderInstallations(),
     ])
     if (generation !== loadGeneration) return
-    if (!configResult.ok || !voicesResult.ok) {
-      const offline = configResult.meta.offline || voicesResult.meta.offline
+    if (!voicesResult.ok || !installationsResult.ok) {
+      const offline = voicesResult.meta.offline || installationsResult.meta.offline
       loadState.value = offline ? 'offline' : 'error'
-      loadError.value = !configResult.ok && !voicesResult.ok
-        ? 'Không tải được role config và danh sách giọng nói từ Manager API.'
-        : !configResult.ok
-          ? 'Không tải được role config từ Manager API.'
-          : 'Không tải được danh sách giọng nói; form tạm thời bị khóa để tránh chọn voice chưa đồng bộ.'
+      loadError.value = !voicesResult.ok && !installationsResult.ok
+        ? 'Không tải được danh sách giọng nói và provider catalog từ Manager API.'
+        : !voicesResult.ok
+          ? 'Không tải được danh sách giọng nói; form tạm thời bị khóa để tránh chọn voice chưa đồng bộ.'
+          : 'Không tải được provider catalog; form tạm thời bị khóa để tránh chọn locale chưa đồng bộ.'
       await focusStateHeading()
       return
     }
     resource.value = configResult.data
     draft.value = toDraft(configResult.data.value)
     voices.value = voicesResult.data.items
+    installations.value = installationsResult.data
     emit('revision', configResult.data.revision, false)
     loadState.value = 'ready'
   } catch {
@@ -145,6 +177,31 @@ async function load() {
   } finally {
     if (generation === loadGeneration) loading.value = false
   }
+}
+
+async function loadVoices(locale: string) {
+  const generation = ++voiceGeneration
+  voiceLoading.value = true
+  try {
+    const result = await gateway.listVoices(locale)
+    if (generation !== voiceGeneration) return
+    if (!result.ok) {
+      notify('Không thể tải giọng theo ngôn ngữ', { tone: 'error', message: result.meta.offline ? 'Manager API đang ngoại tuyến.' : 'Provider TTS chưa sẵn sàng.', assertive: true })
+      return
+    }
+    voices.value = result.data.items
+  } catch {
+    if (generation === voiceGeneration) notify('Không thể tải giọng theo ngôn ngữ', { tone: 'error', message: 'Không kết nối được Manager API.', assertive: true })
+  } finally {
+    if (generation === voiceGeneration) voiceLoading.value = false
+  }
+}
+
+function onLocaleChanged(locale: string) {
+  if (!draft.value || draft.value.locale === locale) return
+  draft.value.locale = locale
+  markDirty()
+  void loadVoices(locale)
 }
 
 async function focusStateHeading() {
@@ -314,9 +371,10 @@ onMounted(load)
         >
           <VtSelect
             id="role-locale"
-            v-model="draft.locale"
+            :model-value="draft.locale"
             label="Ngôn ngữ"
             :options="localeOptions"
+            @update:model-value="onLocaleChanged"
           />
         </VtFormField>
         <VtFormField
@@ -328,6 +386,7 @@ onMounted(load)
             v-model="draft.speech.voiceId"
             label="Giọng nói"
             :options="voiceOptions"
+            :disabled="voiceLoading"
           />
         </VtFormField>
       </div>
