@@ -244,3 +244,18 @@
   host CTest **1/1**, physical/runtime tooling **38 passed**, Manager API
   **21 passed/10 skipped** (PostgreSQL test suite không được bật trong env này),
   Manager Web typecheck/lint/Vitest **63 passed** và production build pass.
+
+### 100-repetition fixture re-check (2026-08-04)
+
+- Soak threshold 65% với fixture LLM/TTS, profile 3, delay 10 giây và scenario
+  100 đã dừng ở lượt 3 vì timeout `wake_detected`; hai lượt đầu pass đủ
+  lifecycle. Không có forbidden firmware marker, fixture metrics
+  `protocol_errors=0`, `turn_rejections=0`, nên đây là false-reject acoustic/
+  WakeNet path chứ không phải Groq quota.
+- Report redact: `/tmp/veetee-wake-100-fixture-threshold65-20260804.json`.
+  Production Voice revision 87 đã khôi phục với test-key env bị loại,
+  `activeConnections=1`, `activeTurns=0`. Không hạ threshold và không thêm
+  provider fallback để che lỗi detector.
+- M1 vẫn chưa đóng: cần instrument AEC/playback-reference/WakeNet timing,
+  acoustic echo-only và voice-onset barge-in/time-to-silence; 20/20 A/B trước
+  đó không thay thế 100-repetition gate.
