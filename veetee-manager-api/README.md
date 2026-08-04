@@ -9,6 +9,7 @@ và device settings được gửi qua API theo JSON Schema rồi tạo revision
 ```bash
 npm install
 VEETEE_API_HOST=127.0.0.1 VEETEE_API_PORT=8001 \
+VEETEE_PUBLIC_BASE_URL=http://127.0.0.1:8001 \
 VEETEE_DATABASE_MODE=memory \
 npm run dev
 ```
@@ -44,3 +45,7 @@ nhận lại secret value.
 
 Health: `/health/live`, `/health/ready`. User API có prefix `/api/v1`, machine
 runtime snapshot là `/internal/v1/runtime-config`. OpenAPI JSON ở `/openapi.json`.
+
+Runtime canonical của project dùng API loopback `127.0.0.1:18101` và đặt
+`VEETEE_PUBLIC_BASE_URL=https://veetee.tail52a635.ts.net`. Giá trị này chỉ dùng
+cho trường `servers` trong OpenAPI; API không suy hostname từ header `Host`.

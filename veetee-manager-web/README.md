@@ -21,8 +21,12 @@ npm run dev -- --host 0.0.0.0
 Production-like local API mode:
 
 ```bash
-VITE_MANAGER_API_URL=http://127.0.0.1:8001 npm run dev -- --host 0.0.0.0
+VITE_MANAGER_API_URL=http://127.0.0.1:18101 npm run dev -- --host 0.0.0.0
 ```
+
+Khi chạy qua runtime canonical, mở `https://veetee.tail52a635.ts.net/`; Web
+dùng cùng origin cho `/api/v1` và `/veetee/v1` (WebSocket), không cần hostname
+cũ hoặc cổng public riêng.
 
 Vite sẽ in URL local và LAN thực tế. Các route chính:
 

@@ -6,7 +6,7 @@ import cors from '@fastify/cors'
 import sensible from '@fastify/sensible'
 import swagger from '@fastify/swagger'
 import argon2 from 'argon2'
-import { readEnvironment, type Environment } from './config.js'
+import { publicBaseUrl, readEnvironment, type Environment } from './config.js'
 import { EncryptedFileSecretStore, type SecretValueStore } from './secret-store.js'
 import { InMemoryStore, loadInitialSnapshot, parseCatalog, type ConversationTurnInput, type ProviderKind, type Store } from './store.js'
 import { LoginThrottle, normalizeLoginIdentity } from './auth-throttle.js'
@@ -281,6 +281,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}
 
 export async function buildApp(overrides?: { env?: Environment; store?: Store; authSecret?: string; secretStore?: SecretValueStore }): Promise<FastifyInstance> {
   const env = overrides?.env ?? readEnvironment()
+  const advertisedBaseUrl = publicBaseUrl(env)
   const store = overrides?.store ?? await createStore(env)
   const authSecret = overrides?.authSecret ?? (env.VEETEE_AUTH_MODE === 'local' ? await readRequiredFile(env.VEETEE_AUTH_SECRET_FILE, 'VEETEE_AUTH_SECRET_FILE') : undefined)
   const secretStore = overrides?.secretStore ?? await createSecretStore(env)
@@ -325,7 +326,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
         description: 'Control-plane API for assistant, provider and device configuration.',
         license: { name: 'Private project', identifier: 'LicenseRef-Veetee-Private' },
       },
-      servers: [{ url: '{baseUrl}', variables: { baseUrl: { default: 'http://127.0.0.1:8001' } } }],
+      servers: [{ url: advertisedBaseUrl }],
       tags: [
         { name: 'auth', description: 'Owner session lifecycle' },
         { name: 'providers', description: 'Provider catalog and configuration' },

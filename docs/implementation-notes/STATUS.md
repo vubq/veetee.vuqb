@@ -205,6 +205,10 @@
   `200`, `200`, `200`, `400` (400 là probe thiếu hello và chứng minh đã tới
   WebSocket handler). Runtime test harness `18 passed`; Voice vẫn ready,
   `activeConnections=1`, không có lỗi refresh hiện tại.
+- Manager API hiện nhận `VEETEE_PUBLIC_BASE_URL` từ manifest và OpenAPI runtime
+  quảng cáo `https://veetee.tail52a635.ts.net` (không còn default loopback
+  `8001` khi chạy canonical); preflight exact origin trả `204` với CORS origin
+  đúng. Đây là metadata contract, không mở thêm listener hoặc public port.
 - Sau commit `68243d6`, Voice unit `veetee-voice-18100` đã được restart đúng
   source mới; VieNeu prewarm hoàn tất, health revision `87` ready và board đã
   reconnect (`activeConnections=1`, `activeTurns=0`). Server regression là
@@ -259,3 +263,37 @@
 - M1 vẫn chưa đóng: cần instrument AEC/playback-reference/WakeNet timing,
   acoustic echo-only và voice-onset barge-in/time-to-silence; 20/20 A/B trước
   đó không thay thế 100-repetition gate.
+
+### AEC-transform bypass diagnostic and audio-test pause (2026-08-04)
+
+- Diagnostic image giữ AEC handle/full-duplex wake policy nhưng tắt riêng
+  `CONFIG_VEETEE_AEC_PROCESS_WAKE`; scenario 20 lượt, threshold 65%, delay 10
+  giây và fixture LLM/TTS đạt **20/20** lifecycle. Không có forbidden marker,
+  protocol error hoặc turn rejection. Report redact ở
+  `/tmp/veetee-wake-aec-bypass-20-delay10-20260804.json`; đây chỉ là evidence
+  thu hẹp nghi vấn AEC transform, chưa phải kết luận nguyên nhân.
+- Đã trả scenario local về 100 lượt, bật lại `CONFIG_VEETEE_AEC_PROCESS_WAKE`,
+  build/flash production ESP32-S3 không erase NVS; Voice production Manager
+  revision 87 chạy lại trên `18100`, history/presence bật, không có
+  `VEETEE_TEST_GROQ_KEYS_FILE`, health `200`, board reconnect
+  `activeConnections=1`, `activeTurns=0`.
+- Theo yêu cầu operator, **đã dừng mọi test phát audio** sau diagnostic này.
+  Không chạy lại `pw-play`, wake harness hoặc bài acoustic cho tới khi operator
+  cấp quyền mới; thời gian còn lại chỉ được làm host/serial-read-only/docs/runtime
+  checks không phát âm thanh.
+
+### URL metadata hardening and non-audio regression (2026-08-04)
+
+- `VEETEE_PUBLIC_BASE_URL` đã được thêm vào Manager API environment schema;
+  OpenAPI `servers` lấy origin đã cấu hình, không suy từ `Host`. Manifest
+  canonical đặt `https://veetee.tail52a635.ts.net`; runtime probe live trả đúng
+  URL này, CORS preflight exact origin `204`, không mở listener/public port mới.
+- Sau khi dọn các API watcher trùng của chính checkout (không đụng process,
+  database hoặc mạng của checkout khác), canonical listeners là Voice
+  `0.0.0.0:18100`, API `127.0.0.1:18101`, Web `127.0.0.1:18181`; cả ba ready,
+  Voice revision 87 `activeConnections=1`, Tailscale Serve duy nhất vẫn `/` →
+  Web `18181`.
+- Regression không phát audio: Manager API **32/32** (gồm PostgreSQL test DB
+  riêng), Voice Server **62 passed**, Manager Web **63/63** + typecheck/lint/
+  build, firmware host CTest **1/1**, runtime tests **20 passed**. Không chạy
+  wake harness hoặc `pw-play` trong lượt này.

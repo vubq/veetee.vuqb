@@ -564,3 +564,14 @@ test('OpenAPI is generated from every registered route', async () => {
     await app.close()
   }
 })
+
+test('OpenAPI advertises the configured public origin instead of inferring Host', async () => {
+  const app = await buildApp({ env: { ...env, VEETEE_PUBLIC_BASE_URL: 'https://example.test' } })
+  await app.ready()
+  try {
+    const document = app.swagger() as { servers?: Array<{ url?: string }> }
+    assert.deepEqual(document.servers, [{ url: 'https://example.test' }])
+  } finally {
+    await app.close()
+  }
+})

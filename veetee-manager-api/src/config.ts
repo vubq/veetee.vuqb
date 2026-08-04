@@ -4,6 +4,7 @@ import { Type, type Static } from '@sinclair/typebox'
 const schema = Type.Object({
   VEETEE_API_HOST: Type.String({ default: '127.0.0.1' }),
   VEETEE_API_PORT: Type.Integer({ default: 8001, minimum: 1, maximum: 65535 }),
+  VEETEE_PUBLIC_BASE_URL: Type.Optional(Type.String({ minLength: 1 })),
   VEETEE_DATABASE_MODE: Type.Union([Type.Literal('memory'), Type.Literal('postgres')], { default: 'memory' }),
   VEETEE_DATABASE_URL_FILE: Type.Optional(Type.String()),
   VEETEE_INITIAL_SNAPSHOT_FILE: Type.Optional(Type.String()),
@@ -28,6 +29,25 @@ const schema = Type.Object({
 })
 
 export type Environment = Static<typeof schema>
+
+/**
+ * Canonical origin advertised by the API contract. The reverse proxy/Serve
+ * hostname is deployment configuration, never inferred from an untrusted Host.
+ */
+export function publicBaseUrl(env: Environment): string {
+  const configured = env.VEETEE_PUBLIC_BASE_URL?.trim()
+  const value = configured || `http://${env.VEETEE_API_HOST}:${env.VEETEE_API_PORT}`
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    throw new Error('VEETEE_PUBLIC_BASE_URL must be an absolute http(s) URL')
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('VEETEE_PUBLIC_BASE_URL must use http or https')
+  }
+  return value.replace(/\/+$/, '')
+}
 
 export function readEnvironment(): Environment {
   return envSchema<Environment>({ schema, dotenv: true })

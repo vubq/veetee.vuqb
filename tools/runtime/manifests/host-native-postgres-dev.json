@@ -45,6 +45,7 @@
       "environment": {
         "VEETEE_API_HOST": "127.0.0.1",
         "VEETEE_API_PORT": "18101",
+        "VEETEE_PUBLIC_BASE_URL": "https://veetee.tail52a635.ts.net",
         "VEETEE_DATABASE_MODE": "postgres",
         "VEETEE_DATABASE_URL_FILE": "${VEETEE_ROOT}/secrets/manager.database-url",
         "VEETEE_MACHINE_TOKEN_FILE": "${VEETEE_ROOT}/secrets/manager.machine-token",
