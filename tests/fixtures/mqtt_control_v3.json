@@ -1,0 +1,42 @@
+{
+  "config": {
+    "endpoint": "broker.test:8883",
+    "client_id": "device-fixture",
+    "publish_topic": "upstream/opaque-7",
+    "subscribe_topic": "downstream/opaque-7",
+    "keepalive": 240,
+    "control_qos": 1,
+    "retain": false
+  },
+  "client_hello": {
+    "type": "hello",
+    "version": 3,
+    "transport": "udp",
+    "features": {"mcp": true},
+    "audio_params": {
+      "format": "opus",
+      "sample_rate": 16000,
+      "channels": 1,
+      "frame_duration": 60
+    }
+  },
+  "server_hello": {
+    "type": "hello",
+    "version": 3,
+    "transport": "udp",
+    "session_id": "session-1",
+    "audio_params": {
+      "format": "opus",
+      "sample_rate": 24000,
+      "channels": 1,
+      "frame_duration": 60
+    },
+    "udp": {
+      "server": "192.0.2.10",
+      "port": 8884,
+      "key": "00112233445566778899aabbccddeeff",
+      "nonce": "01000000000000000000000000000000"
+    }
+  },
+  "tts_start_payload_hex": "7b2274797065223a22747473222c227374617465223a227374617274222c2273657373696f6e5f6964223a2273657373696f6e2d31222c22617564696f5f73747265616d5f6964223a34322c2273746172745f73657175656e6365223a313230317d"
+}
