@@ -975,3 +975,12 @@
   warning nền, được ghi nhận để xử lý khi mở carrier; không sửa IDF trong lát cắt
   này. Audio/physical lock tiếp tục: không phát/thu audio, không serial audio,
   không flash/reset/erase, không đổi Wi‑Fi/Tailscale, không dùng production DB.
+
+### M3 UDP sequence guard parity — host-only (2026-08-05)
+
+- `UdpCryptoSession.decrypt()` từ chối sequence `0` ngay sau structural length
+  validation, đồng nhất với firmware clear-header codec và tránh đưa packet bất
+  hợp lệ vào stream barrier.
+- Targeted UDP **18 passed**; full Voice Server **134 passed**, Ruff và
+  compileall pass. Không mở broker/socket/carrier, không decode/play audio,
+  không flash/reset ESP32 và không đổi Wi‑Fi/Tailscale.

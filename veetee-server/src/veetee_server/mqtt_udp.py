@@ -216,11 +216,14 @@ class UdpCryptoSession:
             raise UdpProtocolError("UDP_PAYLOAD_INVALID", "UDP payload length is outside limits")
         if len(raw) != UDP_HEADER_SIZE + payload_len:
             raise UdpProtocolError("UDP_LENGTH_MISMATCH", "UDP datagram length does not match payload_len")
+        sequence = struct.unpack(">I", header[12:16])[0]
+        if sequence == 0:
+            raise UdpProtocolError("UDP_SEQUENCE_INVALID", "UDP sequence must be in 1..2^32-1")
         return UdpAudioPacket(
             flags=header[1],
             ssrc=struct.unpack(">I", header[4:8])[0],
             timestamp_ms=struct.unpack(">I", header[8:12])[0],
-            sequence=struct.unpack(">I", header[12:16])[0],
+            sequence=sequence,
             opus=_crypt(self.key, header, raw[UDP_HEADER_SIZE:]),
         )
 

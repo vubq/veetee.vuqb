@@ -72,6 +72,17 @@ def test_udp_crypto_rejects_length_and_payload_before_decrypt():
         session.decrypt(bytes.fromhex("01000000000000000000000000000001"))
 
 
+def test_udp_crypto_rejects_zero_sequence_before_barrier():
+    udp = _hello()["udp"]
+    assert isinstance(udp, dict)
+    session = UdpCryptoSession(bytes.fromhex(udp["key"]), bytes.fromhex(udp["nonce"]))
+    # The payload is intentionally one byte so structural length validation
+    # passes before the sequence guard runs.
+    datagram = bytes.fromhex("01000001000000000000000000000000") + b"x"
+    with pytest.raises(UdpProtocolError, match="sequence"):
+        session.decrypt(datagram)
+
+
 def _packet(sequence: int) -> UdpAudioPacket:
     return UdpAudioPacket(flags=0, ssrc=0, timestamp_ms=sequence * 60, sequence=sequence, opus=bytes([sequence & 0xFF]))
 
