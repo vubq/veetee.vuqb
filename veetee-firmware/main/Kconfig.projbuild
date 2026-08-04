@@ -108,6 +108,15 @@ config VEETEE_WAKE_INPUT_BUFFER_SAMPLES
     default 4096
     depends on VEETEE_WAKE_ENABLED
 
+config VEETEE_WAKE_DURING_PLAYBACK
+    bool "Allow wake detection while speaker plays"
+    default n
+    depends on VEETEE_WAKE_ENABLED
+    help
+        Enable only after a verified playback-reference AEC/duplex path is
+        available. The default half-duplex policy prevents speaker output from
+        contaminating the on-device wake detector.
+
 config VEETEE_PTT_GPIO
     int "Push-to-talk GPIO"
     default -1

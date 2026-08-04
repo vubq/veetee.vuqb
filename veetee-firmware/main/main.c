@@ -125,6 +125,9 @@
 #ifndef CONFIG_VEETEE_WAKE_ENABLED
 #define CONFIG_VEETEE_WAKE_ENABLED 0
 #endif
+#ifndef CONFIG_VEETEE_WAKE_DURING_PLAYBACK
+#define CONFIG_VEETEE_WAKE_DURING_PLAYBACK 0
+#endif
 #ifndef CONFIG_VEETEE_WAKE_MODEL_NAME
 #define CONFIG_VEETEE_WAKE_MODEL_NAME ""
 #endif
@@ -172,6 +175,8 @@ typedef struct {
     SemaphoreHandle_t audio_decoder_lock;
     EventGroupHandle_t wifi_events;
     volatile bool capture_active;
+    volatile bool playback_busy;
+    volatile bool wake_rearm_pending;
     volatile bool stop_requested;
     volatile bool wifi_stop_requested;
     bool wake_auto_capture;
@@ -206,6 +211,23 @@ static void request_wake_arm(vt_app_t *app) {
     /* Re-arm is idempotent; a full queue means another arm request is already
        pending and must not block a transport callback or network task. */
     (void)xQueueSend(app->wake_command_queue, &command, 0);
+}
+
+static bool playback_is_idle(const vt_app_t *app) {
+    if (app == NULL || app->playback_queue == NULL) return true;
+    return !app->playback_busy && uxQueueMessagesWaiting(app->playback_queue) == 0;
+}
+
+static void request_wake_arm_when_playback_idle(vt_app_t *app) {
+    if (app == NULL) return;
+    app->wake_rearm_pending = true;
+    if (!playback_is_idle(app)) {
+        ESP_LOGI(TAG, "wake re-arm deferred until playback idle");
+        return;
+    }
+    app->wake_rearm_pending = false;
+    request_wake_arm(app);
+    ESP_LOGI(TAG, "wake detector re-arm requested after playback idle");
 }
 
 static bool state_apply(vt_app_t *app, vt_device_event_t event) {
@@ -313,6 +335,7 @@ static void websocket_text_callback(const cJSON *message, void *context) {
         cJSON *tts_state = cJSON_GetObjectItemCaseSensitive(message, "state");
         if (!cJSON_IsString(tts_state) || tts_state->valuestring == NULL) return;
         if (strcmp(tts_state->valuestring, "start") == 0) {
+            app->wake_rearm_pending = false;
             (void)xQueueReset(app->playback_queue);
             /* Stop capture before resetting the decoder. The decoder mutex
                serializes a possible in-flight decode. The Opus
@@ -332,8 +355,8 @@ static void websocket_text_callback(const cJSON *message, void *context) {
             if (app->wake_auto_capture) {
                 app->capture_active = false;
                 app->wake_auto_capture = false;
-                request_wake_arm(app);
-                ESP_LOGI(TAG, "wake capture complete; detector re-arm requested");
+                request_wake_arm_when_playback_idle(app);
+                ESP_LOGI(TAG, "wake capture complete; detector re-arm scheduled");
             }
             (void)state_apply(app, VT_EVENT_TTS_STOP);
         }
@@ -342,8 +365,8 @@ static void websocket_text_callback(const cJSON *message, void *context) {
     if (strcmp(type->valuestring, "alert") == 0) {
         app->capture_active = false;
         app->wake_auto_capture = false;
-        request_wake_arm(app);
         (void)xQueueReset(app->playback_queue);
+        request_wake_arm_when_playback_idle(app);
         (void)state_apply(app, VT_EVENT_ABORT);
         cJSON *code = cJSON_GetObjectItemCaseSensitive(message, "code");
         ESP_LOGW(TAG, "server alert code=%s", cJSON_IsString(code) ? code->valuestring : "unknown");
@@ -378,13 +401,18 @@ static void playback_task(void *context) {
     static vt_playback_packet_t packet;
     while (!app->stop_requested) {
         if (xQueueReceive(app->playback_queue, &packet, pdMS_TO_TICKS(250)) == pdTRUE) {
+            app->playback_busy = true;
             if (!audio_decoder_lock_take(app)) {
                 ESP_LOGW(TAG, "audio decoder lock timeout before playback");
+                app->playback_busy = false;
+                if (app->wake_rearm_pending) request_wake_arm_when_playback_idle(app);
                 continue;
             }
             int result = vt_audio_decode_and_play(&app->audio, packet.bytes, packet.length);
             audio_decoder_lock_give(app);
             if (result != ESP_OK) ESP_LOGW(TAG, "Opus playback decode failed");
+            app->playback_busy = false;
+            if (app->wake_rearm_pending) request_wake_arm_when_playback_idle(app);
         }
     }
     vTaskDelete(NULL);
@@ -459,7 +487,11 @@ static void capture_task(void *context) {
 
         /* The detector owns idle and playback audio. During an active capture
            turn, do not let the same wake phrase interrupt its own utterance. */
-        if (vt_wake_is_ready(&app->wake) && !app->capture_active) {
+        bool wake_allowed = !app->capture_active;
+#if !CONFIG_VEETEE_WAKE_DURING_PLAYBACK
+        wake_allowed = wake_allowed && state_read(app) != VT_DEVICE_SPEAKING;
+#endif
+        if (vt_wake_is_ready(&app->wake) && wake_allowed) {
             vt_wake_event_t wake_event = {0};
             int wake_result = vt_wake_feed(&app->wake, samples, sample_count, &wake_event);
             if (wake_result != VT_WAKE_OK) {
@@ -527,6 +559,7 @@ static void ptt_task(void *context) {
                 app->wake_auto_capture = false;
                 (void)send_control(app, "abort", NULL, "wake_word_detected");
                 (void)xQueueReset(app->playback_queue);
+                request_wake_arm_when_playback_idle(app);
                 (void)state_apply(app, VT_EVENT_ABORT);
                 ESP_LOGI(TAG, "wake interrupt");
             }
@@ -544,10 +577,12 @@ static void ptt_task(void *context) {
                     pending_auto = false;
                     vt_device_state_t current = state_read(app);
                     if (vt_state_is_interruptible(current)) {
+                        bool was_auto_capture = app->wake_auto_capture;
                         app->capture_active = false;
                         app->wake_auto_capture = false;
                         (void)send_control(app, "abort", NULL, "button_interrupt");
                         (void)xQueueReset(app->playback_queue);
+                        if (was_auto_capture) request_wake_arm_when_playback_idle(app);
                         (void)state_apply(app, VT_EVENT_ABORT);
                         ESP_LOGI(TAG, "PTT interrupt state=%s", vt_state_name(current));
                     }

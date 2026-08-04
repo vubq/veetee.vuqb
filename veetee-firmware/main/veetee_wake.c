@@ -32,6 +32,7 @@ static void release_runtime(vt_wake_t *wake) {
     wake->models = NULL;
     wake->interface_handle = NULL;
     wake->model_data = NULL;
+    wake->model_key = NULL;
     wake->input_buffer = NULL;
     wake->input_capacity = 0U;
     wake->input_size = 0U;
@@ -141,6 +142,7 @@ int vt_wake_init(vt_wake_t *wake, const vt_wake_config_t *config) {
     wake->models = models;
     wake->interface_handle = iface;
     wake->model_data = model_data;
+    wake->model_key = selected_model_name;
     wake->input_buffer = input;
     wake->input_capacity = capacity;
     wake->chunk_samples = (size_t)chunk_samples;
@@ -202,7 +204,7 @@ int vt_wake_feed(vt_wake_t *wake, const int16_t *samples, size_t sample_count, v
 int vt_wake_arm(vt_wake_t *wake) {
     if (wake == NULL) return VT_WAKE_ERR_INVALID_ARG;
     if (!wake->ready) return VT_WAKE_ERR_UNAVAILABLE;
-    if (wake->interface_handle == NULL || wake->model_data == NULL) return VT_WAKE_ERR_MODEL;
+    if (wake->interface_handle == NULL || wake->model_data == NULL || wake->model_key == NULL) return VT_WAKE_ERR_MODEL;
 
     const esp_wn_iface_t *iface = (const esp_wn_iface_t *)wake->interface_handle;
     if (iface->destroy == NULL || iface->create == NULL || iface->get_samp_rate == NULL ||
@@ -221,7 +223,7 @@ int vt_wake_arm(vt_wake_t *wake) {
     wake->armed = false;
     iface->destroy(previous);
     det_mode_t mode = wake->detection_mode == 95U ? DET_MODE_95 : DET_MODE_90;
-    model_iface_data_t *model = iface->create(wake->model_name, mode);
+    model_iface_data_t *model = iface->create(wake->model_key, mode);
     if (model == NULL) {
         wake->ready = false;
         return VT_WAKE_ERR_MODEL;

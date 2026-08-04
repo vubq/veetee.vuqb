@@ -36,6 +36,7 @@ typedef struct {
     void *models;
     const void *interface_handle;
     void *model_data;
+    const char *model_key;
     int16_t *input_buffer;
     size_t input_capacity;
     size_t input_size;
