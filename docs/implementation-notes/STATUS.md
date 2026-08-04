@@ -500,6 +500,17 @@
   `protocol_errors=0`. Không gọi Groq, không load provider generation mới và
   không mutate production DB `veetee_vubq`.
 
+### Profile conformance host recheck (2026-08-05, non-audio)
+
+- Re-run các test handshake/control cho profile WebSocket `ws-v1-compat`, `ws-v2`
+  và `ws-v3`: **8 passed**, gồm compatibility turn, MCP ordering, malformed
+  handshake và session ownership. Runtime lab/runtime helper tests: **18 passed**.
+- `ptt_acceptance.py --help` và wake harness dry-run/help chỉ kiểm tra CLI; không
+  mở serial, microphone, speaker hoặc audio player. Không gửi frame tới ESP32,
+  không gọi provider production và không đổi config/network.
+- Đây chỉ là host protocol evidence. Cross-peer provider turn, M0 manual PTT,
+  speaker/LCD/mic và M1 acoustic gates vẫn pending operator permission.
+
 ### Voice runtime source sync after resource gate (2026-08-05, non-audio)
 
 - Sau khi push `86e2041`, chỉ Voice service `veetee-voice-18100.service` được
