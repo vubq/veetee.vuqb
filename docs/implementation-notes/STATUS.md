@@ -7,7 +7,7 @@
 ## Snapshot
 
 - Branch: `master`
-- Commit source gần nhất: `2a0f89d` (`feat(firmware): add playback reference AEC adapter`)
+- Commit source gần nhất: `2a8e1d5` (`test(physical): add configurable wake barge-in harness`)
 - Working tree: sau mốc harness/note hiện sạch đối với file được track; secret,
   build output, raw audio và report `/tmp` vẫn bị ignore.
 - Runtime checkout này: Voice Server `18100`, Manager API `18101`; không dùng
