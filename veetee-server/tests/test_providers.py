@@ -388,6 +388,21 @@ def test_provider_snapshot_rejects_fallback_shape_before_activation(tmp_path):
         ProviderRegistry(load_snapshot(fixture))
 
 
+def test_optional_provider_selection_reports_typed_shape_errors(tmp_path):
+    source = json.loads((Path(__file__).parents[1] / "config/fixtures/m0.json").read_text(encoding="utf-8"))
+    source["providers"]["intent"] = {"config": {"rules": []}}
+    missing_id = tmp_path / "missing-provider-id.json"
+    missing_id.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="providerId missing or empty"):
+        ProviderRegistry(load_snapshot(missing_id))
+
+    source["providers"]["intent"] = {"providerId": "veetee.intent.patterns", "config": {"rules": []}, "secretRefs": [3]}
+    malformed_refs = tmp_path / "malformed-secret-refs.json"
+    malformed_refs.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="secretRefs must be a non-empty string array"):
+        ProviderRegistry(load_snapshot(malformed_refs))
+
+
 def test_provider_entry_point_contract_rejects_invalid_metadata(monkeypatch):
     class EntryPoint:
         group = "veetee.providers"

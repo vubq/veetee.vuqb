@@ -796,3 +796,14 @@
 - Manager API dedicated PostgreSQL `veetee_vubq_test`: **43/43**, lint/build/
   `openapi:check` pass. Không đổi wire/provider fallback/runtime/production DB;
   audio lock vẫn bật.
+
+### Voice provider snapshot shape hardening (2026-08-05, host-only)
+
+- `ProviderRegistry` không còn để `KeyError` hoặc âm thầm biến secretRefs sai
+  kiểu thành `[]`: providerId thiếu/rỗng và secretRefs malformed giờ trả
+  `ConfigurationError` typed trước khi factory/model allocation.
+- Không có fallback hoặc retry provider; snapshot lỗi bị từ chối fail-closed,
+  optional intent/memory cũng dùng cùng contract với provider bắt buộc.
+- Voice Server tests **82 passed**, `compileall` và Ruff `src/tests` pass. Không
+  load model thật, không phát audio/mở microphone/speaker, không restart runtime,
+  không flash/reset ESP32, không đổi Wi-Fi/Tailscale/production DB.

@@ -1016,7 +1016,9 @@ class ProviderRegistry:
                 await result
 
     def _selection(self, item: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-        provider_id = item["providerId"]
+        provider_id = item.get("providerId")
+        if not isinstance(provider_id, str) or not provider_id.strip():
+            raise ConfigurationError("providerId missing or empty")
         config = item.get("config")
         if not isinstance(config, dict):
             raise ConfigurationError(f"provider config must be object: {provider_id}")
@@ -1033,8 +1035,8 @@ class ProviderRegistry:
         if factory is None:
             raise ProviderError(f"{kind.upper()}_PROVIDER_UNAVAILABLE", f"selected {kind} provider unavailable: {provider_id}")
         raw_refs = item.get("secretRefs", [])
-        if not isinstance(raw_refs, list) or not all(isinstance(value, str) and value for value in raw_refs):
-            raw_refs = []
+        if not isinstance(raw_refs, list) or not all(isinstance(value, str) and value.strip() for value in raw_refs):
+            raise ConfigurationError(f"provider secretRefs must be a non-empty string array when present: {provider_id}")
         context = ProviderFactoryContext(
             secret_file=self.secret_file,
             secret_resolver=self.secret_resolver,
