@@ -202,3 +202,19 @@
   reconnect (`activeConnections=1`, `activeTurns=0`). Server regression là
   **62 passed**; probe Web root/API/OpenAPI đều `200`, WebSocket route trả `400`
   khi thiếu hello như contract, không phải lỗi proxy.
+
+### Physical wake soak / test-key isolation (2026-08-04)
+
+- Production single-key physical run đạt 15 lượt rồi dừng ở lượt 16 do
+  `provider_error_LLM_RATE_LIMITED=1`; không có firmware panic, queue, codec
+  hoặc server protocol error. Đây là quota evidence, không phải M1 wake verdict.
+- Test-only snapshot revision `87` với `VEETEE_TEST_GROQ_KEYS_FILE` đã chạy cùng
+  cổng `18100`; đạt 14 lượt, dừng ở lượt 15 vì không có `wake detected` trước
+  khi gọi LLM. Verbose re-run độc lập đạt 3/3. Reports đã redact và nằm ngoài
+  Git tại `/tmp/veetee-wake-100-delay10-rerun-20260804.json`,
+  `/tmp/veetee-wake-100-testkeys-delay10-20260804.json` và
+  `/tmp/veetee-wake-3-verbose.json`.
+- Production Voice đã được khôi phục bằng Manager source, history/presence bật,
+  test-key pool bị loại khỏi environment; health `200`, `activeConnections=1`,
+  `activeTurns=0`. M1 vẫn mở false-reject/AEC/acoustic gate và chưa đạt 100
+  repetition.
