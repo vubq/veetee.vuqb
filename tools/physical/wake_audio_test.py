@@ -323,13 +323,15 @@ class Monitor:
             if self.verbose:
                 print(f"serial: {line}", flush=True)
 
-    def wait_for(self, marker: str, timeout_seconds: float) -> tuple[float, str]:
+    def wait_for(self, marker: str, timeout_seconds: float, *, not_before: float | None = None) -> tuple[float, str]:
         deadline = time.monotonic() + timeout_seconds
         with self._condition:
             while True:
                 if self._forbidden_hits:
                     _, forbidden, line = self._forbidden_hits[0]
                     raise HarnessError(f"forbidden serial marker observed: {forbidden!r}: {line}")
+                if not_before is not None:
+                    self._queue = deque(item for item in self._queue if item[0] >= not_before)
                 for index, (timestamp, line) in enumerate(self._queue):
                     if marker in line:
                         del self._queue[index]
@@ -483,14 +485,19 @@ def run(
         if scenario.startup_wait_seconds:
             time.sleep(scenario.startup_wait_seconds)
         for repetition in range(1, scenario.repetitions + 1):
+            stage_not_before = time.monotonic()
             wake_player = _start_player(scenario.player_command, scenario.wake_clip, allow_audio=True)
             utterance_played = False
             for stage in scenario.stages:
-                timestamp, line = monitor.wait_for(stage.marker, stage.timeout_seconds)
+                try:
+                    timestamp, line = monitor.wait_for(stage.marker, stage.timeout_seconds, not_before=stage_not_before)
+                except HarnessError as error:
+                    raise HarnessError(f"repetition {repetition} stage {stage.name}: {error}") from error
                 result = _event(stage.name, started, repetition=repetition, marker=stage.marker,
                                 serialElapsedMs=round((timestamp - started) * 1000, 1))
                 results.append(result)
                 print(json.dumps(result, ensure_ascii=False), flush=True)
+                stage_not_before = timestamp
                 if stage.name == scenario.utterance_after and not utterance_played:
                     assert wake_player is not None
                     _wait_player(wake_player, scenario.wake_clip)

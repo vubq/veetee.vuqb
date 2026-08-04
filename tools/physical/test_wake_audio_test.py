@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import tempfile
+import time
 import unittest
 
 import wake_audio_test
@@ -66,6 +67,18 @@ class WakeAudioHarnessTest(unittest.TestCase):
                 monitor._forbidden_hits.append((0.0, "panic", "panic: test"))
             with self.assertRaisesRegex(wake_audio_test.HarnessError, "forbidden serial marker"):
                 monitor.wait_for("wake detected", 0.01)
+
+    def test_wait_for_ignores_marker_before_stage_boundary(self) -> None:
+        root = Path(__file__).resolve().parent
+        scenario = wake_audio_test.load_scenario(root / "wake-test.example.json")
+        monitor = wake_audio_test.Monitor(scenario, verbose=False)
+        boundary = time.monotonic()
+        with monitor._condition:
+            monitor._queue.append((boundary - 1, "wake detected stale"))
+            monitor._queue.append((boundary + 0.01, "wake detected current"))
+        timestamp, line = monitor.wait_for("wake detected", 0.1, not_before=boundary)
+        self.assertGreaterEqual(timestamp, boundary)
+        self.assertEqual(line, "wake detected current")
 
     def test_run_refuses_audio_without_allow_flag_before_monitor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
