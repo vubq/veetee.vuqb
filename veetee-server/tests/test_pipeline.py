@@ -250,6 +250,97 @@ async def test_long_answer_keeps_memory_excerpt_bounded(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_long_text_streams_thirty_minutes_without_collecting_audio(tmp_path):
+    """A long streamed answer must stay segment/frame bounded.
+
+    This is a deterministic pipeline gate: provider output is streamed one
+    semantic segment at a time and the codec is replaced with a tiny test
+    double so the test measures queue/ownership behavior rather than model
+    throughput.  The physical VieNeu/Opus promotion gate remains separate.
+    """
+
+    source = json.loads((Path(__file__).parents[1] / "config/fixtures/m0.json").read_text(encoding="utf-8"))
+    source["providers"]["memory"] = {
+        "providerId": "veetee.memory.session-window",
+        "version": "1.0.0",
+        "config": {"maxTurns": 4, "maxCharacters": 120},
+    }
+    source["segmentation"] = {
+        "minimumCharacters": 1,
+        "maximumCharacters": 180,
+        "strongPunctuation": ["."],
+    }
+    fixture = tmp_path / "long-stream.json"
+    fixture.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    snapshot = load_snapshot(fixture)
+    registry = ProviderRegistry(snapshot)
+
+    frame_duration_ms = int(snapshot.raw["wire"]["frameDurationMs"])
+    expected_frames = (30 * 60 * 1000) // frame_duration_ms
+    segment_text = "a" * 179 + "."
+
+    class LongLLM:
+        async def stream(self, *, prompt, locale, tools):
+            del prompt, locale, tools
+            for _ in range(expected_frames):
+                yield LLMDelta(text=segment_text)
+            yield LLMDelta(final=True)
+
+    class OneFrameTTS:
+        async def stream(self, text, *, locale, voice):
+            del text, locale, voice
+            yield AudioChunk(b"\0" * (24_000 * frame_duration_ms // 1000 * 2), 24_000)
+
+    class TinyCodec:
+        def encode_downlink(self, pcm, frame_samples):
+            assert len(pcm) == frame_samples * 2
+            return b"x"
+
+    class RecordingMemory:
+        assistant_text = ""
+
+        def add_turn(self, user_text, assistant_text):
+            del user_text
+            self.assistant_text = assistant_text
+
+        def context(self):
+            return ""
+
+    registry.llm = LongLLM()
+    registry.tts = OneFrameTTS()
+    memory = RecordingMemory()
+    turn = Turn(turn_id="long-stream-turn", generation=1, mode="manual", cancelled=asyncio.Event())
+    counters = {"binary": 0, "segments": 0}
+
+    async def send_text(value):
+        if value.get("type") == "tts" and value.get("state") == "sentence_start":
+            counters["segments"] += 1
+
+    async def send_binary(value):
+        assert value
+        counters["binary"] += 1
+
+    pipeline = TurnPipeline(
+        snapshot=snapshot,
+        registry=registry,
+        codec=TinyCodec(),
+        profile="ws-v3",
+        session_id="long-stream-session",
+        turn=turn,
+        send_text=send_text,
+        send_binary=send_binary,
+        memory=memory,
+        metrics={},
+    )
+    await pipeline.ingest(b"\0" * 1920)
+    await pipeline.finish()
+
+    assert counters == {"binary": expected_frames, "segments": expected_frames}
+    assert len(turn.transcript) <= 128
+    assert 0 < len(memory.assistant_text) <= 120
+
+
+@pytest.mark.asyncio
 async def test_active_provider_fault_is_terminal_without_secondary_call():
     snapshot = load_snapshot(Path(__file__).parents[1] / "config/fixtures/m0.json")
     registry = ProviderRegistry(snapshot)
