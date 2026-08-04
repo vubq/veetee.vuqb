@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import importlib
 import inspect
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -30,6 +31,9 @@ import opuslib
 
 from .config import ConfigurationError, RuntimeSnapshot
 from .secrets import EncryptedFileSecretResolver, SecretResolutionError
+
+
+LOG = logging.getLogger("veetee.voice.providers")
 
 
 class ProviderError(RuntimeError):
@@ -429,6 +433,57 @@ class FixtureLLM:
         yield LLMDelta(final=True)
 
 
+class GroqTestKeyPool:
+    """Opt-in key cursor used only by fixture/test server processes.
+
+    This is deliberately outside the production secretRef path.  The pool
+    exposes only ordinals to diagnostics and rotates after a request starts;
+    it never belongs in a published Manager snapshot.
+    """
+
+    def __init__(self, path: Path) -> None:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise ConfigurationError("test Groq key pool cannot be read") from exc
+        values: list[str] = []
+        for raw in lines:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            value = line.split("=", 1)[1] if "=" in line else line
+            value = value.strip()
+            if value:
+                values.append(value)
+        if not values:
+            raise ConfigurationError("test Groq key pool is empty")
+        self._keys = tuple(values)
+        self._cursor = 0
+        self._lock = asyncio.Lock()
+
+    @property
+    def count(self) -> int:
+        return len(self._keys)
+
+    async def attempts(self) -> tuple[tuple[int, str], ...]:
+        """Reserve a round-robin starting point without exposing key values."""
+
+        async with self._lock:
+            start = self._cursor
+            self._cursor = (start + 1) % len(self._keys)
+        return tuple(
+            (ordinal, self._keys[ordinal])
+            for offset in range(len(self._keys))
+            for ordinal in ((start + offset) % len(self._keys),)
+        )
+
+    async def mark_success(self, ordinal: int) -> None:
+        """Start the next turn after the key that actually succeeded."""
+
+        async with self._lock:
+            self._cursor = (ordinal + 1) % len(self._keys)
+
+
 class GroqLLM:
     def __init__(
         self,
@@ -436,11 +491,15 @@ class GroqLLM:
         secret_file: Path | None,
         secret_resolver: EncryptedFileSecretResolver | None,
         secret_refs: list[str],
+        *,
+        test_key_file: Path | None = None,
     ) -> None:
-        if secret_file is None and secret_resolver is None:
+        if secret_file is None and secret_resolver is None and test_key_file is None:
             raise ProviderError("LLM_SECRET_MISSING", "Groq provider requires one secret reference")
         if len(secret_refs) > 1:
             raise ConfigurationError("Groq provider accepts exactly one secretRef")
+        if test_key_file is not None and secret_refs:
+            raise ConfigurationError("test Groq key pool requires empty secretRefs")
         self._model = _required_string(config, "model")
         self._endpoint = _required_string(config, "endpoint")
         self._temperature = float(config.get("temperature", 0.3))
@@ -470,6 +529,7 @@ class GroqLLM:
         self._secret_file = secret_file
         self._secret_resolver = secret_resolver
         self._secret_ref = secret_refs[0] if secret_refs else None
+        self._test_key_pool = GroqTestKeyPool(test_key_file) if test_key_file is not None else None
         self._client: httpx.AsyncClient | None = None
         self._client_lock = asyncio.Lock()
         self._closed = False
@@ -534,8 +594,41 @@ class GroqLLM:
         }
         if tools:
             payload["tools"] = tools
-        headers = {"Authorization": f"Bearer {self._key()}", "Content-Type": "application/json"}
         client = await self._get_client()
+        pool = self._test_key_pool
+        if pool is None:
+            async for delta in self._stream_once(client, payload, self._key()):
+                yield delta
+            return
+
+        last_error: ProviderError | None = None
+        for ordinal, key in await pool.attempts():
+            emitted = False
+            try:
+                async for delta in self._stream_once(client, payload, key):
+                    emitted = True
+                    yield delta
+                await pool.mark_success(ordinal)
+                LOG.info("test-only Groq key ordinal=%d succeeded", ordinal + 1)
+                return
+            except ProviderError as exc:
+                # A partial stream cannot be replayed safely: retrying would
+                # duplicate text/tool deltas in the TTS pipeline.
+                if exc.code != "LLM_RATE_LIMITED" or emitted:
+                    raise
+                last_error = exc
+                LOG.info("test-only Groq key ordinal=%d rate_limited", ordinal + 1)
+                continue
+        assert last_error is not None
+        raise last_error
+
+    async def _stream_once(
+        self,
+        client: httpx.AsyncClient,
+        payload: dict[str, Any],
+        key: str,
+    ) -> AsyncIterator[LLMDelta]:
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         try:
             async with client.stream("POST", self._endpoint, headers=headers, json=payload) as response:
                 if response.status_code == 429:
@@ -760,10 +853,12 @@ class ProviderRegistry:
         *,
         secret_file: Path | None = None,
         secret_resolver: EncryptedFileSecretResolver | None = None,
+        test_groq_keys_file: Path | None = None,
     ) -> None:
         self.snapshot = snapshot
         self.secret_file = secret_file
         self.secret_resolver = secret_resolver
+        self.test_groq_keys_file = test_groq_keys_file
         self._closed = False
         self.vad = self._vad(snapshot.provider("vad"))
         self.asr = self._asr(snapshot.provider("asr"))
@@ -832,7 +927,13 @@ class ProviderRegistry:
             raw_refs = item.get("secretRefs", [])
             if not isinstance(raw_refs, list) or not all(isinstance(value, str) and value for value in raw_refs):
                 raise ConfigurationError("Groq provider secretRefs must be a non-empty string array")
-            return GroqLLM(config, self.secret_file, self.secret_resolver, list(raw_refs))
+            return GroqLLM(
+                config,
+                self.secret_file,
+                self.secret_resolver,
+                list(raw_refs),
+                test_key_file=self.test_groq_keys_file,
+            )
         raise ProviderError("LLM_PROVIDER_UNAVAILABLE", f"selected LLM provider unavailable: {provider_id}")
 
     def _tts(self, item: dict[str, Any]) -> TTSProvider:

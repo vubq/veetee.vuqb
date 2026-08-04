@@ -57,6 +57,11 @@ starting the next repetition. Use
 `--verbose` only when raw serial output is needed; do not commit its output or
 any credential-bearing log.
 
+For a test-only Groq multi-key run, start Voice Server separately from a fixture
+snapshot with `VEETEE_TEST_GROQ_KEYS_FILE=...` (see
+`veetee-server/README.md`). The physical harness itself never reads or prints
+keys; Manager-source production runtime remains single-secret/no-rotation.
+
 ## Repeated physical soak
 
 Set the ignored local scenario field `"repetitions": 30` to reuse one monitor

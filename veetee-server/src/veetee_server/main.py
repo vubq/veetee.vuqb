@@ -21,6 +21,9 @@ async def serve() -> None:
     config = ServerConfig.from_env()
     logging.basicConfig(level=getattr(logging, config.log_level, logging.INFO), format="%(asctime)s %(levelname)s %(name)s %(message)s")
     secret_file = Path(os.environ["VEETEE_GROQ_SECRET_FILE"]) if os.environ.get("VEETEE_GROQ_SECRET_FILE") else None
+    test_groq_keys_file = Path(os.environ["VEETEE_TEST_GROQ_KEYS_FILE"]) if os.environ.get("VEETEE_TEST_GROQ_KEYS_FILE") else None
+    if test_groq_keys_file is not None and config.config_source != "fixture":
+        raise RuntimeError("VEETEE_TEST_GROQ_KEYS_FILE is allowed only with fixture config")
     secret_store_file = os.environ.get("VEETEE_SECRET_STORE_FILE")
     secret_master_file = os.environ.get("VEETEE_SECRET_MASTER_KEY_FILE")
     if bool(secret_store_file) != bool(secret_master_file):
@@ -29,7 +32,12 @@ async def serve() -> None:
     if secret_store_file and secret_master_file:
         master_material = Path(secret_master_file).read_text(encoding="utf-8").strip()
         secret_resolver = EncryptedFileSecretResolver(Path(secret_store_file), master_material)
-    runtime = RuntimeConfigManager(config, secret_file=secret_file, secret_resolver=secret_resolver)
+    runtime = RuntimeConfigManager(
+        config,
+        secret_file=secret_file,
+        secret_resolver=secret_resolver,
+        test_groq_keys_file=test_groq_keys_file,
+    )
     await runtime.start()
     history = None
     if config.history_enabled:

@@ -22,6 +22,26 @@ VEETEE_GROQ_SECRET_FILE=../secrets/groq.keys \
 ./.venv/bin/python -m veetee_server
 ```
 
+### Physical test-only Groq key pool
+
+Production snapshot vẫn dùng một `secretRef` và không xoay key. Khi cần chạy
+firmware/audio flow bằng nhiều free-tier key, tạo một **snapshot tạm ngoài Git**
+giữ `providerId: "groq.chat"` nhưng để `secretRefs: []`, rồi khởi động fixture
+process với:
+
+```bash
+VEETEE_CONFIG_SOURCE=fixture \
+VEETEE_CONFIG_FIXTURE_FILE=/tmp/veetee-test-snapshot.json \
+VEETEE_TEST_GROQ_KEYS_FILE=../secrets/groq.keys \
+./.venv/bin/python -m veetee_server
+```
+
+`VEETEE_TEST_GROQ_KEYS_FILE` chỉ được chấp nhận với `fixture` source. Pool bắt
+đầu mỗi request ở key kế tiếp; nếu Groq trả `429` trước delta đầu tiên, request
+được thử tiếp key kế tiếp. Partial stream không retry/replay. Log chỉ ghi ordinal
+key và trạng thái đã redact. Không bật biến này khi chạy snapshot từ Manager và
+không đưa key/snapshot tạm vào database, firmware config hoặc Git.
+
 Khi chạy cùng Manager API, có thể bật history telemetry bằng
 `VEETEE_HISTORY_ENABLED=true`. Reporter dùng chính `VEETEE_MANAGER_API_URL` và
 machine bearer (nếu có), đẩy `POST /internal/v1/conversations/turns` qua queue

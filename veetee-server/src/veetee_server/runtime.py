@@ -33,10 +33,12 @@ class RuntimeConfigManager:
         *,
         secret_file: Path | None = None,
         secret_resolver: EncryptedFileSecretResolver | None = None,
+        test_groq_keys_file: Path | None = None,
     ) -> None:
         self.config = config
         self.secret_file = secret_file
         self.secret_resolver = secret_resolver
+        self.test_groq_keys_file = test_groq_keys_file
         self._view: RuntimeView | None = None
         self._etag: str | None = None
         self._lock = asyncio.Lock()
@@ -181,7 +183,12 @@ class RuntimeConfigManager:
         candidate: ProviderRegistry | None = None
         async with self._lock:
             try:
-                candidate = ProviderRegistry(snapshot, secret_file=self.secret_file, secret_resolver=self.secret_resolver)
+                candidate = ProviderRegistry(
+                    snapshot,
+                    secret_file=self.secret_file,
+                    secret_resolver=self.secret_resolver,
+                    test_groq_keys_file=self.test_groq_keys_file,
+                )
                 await candidate.prepare()
                 view = RuntimeView(snapshot=snapshot, registry=candidate)
             except (ConfigurationError, ProviderError) as exc:

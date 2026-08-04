@@ -4,11 +4,12 @@ from pathlib import Path
 import sys
 import types
 
+import httpx
 import numpy as np
 import pytest
 
 from veetee_server.config import ConfigurationError, load_snapshot
-from veetee_server.providers import AudioChunk, GroqLLM, PatternIntent, PhoWhisperASR, ProviderRegistry, SessionWindowMemory, SileroVAD, VieNeuTTS
+from veetee_server.providers import AudioChunk, GroqLLM, GroqTestKeyPool, PatternIntent, PhoWhisperASR, ProviderError, ProviderRegistry, SessionWindowMemory, SileroVAD, VieNeuTTS
 
 
 @pytest.mark.asyncio
@@ -255,6 +256,105 @@ async def test_groq_provider_reuses_generation_scoped_http_pool_and_closes_it(mo
     assert created[0]["limits"].max_keepalive_connections == 2
     assert created[0]["limits"].keepalive_expiry == 12
     assert provider._client is None
+
+
+@pytest.mark.asyncio
+async def test_test_only_groq_key_pool_rotates_after_pre_stream_rate_limit(tmp_path, monkeypatch):
+    key_file = tmp_path / "groq.keys"
+    key_file.write_text("FIRST=test-key-one\nSECOND=test-key-two\n", encoding="utf-8")
+    assert GroqTestKeyPool(key_file).count == 2
+    calls: list[str] = []
+
+    class Response:
+        def __init__(self, status_code: int):
+            self.status_code = status_code
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            del exc_type, exc, traceback
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"content":"Xin chào"}}]}'
+            yield "data: [DONE]"
+
+    responses = [Response(429), Response(200), Response(200)]
+
+    class Client:
+        def __init__(self, **kwargs):
+            del kwargs
+
+        def stream(self, method, endpoint, *, headers, json):
+            del method, endpoint, json
+            calls.append(headers["Authorization"])
+            return responses.pop(0)
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr("veetee_server.providers.httpx.AsyncClient", Client)
+    provider = GroqLLM(
+        {"endpoint": "https://example.invalid/v1/chat/completions", "model": "configured-model"},
+        None,
+        None,
+        [],
+        test_key_file=key_file,
+    )
+
+    first = [delta async for delta in provider.stream(prompt="một", locale="vi-VN", tools=[])]
+    second = [delta async for delta in provider.stream(prompt="hai", locale="vi-VN", tools=[])]
+
+    assert first[0].text == "Xin chào"
+    assert second[0].text == "Xin chào"
+    assert calls == ["Bearer test-key-one", "Bearer test-key-two", "Bearer test-key-one"]
+    await provider.close()
+
+
+@pytest.mark.asyncio
+async def test_test_only_groq_key_pool_never_replays_partial_stream(tmp_path, monkeypatch):
+    key_file = tmp_path / "groq.keys"
+    key_file.write_text("one\ntwo\n", encoding="utf-8")
+    calls: list[str] = []
+
+    class Response:
+        status_code = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            del exc_type, exc, traceback
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"content":"một phần"}}]}'
+            raise httpx.ReadError("stream interrupted", request=httpx.Request("POST", "https://example.invalid"))
+
+    class Client:
+        def __init__(self, **kwargs):
+            del kwargs
+
+        def stream(self, method, endpoint, *, headers, json):
+            del method, endpoint, json
+            calls.append(headers["Authorization"])
+            return Response()
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr("veetee_server.providers.httpx.AsyncClient", Client)
+    provider = GroqLLM(
+        {"endpoint": "https://example.invalid/v1/chat/completions", "model": "configured-model"},
+        None,
+        None,
+        [],
+        test_key_file=key_file,
+    )
+
+    with pytest.raises(ProviderError, match="Groq request failed"):
+        _ = [delta async for delta in provider.stream(prompt="một", locale="vi-VN", tools=[])]
+    assert calls == ["Bearer one"]
+    await provider.close()
 
 
 def test_pattern_intent_and_session_memory_are_config_driven():
