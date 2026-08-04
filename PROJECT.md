@@ -19,6 +19,9 @@ và các service port `18xxx`).
 - Bộ planning `docs/00` → `docs/11`, các ADR và roadmap vẫn là source of truth;
   chủ dự án đã explicit mở product code scope. M0/M1/M2 slices đang được triển
   khai theo note trong `docs/implementation-notes/`.
+- Snapshot tiến độ dễ xem nhất nằm ở
+  [`docs/implementation-notes/STATUS.md`](docs/implementation-notes/STATUS.md);
+  file này chỉ tổng hợp evidence/gate, không thay DoD trong roadmap.
 - `veetee-manager-web/` giữ visual foundation đã duyệt, đồng thời có HTTP gateway
   và provider registry schema-driven khi chạy cùng Manager API.
 - Preview đã có code Vue/Vite/Tailwind, Reka-backed `Vt*` primitives, mock gateway
