@@ -108,10 +108,37 @@ config VEETEE_WAKE_INPUT_BUFFER_SAMPLES
     default 4096
     depends on VEETEE_WAKE_ENABLED
 
+config VEETEE_AEC_ENABLED
+    bool "Enable playback-reference acoustic echo cancellation"
+    default n
+    depends on VEETEE_ENABLE_HARDWARE
+    help
+        Use the ESP-SR full-duplex AEC adapter with one microphone and one
+        downlink playback reference. If initialization fails at boot, the
+        firmware keeps the PTT/half-duplex path and reports the failure.
+
+config VEETEE_AEC_FILTER_LENGTH
+    int "AEC adaptive filter length"
+    range 2 8
+    default 4
+    depends on VEETEE_AEC_ENABLED
+    help
+        ESP32-S3 recommendation is four. Larger values cost more CPU and
+        memory; keep this in the board profile rather than source code.
+
+config VEETEE_AEC_REFERENCE_BUFFER_MS
+    int "AEC far-end reference buffer duration (ms)"
+    range 100 2000
+    default 500
+    depends on VEETEE_AEC_ENABLED
+    help
+        Bound the 16 kHz playback-reference ring. It is flushed on abort or
+        turn ownership change so stale speaker audio cannot enter a new turn.
+
 config VEETEE_WAKE_DURING_PLAYBACK
     bool "Allow wake detection while speaker plays"
     default n
-    depends on VEETEE_WAKE_ENABLED
+    depends on VEETEE_WAKE_ENABLED && VEETEE_AEC_ENABLED
     help
         Enable only after a verified playback-reference AEC/duplex path is
         available. The default half-duplex policy prevents speaker output from

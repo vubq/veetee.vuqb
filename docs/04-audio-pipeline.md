@@ -73,6 +73,15 @@ capability mới chỉ activate khi asset/license/resource/listening test pass, 
 phải behavior đã kế thừa sẵn (`references/xiaozhi-esp32/main/audio/README.md:22-24`,
 `references/xiaozhi-esp32/main/audio/engines/afe_audio_engine.cc:135-150`).
 
+**Implementation slice hiện tại:** firmware dùng adapter `veetee_aec.c` quanh
+ESP-SR `afe_aec` với input `MR`; speaker PCM 24 kHz được resample về reference
+16 kHz trong ring bounded 500 ms. AEC chỉ được áp dụng cho mẫu đưa vào WakeNet
+khi device đang `speaking`; uplink Opus vẫn giữ đúng frame 60 ms và NS path. Nếu
+AEC init/resource fail, `vt_audio_aec_ready()` false khiến firmware giữ
+half-duplex/PTT thay vì bật wake trong playback. Đây là Option B trong
+[ADR-020](ADR/ADR-020-device-aec-adapter.md), chưa phải bằng chứng full acoustic
+barge-in.
+
 ### 3.3 Encode và upload
 
 - PCM được chuẩn hóa signed 16-bit mono 16 kHz.

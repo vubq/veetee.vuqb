@@ -46,6 +46,11 @@ v3 không đạt; không phải runtime fallback và không được load song s
 
 Server-side wake chỉ được xem lại cho digital client hoặc model không thể chạy trên board; cần ADR mới. Reference đã chứng minh device-side WakeNet/AFE và wake pre-roll (`references/xiaozhi-esp32/main/audio/README.md:6-30`, `references/xiaozhi-esp32/main/application.cc:869-903`).
 
+Implementation note: standalone ESP-SR `afe_aec` adapter đã init được trên board
+và lifecycle wake-during-playback đã qua smoke/10-repetition fixture gate. Điều
+còn mở là acoustic echo-only corpus, exact reference delay và voice-onset
+realtime barge-in; không tự coi đây là full AFE promotion.
+
 ### Q-003 — Manager Web framework nào nhẹ và dễ deploy?
 
 **Trạng thái: Resolved — Vue 3 + Vite + Tailwind CSS.**

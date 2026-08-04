@@ -23,6 +23,15 @@
 #ifndef CONFIG_VEETEE_NOISE_SUPPRESSION_MODE
 #define CONFIG_VEETEE_NOISE_SUPPRESSION_MODE 1
 #endif
+#ifndef CONFIG_VEETEE_AEC_ENABLED
+#define CONFIG_VEETEE_AEC_ENABLED 0
+#endif
+#ifndef CONFIG_VEETEE_AEC_FILTER_LENGTH
+#define CONFIG_VEETEE_AEC_FILTER_LENGTH 4
+#endif
+#ifndef CONFIG_VEETEE_AEC_REFERENCE_BUFFER_MS
+#define CONFIG_VEETEE_AEC_REFERENCE_BUFFER_MS 500
+#endif
 #define VT_NOISE_SAMPLE_RATE 16000
 #define VT_NOISE_FRAME_MS 10
 #define VT_NOISE_FRAME_SAMPLES (VT_NOISE_SAMPLE_RATE * VT_NOISE_FRAME_MS / 1000)
@@ -100,6 +109,7 @@ void vt_audio_deinit(vt_audio_t *audio) {
         audio->noise_suppressor = NULL;
     }
 #endif
+    vt_aec_deinit(&audio->aec);
     if (audio->input_raw != NULL) {
         heap_caps_free(audio->input_raw);
         audio->input_raw = NULL;
@@ -137,6 +147,19 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
     audio->input_frame_bytes = audio->input_frame_samples * (int)sizeof(int16_t);
     audio->output_frame_bytes = audio->output_frame_samples * (int)sizeof(int16_t);
     if (audio->input_frame_samples <= 0 || audio->output_frame_samples <= 0) return ESP_ERR_INVALID_SIZE;
+#if CONFIG_VEETEE_AEC_ENABLED
+    vt_aec_config_t aec_config = {
+        .mic_sample_rate = config->input_sample_rate,
+        .playback_sample_rate = config->output_sample_rate,
+        .max_playback_frame_samples = audio->output_frame_samples,
+        .filter_length = CONFIG_VEETEE_AEC_FILTER_LENGTH,
+        .reference_buffer_ms = CONFIG_VEETEE_AEC_REFERENCE_BUFFER_MS,
+    };
+    int aec_result = vt_aec_init(&audio->aec, &aec_config);
+    if (aec_result != VT_AEC_OK) {
+        ESP_LOGW(TAG, "AEC unavailable result=%d; keep PTT/half-duplex path", aec_result);
+    }
+#endif
 #if CONFIG_VEETEE_NOISE_SUPPRESSION_ENABLED
     if (config->input_sample_rate != VT_NOISE_SAMPLE_RATE) {
         ESP_LOGE(TAG, "noise suppression requires input sample rate=%d, got=%d", VT_NOISE_SAMPLE_RATE,
@@ -315,6 +338,27 @@ int vt_audio_process_capture(vt_audio_t *audio, int16_t *samples, size_t sample_
     return ESP_OK;
 }
 
+int vt_audio_process_wake(vt_audio_t *audio, int16_t *samples, size_t sample_count) {
+    if (audio == NULL || samples == NULL || sample_count == 0U) return ESP_ERR_INVALID_ARG;
+#if CONFIG_VEETEE_AEC_ENABLED
+    if (vt_audio_aec_ready(audio)) {
+        int aec_result = vt_aec_process(&audio->aec, samples, sample_count);
+        if (aec_result != VT_AEC_OK) return ESP_ERR_INVALID_SIZE;
+    }
+#endif
+#if CONFIG_VEETEE_NOISE_SUPPRESSION_ENABLED
+    if (audio->noise_suppressor == NULL || audio->noise_frame == NULL || audio->noise_frame_samples == 0U) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (sample_count % audio->noise_frame_samples != 0U) return ESP_ERR_INVALID_SIZE;
+    for (size_t offset = 0; offset < sample_count; offset += audio->noise_frame_samples) {
+        ns_process(audio->noise_suppressor, samples + offset, audio->noise_frame);
+        memcpy(samples + offset, audio->noise_frame, audio->noise_frame_samples * sizeof(*samples));
+    }
+#endif
+    return ESP_OK;
+}
+
 int vt_audio_encode(vt_audio_t *audio, const int16_t *samples, size_t sample_count, uint8_t *opus, size_t opus_capacity, size_t *opus_size) {
     if (audio == NULL || samples == NULL || opus == NULL || opus_size == NULL || audio->encoder == NULL ||
         sample_count != (size_t)audio->input_frame_samples || opus_capacity == 0) return ESP_ERR_INVALID_ARG;
@@ -356,6 +400,9 @@ int vt_audio_decode_and_play(vt_audio_t *audio, const uint8_t *opus, size_t opus
     for (size_t index = 0; index < samples; ++index) {
         audio->output_pcm[index] = (int32_t)audio->decode_pcm[index] << VT_AUDIO_PCM_SHIFT;
     }
+#if CONFIG_VEETEE_AEC_ENABLED
+    (void)vt_aec_push_playback(&audio->aec, audio->decode_pcm, samples);
+#endif
     size_t bytes_written = 0;
     size_t output_bytes = samples * sizeof(*audio->output_pcm);
     error = i2s_channel_write(audio->tx_handle, audio->output_pcm, output_bytes, &bytes_written, pdMS_TO_TICKS(250));
@@ -401,6 +448,14 @@ void vt_audio_reset_decoder(vt_audio_t *audio) {
 
 void vt_audio_reset_encoder(vt_audio_t *audio) {
     if (audio != NULL && audio->encoder != NULL) (void)esp_opus_enc_reset(audio->encoder);
+}
+
+void vt_audio_reset_acoustic_reference(vt_audio_t *audio) {
+    if (audio != NULL) vt_aec_reset_reference(&audio->aec);
+}
+
+bool vt_audio_aec_ready(const vt_audio_t *audio) {
+    return audio != NULL && vt_aec_is_ready(&audio->aec);
 }
 
 void vt_audio_reset(vt_audio_t *audio) {

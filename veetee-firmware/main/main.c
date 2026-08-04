@@ -337,6 +337,7 @@ static void websocket_text_callback(const cJSON *message, void *context) {
         if (strcmp(tts_state->valuestring, "start") == 0) {
             app->wake_rearm_pending = false;
             (void)xQueueReset(app->playback_queue);
+            vt_audio_reset_acoustic_reference(&app->audio);
             /* Stop capture before resetting the decoder. The decoder mutex
                serializes a possible in-flight decode. The Opus
                encoder remains continuous across turns; its reset path is not
@@ -366,6 +367,7 @@ static void websocket_text_callback(const cJSON *message, void *context) {
         app->capture_active = false;
         app->wake_auto_capture = false;
         (void)xQueueReset(app->playback_queue);
+        vt_audio_reset_acoustic_reference(&app->audio);
         request_wake_arm_when_playback_idle(app);
         (void)state_apply(app, VT_EVENT_ABORT);
         cJSON *code = cJSON_GetObjectItemCaseSensitive(message, "code");
@@ -458,7 +460,17 @@ static void capture_task(void *context) {
 #endif
             continue;
         }
-        esp_err_t process_result = vt_audio_process_capture(&app->audio, samples, sample_count);
+        vt_device_state_t audio_state = state_read(app);
+        bool wake_allowed = !app->capture_active;
+#if CONFIG_VEETEE_WAKE_DURING_PLAYBACK
+        wake_allowed = wake_allowed &&
+                       (audio_state != VT_DEVICE_SPEAKING || vt_audio_aec_ready(&app->audio));
+#else
+        wake_allowed = wake_allowed && audio_state != VT_DEVICE_SPEAKING;
+#endif
+        esp_err_t process_result = (wake_allowed && audio_state == VT_DEVICE_SPEAKING)
+            ? vt_audio_process_wake(&app->audio, samples, sample_count)
+            : vt_audio_process_capture(&app->audio, samples, sample_count);
         if (process_result != ESP_OK) {
 #if CONFIG_VEETEE_AUDIO_DIAGNOSTICS
             ESP_LOGW(TAG, "capture noise processing skipped result=%s", esp_err_to_name(process_result));
@@ -487,10 +499,6 @@ static void capture_task(void *context) {
 
         /* The detector owns idle and playback audio. During an active capture
            turn, do not let the same wake phrase interrupt its own utterance. */
-        bool wake_allowed = !app->capture_active;
-#if !CONFIG_VEETEE_WAKE_DURING_PLAYBACK
-        wake_allowed = wake_allowed && state_read(app) != VT_DEVICE_SPEAKING;
-#endif
         if (vt_wake_is_ready(&app->wake) && wake_allowed) {
             vt_wake_event_t wake_event = {0};
             int wake_result = vt_wake_feed(&app->wake, samples, sample_count, &wake_event);
@@ -559,6 +567,7 @@ static void ptt_task(void *context) {
                 app->wake_auto_capture = false;
                 (void)send_control(app, "abort", NULL, "wake_word_detected");
                 (void)xQueueReset(app->playback_queue);
+                vt_audio_reset_acoustic_reference(&app->audio);
                 request_wake_arm_when_playback_idle(app);
                 (void)state_apply(app, VT_EVENT_ABORT);
                 ESP_LOGI(TAG, "wake interrupt");
@@ -582,6 +591,7 @@ static void ptt_task(void *context) {
                         app->wake_auto_capture = false;
                         (void)send_control(app, "abort", NULL, "button_interrupt");
                         (void)xQueueReset(app->playback_queue);
+                        vt_audio_reset_acoustic_reference(&app->audio);
                         if (was_auto_capture) request_wake_arm_when_playback_idle(app);
                         (void)state_apply(app, VT_EVENT_ABORT);
                         ESP_LOGI(TAG, "PTT interrupt state=%s", vt_state_name(current));

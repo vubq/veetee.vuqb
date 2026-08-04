@@ -8,6 +8,8 @@
 
 #include "esp_audio_dec.h"
 
+#include "veetee_aec.h"
+
 typedef struct {
     int input_sample_rate;
     int output_sample_rate;
@@ -36,6 +38,7 @@ typedef struct {
     int input_frame_samples;
     int output_frame_samples;
     int output_sample_rate;
+    vt_aec_t aec;
     bool started;
 } vt_audio_t;
 
@@ -45,9 +48,12 @@ int vt_audio_stop(vt_audio_t *audio);
 void vt_audio_deinit(vt_audio_t *audio);
 int vt_audio_read_pcm(vt_audio_t *audio, int16_t *samples, size_t sample_capacity, size_t *sample_count);
 int vt_audio_process_capture(vt_audio_t *audio, int16_t *samples, size_t sample_count);
+int vt_audio_process_wake(vt_audio_t *audio, int16_t *samples, size_t sample_count);
 int vt_audio_encode(vt_audio_t *audio, const int16_t *samples, size_t sample_count, uint8_t *opus, size_t opus_capacity, size_t *opus_size);
 int vt_audio_decode_and_play(vt_audio_t *audio, const uint8_t *opus, size_t opus_size);
 int vt_audio_play_tone(vt_audio_t *audio, int frequency_hz, int duration_ms, int amplitude);
 void vt_audio_reset_decoder(vt_audio_t *audio);
 void vt_audio_reset_encoder(vt_audio_t *audio);
+void vt_audio_reset_acoustic_reference(vt_audio_t *audio);
+bool vt_audio_aec_ready(const vt_audio_t *audio);
 void vt_audio_reset(vt_audio_t *audio);

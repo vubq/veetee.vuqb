@@ -395,9 +395,20 @@ shared AFE/AEC/noise suppression, false-trigger và acoustic barge-in vẫn là 
 acceptance gate. Nếu model init lỗi ở runtime, firmware vẫn fail-safe giữ PTT và
 báo diagnostic; không tự chuyển sang server-side wake để che lỗi.
 
+**AEC implementation gate (2026-08-04):** module `veetee_aec.c` đã được thêm
+theo [ADR-020](ADR/ADR-020-device-aec-adapter.md). Serial ESP32-S3 xác nhận
+`afe_aec` input `MR`, 16 kHz, chunk 512 và reference ring 8000 samples; build và
+flash không xoá NVS pass. Khi bật `CONFIG_VEETEE_WAKE_DURING_PLAYBACK`, fixture
+physical flow đạt 2/2 smoke và 10/10 repetition với Groq test-only key pool,
+không panic/queue/Opus error. Evidence này chỉ xác nhận lifecycle và resource
+ổn định; echo-only false-accept, voice-onset barge-in và time-to-silence vẫn mở.
+
 ### 7.4 Barge-in khi AI đang nói
 
-Default là device AEC + local VAD/wake. `realtime` giữ AFE/uplink khi speaker phát.
+Default thiết kế là device AEC + local VAD/wake. Implementation hiện tại giữ
+half-duplex uplink khi `tts/start`, nhưng cho WakeNet tiếp tục chạy qua AEC adapter
+khi config đã bật; `realtime` voice-onset/uplink khi speaker phát vẫn là gate kế
+tiếp, không được suy ra từ wake lifecycle soak.
 Voice onset vượt threshold/hysteresis từ config tạo `BARGE_IN_CANDIDATE`; controller
 chỉ commit sau minimum speech window để giảm false abort do residual echo. Khi
 commit, xử lý giống interrupt và gửi `listen/start realtime` cho turn mới.
