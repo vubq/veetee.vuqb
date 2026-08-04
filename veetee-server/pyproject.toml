@@ -29,6 +29,18 @@ local-vad = ["onnxruntime>=1.18,<2", "numpy>=1.26,<3"]
 [project.scripts]
 veetee-server = "veetee_server.main:main"
 
+[project.entry-points."veetee.providers"]
+"veetee.vad.energy" = "veetee_server.providers:energy_vad_factory"
+"veetee.vad.silero" = "veetee_server.providers:silero_vad_factory"
+"veetee.asr.fixture" = "veetee_server.providers:fixture_asr_factory"
+"veetee.asr.phowhisper" = "veetee_server.providers:phowhisper_asr_factory"
+"veetee.llm.fixture" = "veetee_server.providers:fixture_llm_factory"
+"groq.chat" = "veetee_server.providers:groq_llm_factory"
+"veetee.tts.fixture-tone" = "veetee_server.providers:fixture_tone_tts_factory"
+"vieneu.v3-turbo" = "veetee_server.providers:vieneu_tts_factory"
+"veetee.intent.patterns" = "veetee_server.providers:pattern_intent_factory"
+"veetee.memory.session-window" = "veetee_server.providers:session_window_memory_factory"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

@@ -438,3 +438,16 @@
   OpenAPI không đổi.
 - Không mutate `veetee_vubq`, không restart runtime, không flash board, không
   đổi Wi-Fi/Tailscale và không phát audio; acoustic acceptance vẫn pause.
+
+### Package entry-point provider registry (2026-08-05, host-only)
+
+- Provider runtime đã chuyển sang discover `veetee.providers`; built-in và
+  external provider dùng cùng factory contract, không còn nhánh dispatch theo
+  vendor ID trong `ProviderRegistry`. Config/snapshot chọn stable ID; package mới
+  không cần sửa conversation core. Duplicate/malformed entry point fail-closed,
+  không fallback.
+- `.venv` metadata xác nhận đủ **10 entry points**; Voice Server **70 tests
+  passed**, Ruff/compileall pass. Chưa load model provider thật và chưa coi đây là
+  artifact/VRAM promotion evidence.
+- Không phát audio, không mở microphone/speaker, không flash/reset ESP32, không
+  restart runtime production, không đổi Wi-Fi/Tailscale hoặc secret.

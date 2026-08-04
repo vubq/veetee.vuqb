@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from veetee_server.config import ConfigurationError, load_snapshot
-from veetee_server.providers import AudioChunk, GroqLLM, GroqTestKeyPool, PatternIntent, PhoWhisperASR, ProviderError, ProviderRegistry, SessionWindowMemory, SileroVAD, VieNeuTTS
+from veetee_server.providers import AudioChunk, GroqLLM, GroqTestKeyPool, PatternIntent, PhoWhisperASR, ProviderError, ProviderRegistry, SessionWindowMemory, SileroVAD, VieNeuTTS, discover_provider_factories, provider_factory
 
 
 @pytest.mark.asyncio
@@ -386,3 +386,76 @@ def test_provider_snapshot_rejects_fallback_shape_before_activation(tmp_path):
 
     with pytest.raises(ConfigurationError, match="provider fallback is unsupported"):
         ProviderRegistry(load_snapshot(fixture))
+
+
+def test_provider_entry_point_contract_rejects_invalid_metadata(monkeypatch):
+    class EntryPoint:
+        group = "veetee.providers"
+        name = "broken.provider"
+
+        def load(self):
+            return lambda config, context: (config, context)
+
+    monkeypatch.setattr("veetee_server.providers.importlib_metadata.entry_points", lambda: [EntryPoint()])
+    with pytest.raises(ConfigurationError, match="metadata is invalid"):
+        discover_provider_factories()
+
+
+def test_provider_entry_point_contract_rejects_duplicate_identity(monkeypatch):
+    @provider_factory("vad", "duplicate.provider")
+    def first(config, context):
+        del config, context
+        return object()
+
+    @provider_factory("vad", "duplicate.provider")
+    def second(config, context):
+        del config, context
+        return object()
+
+    class EntryPoint:
+        group = "veetee.providers"
+        name = "duplicate.provider"
+
+        def __init__(self, factory):
+            self.factory = factory
+
+        def load(self):
+            return self.factory
+
+    monkeypatch.setattr("veetee_server.providers.importlib_metadata.entry_points", lambda: [EntryPoint(first), EntryPoint(second)])
+    with pytest.raises(ConfigurationError, match="duplicate provider entry point"):
+        discover_provider_factories()
+
+
+def test_external_provider_entry_point_is_selected_without_registry_branch(monkeypatch, tmp_path):
+    source = json.loads((Path(__file__).parents[1] / "config/fixtures/m0.json").read_text(encoding="utf-8"))
+    source["providers"]["vad"] = {"providerId": "test.vad.external", "config": {"threshold": 0.5}}
+    fixture = tmp_path / "external-provider.json"
+    fixture.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+
+    class ExternalVAD:
+        def reset(self):
+            pass
+
+        def accept(self, pcm, sample_rate):
+            del pcm, sample_rate
+            return False
+
+        def endpoint(self):
+            return False
+
+    @provider_factory("vad", "test.vad.external")
+    def external_factory(config, context):
+        assert config == {"threshold": 0.5}
+        assert context.secret_refs == ()
+        return ExternalVAD()
+
+    original = discover_provider_factories()
+    monkeypatch.setattr("veetee_server.providers.discover_provider_factories", lambda: {**original, ("vad", "test.vad.external"): external_factory})
+    registry = ProviderRegistry(load_snapshot(fixture))
+    try:
+        assert isinstance(registry.vad, ExternalVAD)
+    finally:
+        import asyncio
+
+        asyncio.run(registry.close())

@@ -74,6 +74,14 @@ Silero VAD adapter dùng ONNX recurrent state và reframe mỗi input thành
 endpoint policy đều đến từ snapshot; thiếu artifact/dependency tạo typed provider
 error, không tự chuyển về energy VAD.
 
+Provider implementation được discover qua Python entry-point group
+`veetee.providers`. Entry-point name là `providerId`, factory khai báo `kind` và
+nhận `(config, context)`; context chỉ chứa secret resolver/đường dẫn secret và
+dependency runtime. Built-in provider cũng dùng entry point, vì vậy thêm provider
+package mới không cần sửa conversation core hoặc thêm nhánh theo vendor. Duplicate
+ID, metadata sai hoặc provider chưa cài sẽ làm activation fail-closed, không gọi
+provider khác.
+
 VieNeu có `prewarm: true` tùy chọn trong provider config. Khi bật, runtime load
 local engine trước khi công bố readiness/snapshot; nếu không bật, engine vẫn lazy
 load ở lần synthesize đầu.

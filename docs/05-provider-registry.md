@@ -45,6 +45,21 @@ class ProviderRegistry:
     async def drain(self, generation, deadline) -> None: ...
 ```
 
+Runtime contract hiện thực dùng entry-point group `veetee.providers`:
+
+```toml
+[project.entry-points."veetee.providers"]
+"acme.asr.vi" = "acme_veetee.asr:factory"
+```
+
+Entry-point name là stable provider ID. Factory nhận `(config, context)`; context
+chỉ chứa dependency runtime/secret handle và không chứa raw key. Factory phải
+khai báo `provider_kind` và `provider_id` tương ứng; duplicate identity hoặc
+metadata sai làm activation fail-closed. Provider package mới chỉ cần cài đặt
+package + manifest/catalog/config, không sửa `TurnPipeline` hay `ProviderRegistry`.
+Built-in provider cũng đi qua cùng contract để test không có đường `if provider_id`
+riêng trong core.
+
 Quy tắc:
 
 1. Package install/remove là deployment action có allowlist/hash; Manager UI không tự `pip install` code tùy ý.

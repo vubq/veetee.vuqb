@@ -11,6 +11,7 @@ import asyncio
 import ctypes
 from dataclasses import dataclass
 import importlib
+from importlib import metadata as importlib_metadata
 import inspect
 import json
 import logging
@@ -24,7 +25,7 @@ import sys
 import threading
 import tempfile
 from collections import deque
-from typing import Any, AsyncIterator, Protocol
+from typing import Any, AsyncIterator, Callable, Protocol
 
 import httpx
 import opuslib
@@ -41,6 +42,30 @@ class ProviderError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.retryable = retryable
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderFactoryContext:
+    """Runtime-only dependencies passed to an installed provider factory."""
+
+    secret_file: Path | None = None
+    secret_resolver: EncryptedFileSecretResolver | None = None
+    test_groq_keys_file: Path | None = None
+    secret_refs: tuple[str, ...] = ()
+
+
+ProviderFactory = Callable[[dict[str, Any], ProviderFactoryContext], Any]
+
+
+def provider_factory(kind: str, provider_id: str) -> Callable[[ProviderFactory], ProviderFactory]:
+    """Declare the stable identity carried by a package entry point."""
+
+    def decorate(factory: ProviderFactory) -> ProviderFactory:
+        setattr(factory, "provider_kind", kind)
+        setattr(factory, "provider_id", provider_id)
+        return factory
+
+    return decorate
 
 
 @dataclass(frozen=True, slots=True)
@@ -846,6 +871,104 @@ class OpusCodec:
             raise ProviderError("OPUS_ENCODE_FAILED", "cannot encode PCM") from exc
 
 
+@provider_factory("vad", "veetee.vad.energy")
+def energy_vad_factory(config: dict[str, Any], context: ProviderFactoryContext) -> VADProvider:
+    del context
+    return EnergyVAD(config)
+
+
+@provider_factory("vad", "veetee.vad.silero")
+def silero_vad_factory(config: dict[str, Any], context: ProviderFactoryContext) -> VADProvider:
+    del context
+    return SileroVAD(config)
+
+
+@provider_factory("asr", "veetee.asr.fixture")
+def fixture_asr_factory(config: dict[str, Any], context: ProviderFactoryContext) -> ASRProvider:
+    del context
+    return FixtureASR(config)
+
+
+@provider_factory("asr", "veetee.asr.phowhisper")
+def phowhisper_asr_factory(config: dict[str, Any], context: ProviderFactoryContext) -> ASRProvider:
+    del context
+    return PhoWhisperASR(config)
+
+
+@provider_factory("llm", "veetee.llm.fixture")
+def fixture_llm_factory(config: dict[str, Any], context: ProviderFactoryContext) -> LLMProvider:
+    del context
+    return FixtureLLM(config)
+
+
+@provider_factory("llm", "groq.chat")
+def groq_llm_factory(config: dict[str, Any], context: ProviderFactoryContext) -> LLMProvider:
+    raw_refs = context.secret_refs
+    if not all(isinstance(value, str) and value for value in raw_refs) or (not raw_refs and context.test_groq_keys_file is None):
+        raise ConfigurationError("Groq provider secretRefs must be a non-empty string array")
+    return GroqLLM(
+        config,
+        context.secret_file,
+        context.secret_resolver,
+        list(raw_refs),
+        test_key_file=context.test_groq_keys_file,
+    )
+
+
+@provider_factory("tts", "veetee.tts.fixture-tone")
+def fixture_tone_tts_factory(config: dict[str, Any], context: ProviderFactoryContext) -> TTSProvider:
+    del context
+    return FixtureToneTTS(config)
+
+
+@provider_factory("tts", "vieneu.v3-turbo")
+def vieneu_tts_factory(config: dict[str, Any], context: ProviderFactoryContext) -> TTSProvider:
+    del context
+    return VieNeuTTS(config)
+
+
+@provider_factory("intent", "veetee.intent.patterns")
+def pattern_intent_factory(config: dict[str, Any], context: ProviderFactoryContext) -> IntentProvider:
+    del context
+    return PatternIntent(config)
+
+
+@provider_factory("memory", "veetee.memory.session-window")
+def session_window_memory_factory(config: dict[str, Any], context: ProviderFactoryContext) -> MemoryProvider:
+    del context
+    return SessionWindowMemory(config)
+
+
+def discover_provider_factories() -> dict[tuple[str, str], ProviderFactory]:
+    """Load provider factories from installed package entry points.
+
+    The entry-point name is the stable provider ID. The loaded callable must be
+    decorated with ``provider_factory`` (or expose the same attributes), so a
+    package cannot accidentally register an implementation under the wrong
+    capability. Duplicate `(kind, id)` registrations fail closed.
+    """
+
+    available = importlib_metadata.entry_points()
+    if hasattr(available, "select"):
+        selected = available.select(group="veetee.providers")
+    else:  # pragma: no cover - compatibility with pre-3.10 metadata APIs
+        selected = [item for item in available if getattr(item, "group", None) == "veetee.providers"]
+    result: dict[tuple[str, str], ProviderFactory] = {}
+    for entry_point in selected:
+        factory = entry_point.load()
+        if not callable(factory):
+            raise ConfigurationError(f"provider entry point is not callable: {entry_point.name}")
+        provider_id = getattr(factory, "provider_id", entry_point.name)
+        kind = getattr(factory, "provider_kind", None)
+        if provider_id != entry_point.name or kind not in {"vad", "asr", "llm", "tts", "intent", "memory"}:
+            raise ConfigurationError(f"provider entry point metadata is invalid: {entry_point.name}")
+        key = (kind, provider_id)
+        if key in result:
+            raise ConfigurationError(f"duplicate provider entry point: {kind}/{provider_id}")
+        result[key] = factory
+    return result
+
+
 class ProviderRegistry:
     def __init__(
         self,
@@ -859,13 +982,14 @@ class ProviderRegistry:
         self.secret_file = secret_file
         self.secret_resolver = secret_resolver
         self.test_groq_keys_file = test_groq_keys_file
+        self._factories = discover_provider_factories()
         self._closed = False
-        self.vad = self._vad(snapshot.provider("vad"))
-        self.asr = self._asr(snapshot.provider("asr"))
-        self.llm = self._llm(snapshot.provider("llm"))
-        self.tts = self._tts(snapshot.provider("tts"))
-        self.intent = self._optional(snapshot, "intent", self._intent)
-        self.memory = self._optional(snapshot, "memory", self._memory)
+        self.vad = self._build("vad", snapshot.provider("vad"))
+        self.asr = self._build("asr", snapshot.provider("asr"))
+        self.llm = self._build("llm", snapshot.provider("llm"))
+        self.tts = self._build("tts", snapshot.provider("tts"))
+        self.intent = self._optional("intent")
+        self.memory = self._optional("memory")
 
     async def prepare(self) -> None:
         preparer = getattr(self.tts, "prepare", None)
@@ -903,65 +1027,27 @@ class ProviderRegistry:
             raise ConfigurationError(f"provider fallback is unsupported: {provider_id}")
         return provider_id, config
 
-    def _vad(self, item: dict[str, Any]) -> VADProvider:
+    def _build(self, kind: str, item: dict[str, Any]) -> Any:
         provider_id, config = self._selection(item)
-        if provider_id == "veetee.vad.energy":
-            return EnergyVAD(config)
-        if provider_id == "veetee.vad.silero":
-            return SileroVAD(config)
-        raise ProviderError("VAD_PROVIDER_UNAVAILABLE", f"selected VAD provider unavailable: {provider_id}")
+        factory = self._factories.get((kind, provider_id))
+        if factory is None:
+            raise ProviderError(f"{kind.upper()}_PROVIDER_UNAVAILABLE", f"selected {kind} provider unavailable: {provider_id}")
+        raw_refs = item.get("secretRefs", [])
+        if not isinstance(raw_refs, list) or not all(isinstance(value, str) and value for value in raw_refs):
+            raw_refs = []
+        context = ProviderFactoryContext(
+            secret_file=self.secret_file,
+            secret_resolver=self.secret_resolver,
+            test_groq_keys_file=self.test_groq_keys_file,
+            secret_refs=tuple(raw_refs),
+        )
+        return factory(dict(config), context)
 
-    def _asr(self, item: dict[str, Any]) -> ASRProvider:
-        provider_id, config = self._selection(item)
-        if provider_id == "veetee.asr.fixture":
-            return FixtureASR(config)
-        if provider_id == "veetee.asr.phowhisper":
-            return PhoWhisperASR(config)
-        raise ProviderError("ASR_PROVIDER_UNAVAILABLE", f"selected ASR provider unavailable: {provider_id}")
-
-    def _llm(self, item: dict[str, Any]) -> LLMProvider:
-        provider_id, config = self._selection(item)
-        if provider_id == "veetee.llm.fixture":
-            return FixtureLLM(config)
-        if provider_id == "groq.chat":
-            raw_refs = item.get("secretRefs", [])
-            if not isinstance(raw_refs, list) or not all(isinstance(value, str) and value for value in raw_refs):
-                raise ConfigurationError("Groq provider secretRefs must be a non-empty string array")
-            return GroqLLM(
-                config,
-                self.secret_file,
-                self.secret_resolver,
-                list(raw_refs),
-                test_key_file=self.test_groq_keys_file,
-            )
-        raise ProviderError("LLM_PROVIDER_UNAVAILABLE", f"selected LLM provider unavailable: {provider_id}")
-
-    def _tts(self, item: dict[str, Any]) -> TTSProvider:
-        provider_id, config = self._selection(item)
-        if provider_id == "veetee.tts.fixture-tone":
-            return FixtureToneTTS(config)
-        if provider_id == "vieneu.v3-turbo":
-            return VieNeuTTS(config)
-        raise ProviderError("TTS_PROVIDER_UNAVAILABLE", f"selected TTS provider unavailable: {provider_id}")
-
-    def _intent(self, item: dict[str, Any]) -> IntentProvider:
-        provider_id, config = self._selection(item)
-        if provider_id == "veetee.intent.patterns":
-            return PatternIntent(config)
-        raise ProviderError("INTENT_PROVIDER_UNAVAILABLE", f"selected intent provider unavailable: {provider_id}")
-
-    def _memory(self, item: dict[str, Any]) -> MemoryProvider:
-        provider_id, config = self._selection(item)
-        if provider_id == "veetee.memory.session-window":
-            return SessionWindowMemory(config)
-        raise ProviderError("MEMORY_PROVIDER_UNAVAILABLE", f"selected memory provider unavailable: {provider_id}")
-
-    @staticmethod
-    def _optional(snapshot: RuntimeSnapshot, kind: str, factory: Any) -> Any | None:
-        item = snapshot.raw.get("providers", {}).get(kind)
+    def _optional(self, kind: str) -> Any | None:
+        item = self.snapshot.raw.get("providers", {}).get(kind)
         if not isinstance(item, dict) or item.get("mode") == "disabled":
             return None
-        return factory(item)
+        return self._build(kind, item)
 
 
 def _required_string(config: dict[str, Any], key: str) -> str:
