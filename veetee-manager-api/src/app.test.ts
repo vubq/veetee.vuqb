@@ -141,9 +141,13 @@ test('provider catalog parsing fails closed on duplicate or malformed installati
   assert.throws(() => parseCatalog({ installations: [installation, { ...installation }] }), /duplicate installation id/)
   assert.throws(() => parseCatalog({ installations: [{ ...installation, kind: 'unknown' }] }), /kind is unsupported/)
   assert.throws(() => parseCatalog({ installations: [{ ...installation, manifest: [] }] }), /manifest must be an object/)
+  assert.throws(() => parseCatalog({ installations: [{ ...installation, manifest: { locales: 'vi-VN' } }] }), /manifest\.locales must be an array/)
+  assert.throws(() => parseCatalog({ installations: [{ ...installation, manifest: { secretFields: ['apiKey', 3] } }] }), /secretFields\[1\] must be a non-empty string/)
   const defaults = parseCatalog({ installations: [{ ...installation, manifest: null, configSchema: null }] })
   assert.deepEqual(defaults[0]?.manifest, {})
   assert.deepEqual(defaults[0]?.configSchema, {})
+  const normalized = parseCatalog({ installations: [{ ...installation, manifest: { locales: [' vi-VN '], secretFields: [' apiKey '] } }] })
+  assert.deepEqual(normalized[0]?.manifest, { locales: ['vi-VN'], secretFields: ['apiKey'] })
 })
 
 test('provider config is schema-driven and rejects unknown fields', async () => {

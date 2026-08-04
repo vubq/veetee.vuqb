@@ -784,3 +784,15 @@
 - Không đổi wire protocol, provider fallback, runtime process hay production DB;
   không phát audio/mở microphone/speaker/serial audio, không flash/reset ESP32,
   không đổi Wi-Fi/Tailscale.
+
+### Provider manifest locale/secret binding validation (2026-08-05, host-only)
+
+- Catalog parser normalize `manifest.locales` và `manifest.secretFields` thành
+  chuỗi đã trim, đồng thời reject fail-closed nếu field không phải array hoặc
+  có phần tử rỗng/sai kiểu. Capability manifest additive khác vẫn được giữ
+  nguyên, không hard-code provider.
+- Voice locale filter và secret binding vì vậy nhận input có shape rõ ngay từ
+  parse boundary, không chờ fail muộn trong route/store.
+- Manager API dedicated PostgreSQL `veetee_vubq_test`: **43/43**, lint/build/
+  `openapi:check` pass. Không đổi wire/provider fallback/runtime/production DB;
+  audio lock vẫn bật.

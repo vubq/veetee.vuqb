@@ -947,7 +947,7 @@ export function parseCatalog(raw: unknown): ProviderInstallation[] {
     const configSchema = value.configSchema == null ? {} : value.configSchema
     if (!isRecord(manifest)) throw new Error(`provider catalog installation[${index}].manifest must be an object`)
     if (!isRecord(configSchema)) throw new Error(`provider catalog installation[${index}].configSchema must be an object`)
-    return { id, kind: kindValue as ProviderKind, displayNameKey, version, manifest, configSchema }
+    return { id, kind: kindValue as ProviderKind, displayNameKey, version, manifest: normalizeCatalogManifest(manifest, index), configSchema }
   })
 }
 
@@ -960,6 +960,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function catalogString(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} must be a non-empty string`)
   return value.trim()
+}
+
+function normalizeCatalogManifest(value: Record<string, unknown>, index: number): Record<string, unknown> {
+  const manifest = structuredClone(value)
+  for (const field of ['locales', 'secretFields'] as const) {
+    if (!(field in manifest)) continue
+    const values = manifest[field]
+    if (!Array.isArray(values)) throw new Error(`provider catalog installation[${index}].manifest.${field} must be an array`)
+    manifest[field] = values.map((item, valueIndex) => catalogString(item, `provider catalog installation[${index}].manifest.${field}[${valueIndex}]`))
+  }
+  return manifest
 }
 
 export async function loadInitialSnapshot(path: string | undefined): Promise<RuntimeSnapshot | undefined> {
