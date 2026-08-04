@@ -579,7 +579,18 @@
 - History cũng hiển thị banner khi một trong hai read (`conversations` hoặc
   `retention-policy`) là snapshot stale/offline có dữ liệu, nên operator không
   nhầm dữ liệu cũ với trạng thái live.
-- Web verification: typecheck, lint, production build, unit **79/79** và
+- Web verification: typecheck, lint, production build, unit **81/81** và
   Chromium E2E **9/9**; axe serious/critical gate pass. Không gọi Groq, không
   phát audio, không mở microphone/speaker, không flash/reset firmware, không đổi
   Wi-Fi/Tailscale hoặc mutate `veetee_vubq`.
+
+### Full host regression after retention hardening (2026-08-05, non-audio)
+
+- Voice Server **81 passed**; Manager API dedicated `veetee_vubq_test`
+  **37/37**, `openapi:check`, lint/build pass; firmware host CTest **1/1**;
+  runtime tools **20/20**.
+- Manager Web typecheck/lint/build, unit **81/81**, Chromium E2E **9/9** và
+  axe serious/critical gate pass. Đây là host/control-plane evidence.
+- Audio lock vẫn giữ nguyên: không `pw-play`, wake/audio harness,
+  microphone/speaker/serial audio, flash/reset/erase firmware hoặc thay đổi
+  Wi-Fi/Tailscale; không mutate production DB `veetee_vubq`.
