@@ -168,7 +168,8 @@ typedef struct {
     QueueHandle_t wake_event_queue;
     QueueHandle_t wake_command_queue;
     SemaphoreHandle_t state_lock;
-    SemaphoreHandle_t audio_codec_lock;
+    SemaphoreHandle_t audio_encoder_lock;
+    SemaphoreHandle_t audio_decoder_lock;
     EventGroupHandle_t wifi_events;
     volatile bool capture_active;
     volatile bool stop_requested;
@@ -225,19 +226,28 @@ static vt_device_state_t state_read(vt_app_t *app) {
     return state;
 }
 
-static bool audio_codec_lock_take(vt_app_t *app) {
-    return app != NULL && app->audio_codec_lock != NULL &&
-           xSemaphoreTake(app->audio_codec_lock, pdMS_TO_TICKS(250)) == pdTRUE;
+static bool audio_encoder_lock_take(vt_app_t *app) {
+    return app != NULL && app->audio_encoder_lock != NULL &&
+           xSemaphoreTake(app->audio_encoder_lock, pdMS_TO_TICKS(250)) == pdTRUE;
 }
 
-static void audio_codec_lock_give(vt_app_t *app) {
-    if (app != NULL && app->audio_codec_lock != NULL) (void)xSemaphoreGive(app->audio_codec_lock);
+static void audio_encoder_lock_give(vt_app_t *app) {
+    if (app != NULL && app->audio_encoder_lock != NULL) (void)xSemaphoreGive(app->audio_encoder_lock);
+}
+
+static bool audio_decoder_lock_take(vt_app_t *app) {
+    return app != NULL && app->audio_decoder_lock != NULL &&
+           xSemaphoreTake(app->audio_decoder_lock, pdMS_TO_TICKS(250)) == pdTRUE;
+}
+
+static void audio_decoder_lock_give(vt_app_t *app) {
+    if (app != NULL && app->audio_decoder_lock != NULL) (void)xSemaphoreGive(app->audio_decoder_lock);
 }
 
 static bool audio_decoder_reset_locked(vt_app_t *app) {
-    if (!audio_codec_lock_take(app)) return false;
+    if (!audio_decoder_lock_take(app)) return false;
     vt_audio_reset_decoder(&app->audio);
-    audio_codec_lock_give(app);
+    audio_decoder_lock_give(app);
     return true;
 }
 
@@ -304,8 +314,8 @@ static void websocket_text_callback(const cJSON *message, void *context) {
         if (!cJSON_IsString(tts_state) || tts_state->valuestring == NULL) return;
         if (strcmp(tts_state->valuestring, "start") == 0) {
             (void)xQueueReset(app->playback_queue);
-            /* Stop capture before resetting the decoder. The codec mutex
-               also serializes a possible in-flight encode/decode. The Opus
+            /* Stop capture before resetting the decoder. The decoder mutex
+               serializes a possible in-flight decode. The Opus
                encoder remains continuous across turns; its reset path is not
                used here because the vendor API may return DATA_LACK at the
                start of a new stream. */
@@ -368,12 +378,12 @@ static void playback_task(void *context) {
     static vt_playback_packet_t packet;
     while (!app->stop_requested) {
         if (xQueueReceive(app->playback_queue, &packet, pdMS_TO_TICKS(250)) == pdTRUE) {
-            if (!audio_codec_lock_take(app)) {
-                ESP_LOGW(TAG, "audio codec lock timeout before playback");
+            if (!audio_decoder_lock_take(app)) {
+                ESP_LOGW(TAG, "audio decoder lock timeout before playback");
                 continue;
             }
             int result = vt_audio_decode_and_play(&app->audio, packet.bytes, packet.length);
-            audio_codec_lock_give(app);
+            audio_decoder_lock_give(app);
             if (result != ESP_OK) ESP_LOGW(TAG, "Opus playback decode failed");
         }
     }
@@ -475,9 +485,9 @@ static void capture_task(void *context) {
         }
         size_t opus_size = 0;
         int encode_result = ESP_ERR_TIMEOUT;
-        if (audio_codec_lock_take(app)) {
+        if (audio_encoder_lock_take(app)) {
             encode_result = vt_audio_encode(&app->audio, samples, sample_count, opus, sizeof(opus), &opus_size);
-            audio_codec_lock_give(app);
+            audio_encoder_lock_give(app);
         }
         if (encode_result != ESP_OK) {
             ESP_LOGW(TAG, "Opus capture encode failed");
@@ -693,11 +703,13 @@ void app_main(void) {
     if (app == NULL) return;
     app->state.state = VT_DEVICE_IDLE;
     app->state_lock = xSemaphoreCreateMutex();
-    app->audio_codec_lock = xSemaphoreCreateMutex();
+    app->audio_encoder_lock = xSemaphoreCreateMutex();
+    app->audio_decoder_lock = xSemaphoreCreateMutex();
     app->playback_queue = xQueueCreate(CONFIG_VEETEE_PLAYBACK_QUEUE_DEPTH, sizeof(vt_playback_packet_t));
     app->wake_event_queue = xQueueCreate(4, sizeof(vt_wake_event_t));
     app->wake_command_queue = xQueueCreate(4, sizeof(vt_wake_command_t));
-    if (app->state_lock == NULL || app->audio_codec_lock == NULL || app->playback_queue == NULL || app->wake_event_queue == NULL ||
+    if (app->state_lock == NULL || app->audio_encoder_lock == NULL || app->audio_decoder_lock == NULL ||
+        app->playback_queue == NULL || app->wake_event_queue == NULL ||
         app->wake_command_queue == NULL || device_identity(app) != ESP_OK) {
         ESP_LOGE(TAG, "firmware bootstrap allocation failed");
         return;

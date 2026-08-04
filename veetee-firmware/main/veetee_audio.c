@@ -206,6 +206,8 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
         vt_audio_deinit(audio);
         return ESP_ERR_INVALID_SIZE;
     }
+    ESP_LOGI(TAG, "Opus encoder contract input_bytes=%d output_hint=%d frame_samples=%d",
+             encoder_frame_bytes, encoder_out_bytes, audio->input_frame_samples);
     audio->output_frame_bytes = audio->output_frame_samples * (int)sizeof(int16_t);
     return ESP_OK;
 }
@@ -257,7 +259,16 @@ int vt_audio_encode(vt_audio_t *audio, const int16_t *samples, size_t sample_cou
     esp_audio_enc_in_frame_t input = { .buffer = (uint8_t *)samples, .len = (uint32_t)(sample_count * sizeof(int16_t)) };
     esp_audio_enc_out_frame_t output = { .buffer = opus, .len = (uint32_t)opus_capacity, .encoded_bytes = 0 };
     esp_audio_err_t error = esp_opus_enc_process(audio->encoder, &input, &output);
-    if (error != ESP_AUDIO_ERR_OK || output.encoded_bytes == 0 || output.encoded_bytes > opus_capacity) return ESP_ERR_INVALID_SIZE;
+    if (error != ESP_AUDIO_ERR_OK) {
+        ESP_LOGW(TAG, "Opus encoder process rejected result=%d input_bytes=%u output_capacity=%u encoded=%u",
+                 (int)error, (unsigned)input.len, (unsigned)opus_capacity, (unsigned)output.encoded_bytes);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (output.encoded_bytes == 0 || output.encoded_bytes > opus_capacity) {
+        ESP_LOGW(TAG, "Opus encoder output invalid encoded=%u capacity=%u",
+                 (unsigned)output.encoded_bytes, (unsigned)opus_capacity);
+        return ESP_ERR_INVALID_SIZE;
+    }
     *opus_size = output.encoded_bytes;
     return ESP_OK;
 }
