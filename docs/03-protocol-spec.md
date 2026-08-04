@@ -852,6 +852,38 @@ rỗng; nó gửi:
 field alert bắt buộc và dừng capture/re-arm. Policy chỉ là first-speech watchdog,
 không phải timeout của conversation đã bắt đầu.
 
+Nếu pipeline đã nhận `listen/stop` (hoặc endpoint tương đương) nhưng ASR trả về
+transcript rỗng/whitespace, server MUST dừng lượt trước khi gọi Intent, LLM hoặc
+TTS và gửi cùng envelope `alert` với `code:"NO_SPEECH"`:
+
+Hai message text được gửi theo thứ tự, không phải một JSON object ghép chung:
+
+```json
+{
+  "type": "stt",
+  "text": "",
+  "session_id": "<session>"
+}
+```
+
+```json
+{
+  "type": "alert",
+  "status": "warning",
+  "message": "<localized config text>",
+  "emotion": "neutral",
+  "code": "NO_SPEECH",
+  "session_id": "<session>"
+}
+```
+
+`NO_SPEECH` là mã additive khác với `NO_SPEECH_TIMEOUT`: mã trước biểu thị
+ASR-final rỗng, mã sau biểu thị watchdog hết hạn trước khi có speech. Cả hai
+đều không phải lỗi provider và không được phát TTS. Peer cũ bỏ qua `code` vẫn
+nhận được `stt` rỗng/`alert` chuẩn; Veetee peer dùng mã để telemetry và đưa
+session về `READY_IDLE`. Nội dung `message`, `status` và `emotion` phải lấy từ
+role snapshot/localized config; core không được chèn câu tiếng Việt cố định.
+
 `tts/sentence_end` không thuộc contract bắt buộc vì snapshot chỉ có browser client
 nhận type đó mà không có producer tương ứng trong sender
 (`references/xiaozhi-esp32-server/main/digital-human/js/core/network/websocket.js:172-202`,

@@ -361,3 +361,18 @@
 - Verification không audio: Web typecheck/lint/build, **66/66 unit tests**;
   Chromium E2E **9/9** (gồm core a11y serious/critical gate). Không đổi
   API/database/firmware, Wi-Fi hoặc Tailscale.
+
+### Empty-ASR gate (2026-08-04, host-only)
+
+- Pipeline đã chặn transcript rỗng/whitespace ngay sau `ASR.finish()`: gửi
+  `stt` rỗng và `alert.code="NO_SPEECH"`, không gọi Intent/LLM/TTS, tăng metric
+  `no_speech_turns` và kết thúc turn với `finishReason=no_speech`. Alert text,
+  status và emotion chỉ đọc từ localized `autoTurn.noSpeechAlert` trong snapshot;
+  fallback kỹ thuật không chứa câu nghiệp vụ.
+- Regression targeted **2 passed**; Voice Server full suite **64 passed**.
+  ADR-021 và protocol spec đã ghi rõ khác biệt giữa `NO_SPEECH` (ASR rỗng) và
+  `NO_SPEECH_TIMEOUT` (watchdog hết hạn trước speech).
+- Mốc này hoàn toàn host-only: không phát `pw-play`, không chạy wake harness,
+  không mở serial để phát test, không flash board, không đổi Wi-Fi/network và
+  không mutate database production. Physical wake/PTT/mic/speaker acceptance
+  vẫn chờ operator cấp quyền lại.

@@ -126,6 +126,21 @@ class TurnPipeline:
             self.turn.asr_finished_at = time.perf_counter()
             self._append_transcript("user", transcript, 0, self._elapsed_ms(self.turn.asr_finished_at))
             await self._send_text(control_message("stt", session_id=self.session_id, text=transcript, turn_id=self.turn.turn_id))
+            if not transcript.strip():
+                self.turn.finish_reason = "no_speech"
+                self.metrics["no_speech_turns"] = self.metrics.get("no_speech_turns", 0) + 1
+                status, message, emotion = self._no_speech_alert()
+                await self._send_text(
+                    control_message(
+                        "alert",
+                        session_id=self.session_id,
+                        status=status,
+                        message=message,
+                        emotion=emotion,
+                        code="NO_SPEECH",
+                    )
+                )
+                return
             intent = self.registry.intent.classify(transcript, locale=self.snapshot.locale) if self.registry.intent else None
             if intent is not None:
                 await self._send_text(control_message(
@@ -369,6 +384,20 @@ class TurnPipeline:
             return max(0, int(config.get("maxCharacters", 12000)))
         except (TypeError, ValueError):
             return 0
+
+    def _no_speech_alert(self) -> tuple[str, str, str]:
+        """Read the optional localized no-speech alert without adding literals to core."""
+
+        raw_policy = self.snapshot.raw.get("autoTurn")
+        alert = raw_policy.get("noSpeechAlert") if isinstance(raw_policy, dict) else None
+        if not isinstance(alert, dict):
+            return "warning", "", "neutral"
+        status = alert.get("status")
+        message = alert.get("message")
+        emotion = alert.get("emotion")
+        if not all(isinstance(value, str) for value in (status, message, emotion)):
+            return "warning", "", "neutral"
+        return status, message, emotion
 
     def _progress_ack(self) -> tuple[int, str]:
         policy = self.snapshot.raw.get("progress")

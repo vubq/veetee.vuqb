@@ -756,6 +756,8 @@ class VoiceSession:
                 # realtime keep the session armed for the next turn. Capture
                 # the mode before a stale/abort stop can clear ``self.turn``.
                 self.phase = "listening" if self.turn is not None and self.turn.mode in {"auto", "realtime"} else "ready_idle"
+            elif value.get("type") == "alert":
+                self.phase = "ready_idle"
             await self.ws.send_str(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
 
     async def send_binary(self, value: bytes, *, turn_id: str | None = None) -> None:

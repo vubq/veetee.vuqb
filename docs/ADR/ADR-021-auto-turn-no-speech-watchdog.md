@@ -108,6 +108,9 @@ ISR và không có task global dùng chung giữa session.
 
 - [x] Auto silence test: alert đúng code/message, không audio/ASR/LLM/TTS, lease về 0.
 - [x] Speech-before-deadline test: watchdog bị hủy, lease còn sống để endpoint bình thường.
+- [x] Empty-ASR gate: transcript rỗng sau endpoint gửi `stt` rỗng và
+  `alert.code="NO_SPEECH"`, không gọi Intent/LLM/TTS; host Voice Server suite
+  hiện **64 passed**.
 - [ ] Physical wake → silence → firmware alert/re-arm trên board đã flash image có
   policy publish.
 - [ ] 30-turn/long-session regression sau khi promotion policy vào runtime thật.

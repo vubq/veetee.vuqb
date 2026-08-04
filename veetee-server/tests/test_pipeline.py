@@ -46,6 +46,67 @@ async def test_fixture_pipeline_streams_start_sentence_audio_stop():
 
 
 @pytest.mark.asyncio
+async def test_empty_transcript_emits_no_speech_without_llm_or_tts():
+    snapshot = load_snapshot(Path(__file__).parents[1] / "config/fixtures/m0.json")
+    registry = ProviderRegistry(snapshot)
+    llm_calls = 0
+    tts_calls = 0
+
+    class EmptyASR:
+        def reset(self) -> None:
+            pass
+
+        async def accept(self, pcm: bytes, sample_rate: int) -> None:
+            del pcm, sample_rate
+
+        async def finish(self, locale: str) -> str:
+            del locale
+            return ""
+
+    class UnexpectedLLM:
+        async def stream(self, *, prompt: str, locale: str, tools: list[dict[str, object]]):
+            nonlocal llm_calls
+            del prompt, locale, tools
+            llm_calls += 1
+            raise AssertionError("empty transcript must not call LLM")
+            yield LLMDelta(final=True)
+
+    class UnexpectedTTS:
+        async def stream(self, text: str, *, locale: str, voice: dict[str, object]):
+            nonlocal tts_calls
+            del text, locale, voice
+            tts_calls += 1
+            raise AssertionError("empty transcript must not call TTS")
+            yield AudioChunk(b"", 24_000, final=True)
+
+    registry.asr = EmptyASR()
+    registry.llm = UnexpectedLLM()
+    registry.tts = UnexpectedTTS()
+    turn = Turn(turn_id="empty-transcript", generation=1, mode="manual", cancelled=asyncio.Event())
+    events = []
+    pipeline = TurnPipeline(
+        snapshot=snapshot,
+        registry=registry,
+        codec=OpusCodec(16_000, 24_000),
+        profile="ws-v3",
+        session_id="empty-transcript-session",
+        turn=turn,
+        send_text=lambda value: _append(events, value),
+        send_binary=lambda value: _append(events, value),
+        metrics={},
+    )
+
+    await pipeline.finish()
+
+    assert turn.finish_reason == "no_speech"
+    assert any(event.get("type") == "stt" and event.get("text") == "" for event in events)
+    assert any(event.get("type") == "alert" and event.get("code") == "NO_SPEECH" for event in events)
+    assert not any(event.get("type") == "tts" for event in events)
+    assert llm_calls == 0
+    assert tts_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_progress_ack_is_configured_and_precedes_slow_llm_answer(tmp_path):
     source = json.loads((Path(__file__).parents[1] / "config/fixtures/m0.json").read_text(encoding="utf-8"))
     source["progress"] = {
