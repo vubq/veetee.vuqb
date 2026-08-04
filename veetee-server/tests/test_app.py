@@ -533,6 +533,63 @@ async def test_compatibility_profile_handshake_and_turn(monkeypatch, version):
 
 
 @pytest.mark.asyncio
+async def test_mismatched_session_control_is_ignored_without_releasing_current_turn(monkeypatch):
+    """A late control frame from an older connection cannot abort this turn."""
+
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    ws = None
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "session-guard-device", "Client-Id": "session-guard-client", "Protocol-Version": "3"},
+        )
+        await ws.send_json({
+            "type": "hello",
+            "version": 3,
+            "transport": "websocket",
+            "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+        })
+        hello = await ws.receive_json()
+        current_session = hello["session_id"]
+        stale_session = "old-session-that-must-not-own-this-connection"
+
+        await ws.send_json({"type": "listen", "state": "start", "mode": "manual", "session_id": stale_session})
+        await asyncio.sleep(0.05)
+        assert service.metrics["active_turns"] == 0
+
+        await ws.send_json({"type": "listen", "state": "start", "mode": "manual", "session_id": current_session})
+        for _ in range(100):
+            if service.metrics["active_turns"] == 1:
+                break
+            await asyncio.sleep(0.01)
+        assert service.metrics["active_turns"] == 1
+
+        await ws.send_json({"type": "abort", "reason": "late-old-session", "session_id": stale_session})
+        await asyncio.sleep(0.05)
+        assert service.metrics["active_turns"] == 1
+
+        await ws.send_json({"type": "abort", "reason": "test", "session_id": current_session})
+        stop = await ws.receive_json(timeout=2)
+        assert stop["type"] == "tts"
+        assert stop["state"] == "stop"
+        assert service.metrics["active_turns"] == 0
+    finally:
+        if ws is not None:
+            await ws.close()
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_duplicate_device_hello_handover_closes_old_session(monkeypatch):
     """A device lease must never leave two connections controlling one speaker."""
 
