@@ -159,6 +159,38 @@ test('provider config is schema-driven and rejects unknown fields', async () => 
   }
 })
 
+test('provider config enforces catalog JSON Schema types, ranges, enums and URI formats', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const invalidType = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'veetee.vad.energy', name: 'wrong-type', config: { speechThreshold: '0.2', releaseThreshold: 0.05, minSpeechMs: 100, minSilenceMs: 300 },
+    } })
+    assert.equal(invalidType.statusCode, 422)
+    assert.equal(invalidType.json().code, 'CONFIG_INVALID')
+
+    const invalidRange = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'groq.chat', name: 'wrong-range', config: { endpoint: 'https://api.groq.com/openai/v1', model: 'fixture', maxTokens: 0 },
+    } })
+    assert.equal(invalidRange.statusCode, 422)
+    assert.equal(invalidRange.json().code, 'CONFIG_INVALID')
+
+    const invalidEnum = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'veetee.asr.phowhisper', name: 'wrong-enum', config: { modelPath: '/models/phowhisper', device: 'metal' },
+    } })
+    assert.equal(invalidEnum.statusCode, 422)
+    assert.equal(invalidEnum.json().code, 'CONFIG_INVALID')
+
+    const invalidUri = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'groq.chat', name: 'wrong-uri', config: { endpoint: 'not-a-uri', model: 'fixture', maxTokens: 64 },
+    } })
+    assert.equal(invalidUri.statusCode, 422)
+    assert.equal(invalidUri.json().code, 'CONFIG_INVALID')
+  } finally {
+    await app.close()
+  }
+})
+
 test('provider selection validates config ownership and kind before changing the draft', async () => {
   const app = await buildApp({ env })
   await app.ready()

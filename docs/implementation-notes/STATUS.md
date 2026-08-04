@@ -724,3 +724,17 @@
   `npm run lint`, `npm run build`, `npm run openapi:check` đều pass.
 - Audio lock vẫn bật: không `pw-play`, wake/audio harness, microphone/speaker/
   serial audio, flash/reset/erase ESP32 hoặc đổi Wi-Fi/Tailscale.
+
+### Schema-driven provider value validation (2026-08-05, host-only)
+
+- Provider config boundary giờ diễn giải các keyword JSON Schema mà catalog dùng:
+  type/integer, enum, minimum/maximum, min/max length, min/max items, nested
+  properties/items, required, additionalProperties và format `uri`.
+- Validation generic theo schema, không có branch theo provider ID hoặc tên field;
+  config sai bị trả `422 CONFIG_INVALID` trước khi tạo revision. Schema rỗng
+  được coi là object đóng để tránh chấp nhận key ngoài ý muốn.
+- Manager API PostgreSQL dedicated `veetee_vubq_test`: **42/42**; lint, build và
+  `openapi:check` pass. Không đổi provider fallback, wire protocol, production
+  DB hay runtime process.
+- Audio lock vẫn bật; không phát audio, mở microphone/speaker/serial audio,
+  flash/reset/erase ESP32 hoặc đổi Wi-Fi/Tailscale.

@@ -1017,12 +1017,89 @@ function publicDevice(value: DeviceRecord, now: Date, presenceTtlMs: number): De
 }
 
 function validateJsonObject(value: Record<string, unknown>, schema: Record<string, unknown>): void {
-  if (schema.type !== 'object' || schema.additionalProperties === false) {
-    const properties = schema.properties as Record<string, unknown> | undefined
-    const allowed = new Set(Object.keys(properties ?? {}))
-    for (const key of Object.keys(value)) if (!allowed.has(key)) throw problem('CONFIG_INVALID', `Unknown provider field: ${key}`, 422)
+  if (!isRecord(value)) throw problem('CONFIG_INVALID', 'Provider config must be an object', 422)
+  // An empty catalog schema is treated as an intentionally closed object. This
+  // keeps a missing provider schema fail-closed instead of silently accepting
+  // arbitrary config keys, while normal JSON Schema objects keep their own
+  // `additionalProperties` policy.
+  const rootSchema = schema.type === undefined ? { ...schema, type: 'object', additionalProperties: false } : schema
+  validateJsonValue(value, rootSchema, 'config')
+}
+
+function validateJsonValue(value: unknown, schema: Record<string, unknown>, path: string): void {
+  const expectedType = schema.type
+  const validType = typeof expectedType === 'string'
+    ? matchesJsonType(value, expectedType)
+    : Array.isArray(expectedType)
+      ? expectedType.some((item): item is string => typeof item === 'string' && matchesJsonType(value, item))
+      : true
+  if (!validType) throw problem('CONFIG_INVALID', `${path} has an invalid type`, 422)
+
+  const enumValues = schema.enum
+  if (Array.isArray(enumValues) && !enumValues.some((candidate) => jsonValuesEqual(candidate, value))) {
+    throw problem('CONFIG_INVALID', `${path} must be one of the configured values`, 422)
   }
-  for (const required of (schema.required as string[] | undefined) ?? []) if (!(required in value)) throw problem('CONFIG_INVALID', `Missing provider field: ${required}`, 422)
+
+  if (typeof value === 'string') {
+    if (typeof schema.minLength === 'number' && value.length < schema.minLength) throw problem('CONFIG_INVALID', `${path} is shorter than the configured minimum`, 422)
+    if (typeof schema.maxLength === 'number' && value.length > schema.maxLength) throw problem('CONFIG_INVALID', `${path} is longer than the configured maximum`, 422)
+    if (schema.format === 'uri') {
+      try {
+        const parsed = new URL(value)
+        if (!parsed.protocol || !parsed.hostname) throw new Error('invalid uri')
+      } catch {
+        throw problem('CONFIG_INVALID', `${path} must be a valid URI`, 422)
+      }
+    }
+  }
+  if (typeof value === 'number') {
+    if (typeof schema.minimum === 'number' && value < schema.minimum) throw problem('CONFIG_INVALID', `${path} is below the configured minimum`, 422)
+    if (typeof schema.maximum === 'number' && value > schema.maximum) throw problem('CONFIG_INVALID', `${path} is above the configured maximum`, 422)
+  }
+  if (Array.isArray(value)) {
+    if (typeof schema.minItems === 'number' && value.length < schema.minItems) throw problem('CONFIG_INVALID', `${path} has fewer items than configured`, 422)
+    if (typeof schema.maxItems === 'number' && value.length > schema.maxItems) throw problem('CONFIG_INVALID', `${path} has more items than configured`, 422)
+    if (isRecord(schema.items)) value.forEach((item, index) => validateJsonValue(item, schema.items as Record<string, unknown>, `${path}[${index}]`))
+  }
+  if (!isRecord(value)) return
+
+  const properties = isRecord(schema.properties) ? schema.properties : {}
+  const required = schema.required
+  if (Array.isArray(required)) {
+    for (const key of required) {
+      if (typeof key !== 'string' || !Object.prototype.hasOwnProperty.call(value, key)) {
+        throw problem('CONFIG_INVALID', `${path}.${String(key)} is required`, 422)
+      }
+    }
+  }
+  const additionalProperties = schema.additionalProperties
+  for (const [key, child] of Object.entries(value)) {
+    const childSchema = properties[key]
+    if (isRecord(childSchema)) {
+      validateJsonValue(child, childSchema, `${path}.${key}`)
+      continue
+    }
+    if (additionalProperties === false) throw problem('CONFIG_INVALID', `Unknown provider field: ${key}`, 422)
+    if (isRecord(additionalProperties)) validateJsonValue(child, additionalProperties, `${path}.${key}`)
+  }
+}
+
+function matchesJsonType(value: unknown, expected: string): boolean {
+  switch (expected) {
+    case 'object': return isRecord(value)
+    case 'array': return Array.isArray(value)
+    case 'string': return typeof value === 'string'
+    case 'number': return typeof value === 'number' && Number.isFinite(value)
+    case 'integer': return typeof value === 'number' && Number.isInteger(value)
+    case 'boolean': return typeof value === 'boolean'
+    case 'null': return value === null
+    default: return true
+  }
+}
+
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  try { return JSON.stringify(left) === JSON.stringify(right) } catch { return false }
 }
 
 export function validateSecretBindings(installation: ProviderInstallation, refs: string[], options: { requireComplete?: boolean } = {}): void {
