@@ -416,7 +416,14 @@ def _event(name: str, started: float, **fields: Any) -> dict[str, Any]:
     }
 
 
-def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) -> list[dict[str, Any]]:
+def run(
+    scenario: Scenario,
+    *,
+    allow_audio: bool,
+    dry_run: bool,
+    verbose: bool,
+    result_sink: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     missing = [message for message in (
         _check_clip(scenario.wake_clip, "clips.wake", required=not dry_run),
         _check_clip(scenario.utterance_clip, "clips.utterance", required=not dry_run),
@@ -468,7 +475,7 @@ def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) 
 
     started = time.monotonic()
     monitor = Monitor(scenario, verbose=verbose)
-    results: list[dict[str, Any]] = []
+    results = result_sink if result_sink is not None else []
     wake_player: subprocess.Popen[bytes] | None = None
     utterance_player: subprocess.Popen[bytes] | None = None
     try:
@@ -511,6 +518,28 @@ def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) 
         monitor.stop()
 
 
+def _write_report(
+    path: Path,
+    scenario: Scenario,
+    events: list[dict[str, Any]],
+    *,
+    status: str,
+    error: str | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "scenario": str(scenario.source),
+        "status": status,
+        "forbiddenMarkers": list(scenario.forbidden_markers),
+        "events": events,
+    }
+    if error:
+        payload["error"] = error
+    path.expanduser().resolve().write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", type=Path, required=True, help="JSON scenario; keep local audio paths outside Git")
@@ -520,20 +549,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report", type=Path, help="write matched event JSON to this path")
     args = parser.parse_args(argv)
 
+    scenario: Scenario | None = None
+    results: list[dict[str, Any]] = []
     try:
         scenario = load_scenario(args.scenario)
-        results = run(scenario, allow_audio=args.allow_audio, dry_run=args.dry_run, verbose=args.verbose)
+        results = run(
+            scenario,
+            allow_audio=args.allow_audio,
+            dry_run=args.dry_run,
+            verbose=args.verbose,
+            result_sink=results,
+        )
         if args.report and not args.dry_run:
-            args.report.expanduser().resolve().write_text(json.dumps({
-                "scenario": str(scenario.source),
-                "forbiddenMarkers": list(scenario.forbidden_markers),
-                "events": results,
-            }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            _write_report(args.report, scenario, results, status="passed")
         return 0
     except KeyboardInterrupt:
+        if scenario is not None and args.report and not args.dry_run:
+            _write_report(args.report, scenario, results, status="interrupted", error="keyboard_interrupt")
         print("interrupted; monitor/player cleanup requested", file=sys.stderr)
         return 130
     except HarnessError as error:
+        if scenario is not None and args.report and not args.dry_run:
+            _write_report(args.report, scenario, results, status="failed", error=str(error))
         print(f"wake-test: {error}", file=sys.stderr)
         return 2
 

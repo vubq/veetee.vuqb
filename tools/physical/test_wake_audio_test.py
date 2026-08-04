@@ -86,6 +86,25 @@ class WakeAudioHarnessTest(unittest.TestCase):
             with self.assertRaisesRegex(wake_audio_test.HarnessError, "--allow-audio"):
                 wake_audio_test.run(scenario, allow_audio=False, dry_run=False, verbose=False)
 
+    def test_report_preserves_status_and_redacted_event_shape(self) -> None:
+        root = Path(__file__).resolve().parent
+        scenario = wake_audio_test.load_scenario(root / "wake-test.example.json")
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "partial.json"
+            wake_audio_test._write_report(
+                report,
+                scenario,
+                [{"event": "wake_detected", "repetition": 1}],
+                status="interrupted",
+                error="keyboard_interrupt",
+            )
+            document = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(document["status"], "interrupted")
+            self.assertEqual(document["error"], "keyboard_interrupt")
+            self.assertEqual(document["events"][0]["event"], "wake_detected")
+            self.assertNotIn("audio", document)
+            self.assertNotIn("secret", document)
+
 
 if __name__ == "__main__":
     unittest.main()
