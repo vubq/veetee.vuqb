@@ -933,6 +933,7 @@ export function deviceEtag(value: { id: string; ownerId: string | null; assistan
 
 export function parseCatalog(raw: unknown): ProviderInstallation[] {
   if (!isRecord(raw) || !Array.isArray(raw.installations)) throw new Error('provider catalog must contain installations')
+  if (raw.schemaVersion !== 1) throw new Error('provider catalog schemaVersion must be 1')
   const ids = new Set<string>()
   return raw.installations.map((value, index) => {
     if (!isRecord(value)) throw new Error(`provider catalog installation[${index}] must be an object`)

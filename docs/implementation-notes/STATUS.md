@@ -819,3 +819,14 @@
 - Manager Web unit **93/93**, E2E **11/11**, typecheck/lint/build pass. Không
   đổi API/wire/provider fallback, không restart runtime, không phát audio/mở
   microphone/speaker, không flash/reset ESP32, không đổi Wi-Fi/Tailscale.
+
+### Provider catalog schema-version gate (2026-08-05, host-only)
+
+- `parseCatalog()` yêu cầu `schemaVersion === 1` trước khi validate
+  installations; catalog thiếu/sai version bị từ chối sớm thay vì được diễn
+  giải theo schema ngầm định.
+- Regression Manager API dedicated `veetee_vubq_test`: **43/43**, lint/build/
+  `openapi:check` pass. Catalog hiện tại vẫn version 1; không đổi provider
+  fallback, wire protocol, runtime process hoặc production DB.
+- Audio lock giữ nguyên: không phát audio, mở microphone/speaker/serial audio,
+  flash/reset/erase ESP32 hoặc đổi Wi-Fi/Tailscale.

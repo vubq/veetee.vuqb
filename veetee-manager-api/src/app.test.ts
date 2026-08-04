@@ -138,15 +138,17 @@ test('voice catalog total matches the locale-filtered items', async () => {
 
 test('provider catalog parsing fails closed on duplicate or malformed installations', () => {
   const installation = { id: 'test.tts', kind: 'tts', displayNameKey: 'provider.tts.test', version: '1.0.0', manifest: {}, configSchema: {} }
-  assert.throws(() => parseCatalog({ installations: [installation, { ...installation }] }), /duplicate installation id/)
-  assert.throws(() => parseCatalog({ installations: [{ ...installation, kind: 'unknown' }] }), /kind is unsupported/)
-  assert.throws(() => parseCatalog({ installations: [{ ...installation, manifest: [] }] }), /manifest must be an object/)
-  assert.throws(() => parseCatalog({ installations: [{ ...installation, manifest: { locales: 'vi-VN' } }] }), /manifest\.locales must be an array/)
-  assert.throws(() => parseCatalog({ installations: [{ ...installation, manifest: { secretFields: ['apiKey', 3] } }] }), /secretFields\[1\] must be a non-empty string/)
-  const defaults = parseCatalog({ installations: [{ ...installation, manifest: null, configSchema: null }] })
+  assert.throws(() => parseCatalog({ schemaVersion: 2, installations: [installation] }), /schemaVersion must be 1/)
+  assert.throws(() => parseCatalog({ installations: [installation] }), /schemaVersion must be 1/)
+  assert.throws(() => parseCatalog({ schemaVersion: 1, installations: [installation, { ...installation }] }), /duplicate installation id/)
+  assert.throws(() => parseCatalog({ schemaVersion: 1, installations: [{ ...installation, kind: 'unknown' }] }), /kind is unsupported/)
+  assert.throws(() => parseCatalog({ schemaVersion: 1, installations: [{ ...installation, manifest: [] }] }), /manifest must be an object/)
+  assert.throws(() => parseCatalog({ schemaVersion: 1, installations: [{ ...installation, manifest: { locales: 'vi-VN' } }] }), /manifest\.locales must be an array/)
+  assert.throws(() => parseCatalog({ schemaVersion: 1, installations: [{ ...installation, manifest: { secretFields: ['apiKey', 3] } }] }), /secretFields\[1\] must be a non-empty string/)
+  const defaults = parseCatalog({ schemaVersion: 1, installations: [{ ...installation, manifest: null, configSchema: null }] })
   assert.deepEqual(defaults[0]?.manifest, {})
   assert.deepEqual(defaults[0]?.configSchema, {})
-  const normalized = parseCatalog({ installations: [{ ...installation, manifest: { locales: [' vi-VN '], secretFields: [' apiKey '] } }] })
+  const normalized = parseCatalog({ schemaVersion: 1, installations: [{ ...installation, manifest: { locales: [' vi-VN '], secretFields: [' apiKey '] } }] })
   assert.deepEqual(normalized[0]?.manifest, { locales: ['vi-VN'], secretFields: ['apiKey'] })
 })
 
