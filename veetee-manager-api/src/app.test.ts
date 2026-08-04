@@ -578,6 +578,7 @@ test('problem responses keep a stable media type and machine-readable code', asy
   try {
     const checks = [
       { response: await app.inject({ method: 'GET', url: '/api/v1/assistants/00000000-0000-4000-8000-000000000000' }), status: 404, code: 'NOT_FOUND' },
+      { response: await app.inject({ method: 'GET', url: '/api/v1/not-a-route?token=must-not-echo' }), status: 404, code: 'NOT_FOUND' },
       { response: await app.inject({ method: 'PATCH', url: '/api/v1/retention-policy', payload: { captureTranscript: true, transcriptDays: 30, captureAudio: false, audioDays: null } }), status: 428, code: 'IF_MATCH_REQUIRED' },
       { response: await app.inject({ method: 'GET', url: '/api/v1/assistants?search=' + 'x'.repeat(121) }), status: 400, code: 'VALIDATION_ERROR' },
     ]
@@ -587,6 +588,10 @@ test('problem responses keep a stable media type and machine-readable code', asy
       assert.equal(check.response.json().code, check.code)
       assert.equal(typeof check.response.json().detail, 'string')
     }
+    const unknownRoute = checks.at(1)
+    assert.ok(unknownRoute)
+    assert.equal(unknownRoute.response.json().detail, 'Route not found')
+    assert.equal(String(unknownRoute.response.body).includes('must-not-echo'), false)
   } finally {
     await app.close()
   }

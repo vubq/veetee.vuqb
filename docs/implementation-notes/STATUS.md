@@ -650,3 +650,19 @@
 - Audio lock vẫn giữ nguyên: không `pw-play`, wake/audio harness,
   microphone/speaker/serial audio, flash/reset/erase firmware hoặc đổi
   Wi-Fi/Tailscale.
+
+### Unknown-route problem contract hardening (2026-08-05, host-only)
+
+- Manager API đã thêm `setNotFoundHandler`: route không tồn tại trả cùng
+  `application/problem+json` contract, `code=NOT_FOUND`, detail ổn định
+  `Route not found`; query string không được echo để tránh lộ credential/canary.
+- Regression mới kiểm tra media type, code, detail và không-echo query; không
+  thay đổi wire protocol, provider fallback, runtime config, firmware hoặc DB.
+- Verification: Manager API dedicated `veetee_vubq_test` **39/39**, lint/build/
+  `openapi:check` pass; Voice Server `.venv` **81/81**; Manager Web typecheck,
+  lint, build, unit **87/87**, Chromium E2E **11/11** (axe serious/critical
+  pass); firmware host CTest **1/1**; runtime tools **20/20**.
+- Đây là host/control-plane evidence. Theo yêu cầu operator, audio lock vẫn
+  bật: không `pw-play`, wake/audio harness, microphone/speaker/serial audio,
+  flash/reset/erase ESP32, đổi Wi-Fi/Tailscale hoặc mutate production
+  `veetee_vubq`; không restart các service đang chạy.

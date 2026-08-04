@@ -770,6 +770,12 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   })
 
   app.get('/openapi.json', { schema: { hide: true } }, async () => app.swagger())
+  app.setNotFoundHandler((_request, reply) => {
+    // Keep unknown routes on the same machine-readable contract as known
+    // route/domain errors. Do not echo the URL: query strings can contain
+    // credentials or other operator-provided sensitive values.
+    return sendProblemCode(reply, 404, 'NOT_FOUND', 'Route not found')
+  })
   app.setErrorHandler((error, _request, reply) => {
     const value = error as { validation?: unknown; message?: string }
     if (value.validation) return sendProblemCode(reply, 400, 'VALIDATION_ERROR', value.message ?? 'Request validation failed')
