@@ -928,3 +928,15 @@
   restart runtime, không flash/reset ESP32 và không đổi mạng.
 - Đây chưa đóng M3: carrier/gateway/firmware, real loss/latency comparison,
   MCP, assets/OTA và transport promotion vẫn mở; WebSocket v3 là default.
+
+### M3 internal gateway bridge codec — host-only (2026-08-05)
+
+- `veetee_server.mqtt_bridge` đã serialize/parse internal 16-byte gateway
+  header theo §5.5; type/reserved/length/sequence/timestamp được validate và
+  không bị trộn với UDP AES header.
+- Golden fixture `tests/fixtures/mqtt_bridge_v3.json`, targeted test **4
+  passed**; full Voice Server sau slice: **128 passed**, Ruff/compileall pass.
+- Chưa có MQTT client, gateway live, UDP/WebSocket socket hoặc Opus decoder ở
+  module này; audio lock, firmware/network lock và WebSocket v3 default giữ
+  nguyên. Real-network transport comparison, firmware carrier, MCP, assets/OTA
+  và promotion vẫn mở.

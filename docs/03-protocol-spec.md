@@ -1384,6 +1384,7 @@ Fixture: `reference_server_ws_v1`. Đây là profile test, không phải default
 | `WIRE-MCP-003` | replay same ID/digest, same ID/different digest, evicted old ID | HAL called once; cached/error/duplicate-expired đúng contract |
 | `WIRE-IOT-001` | descriptor/state/command examples | schema accepted, type mismatch rejected |
 | `WIRE-MQTT-001` | opaque topic/config, 8 KiB control JSON, client/server hello | exact topic/session gate, bounded UTF-8 object và credential redaction |
+| `WIRE-MQTT-002` | internal gateway bridge 16-byte header + Opus payload | bridge type/reserved/length/sequence/timestamp round-trip; không nhầm UDP AES header |
 | `WIRE-UDP-001` | fixed key/nonce/plaintext | deterministic header/ciphertext fixture |
 | `WIRE-UDP-002` | `N+1` đến trước `N` trong 120 ms | release đúng `N`, `N+1`; duplicate drop |
 | `WIRE-UDP-003` | start/stop reorder với UDP | pre-start buffer và end-sequence drain đúng |
