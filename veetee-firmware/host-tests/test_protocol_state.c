@@ -177,17 +177,34 @@ static void test_interruptible_states(void) {
     assert(vt_state_is_interruptible(VT_DEVICE_SPEAKING));
 }
 
-static void test_repeated_manual_turns(void) {
+static void test_mode_aware_graceful_tts_stop(void) {
     vt_device_state_machine_t machine = {.state = VT_DEVICE_IDLE, .generation = 0U};
     assert(vt_state_apply(&machine, VT_EVENT_CONNECT));
     assert(vt_state_apply(&machine, VT_EVENT_HELLO_READY));
+    assert(vt_state_apply(&machine, VT_EVENT_LISTEN_STOP));
+    assert(vt_state_apply(&machine, VT_EVENT_TTS_START));
+    assert(vt_state_apply(&machine, VT_EVENT_TTS_STOP_MANUAL));
+    assert(machine.state == VT_DEVICE_IDLE);
+
+    /* A connected manual device can start repeated subsequent turns from idle. */
     for (unsigned int turn = 0U; turn < 30U; ++turn) {
         assert(vt_state_apply(&machine, VT_EVENT_LISTEN_START));
+        assert(machine.state == VT_DEVICE_LISTENING);
         assert(vt_state_apply(&machine, VT_EVENT_LISTEN_STOP));
         assert(vt_state_apply(&machine, VT_EVENT_TTS_START));
-        assert(vt_state_apply(&machine, VT_EVENT_TTS_STOP));
-        assert(machine.state == VT_DEVICE_LISTENING);
+        assert(vt_state_apply(&machine, VT_EVENT_TTS_STOP_MANUAL));
+        assert(machine.state == VT_DEVICE_IDLE);
     }
+
+    assert(vt_state_apply(&machine, VT_EVENT_LISTEN_START));
+    assert(vt_state_apply(&machine, VT_EVENT_TTS_START));
+    assert(vt_state_apply(&machine, VT_EVENT_TTS_STOP_AUTO));
+    assert(machine.state == VT_DEVICE_LISTENING);
+
+    /* The legacy generic event keeps the existing compatibility behavior. */
+    assert(vt_state_apply(&machine, VT_EVENT_TTS_START));
+    assert(vt_state_apply(&machine, VT_EVENT_TTS_STOP));
+    assert(machine.state == VT_DEVICE_LISTENING);
     assert(machine.generation == 0U);
 }
 
@@ -204,7 +221,7 @@ int main(void) {
     test_state();
     test_abort_from_thinking();
     test_interruptible_states();
-    test_repeated_manual_turns();
+    test_mode_aware_graceful_tts_stop();
     test_config_gate();
     puts("firmware host tests passed");
     return 0;

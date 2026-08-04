@@ -7,6 +7,10 @@ bool vt_state_can_transition(vt_device_state_t from, vt_device_state_t to) {
     if (from == to) return true;
     if (to == VT_DEVICE_IDLE) return true;
     if (from == VT_DEVICE_IDLE && to == VT_DEVICE_CONNECTING) return true;
+    /* A connected device can return to listening after a manual response has
+       drained to idle. The transport remains ready; it does not reconnect for
+       every PTT turn. */
+    if (from == VT_DEVICE_IDLE && to == VT_DEVICE_LISTENING) return true;
     if (from == VT_DEVICE_CONNECTING && to == VT_DEVICE_LISTENING) return true;
     if (from == VT_DEVICE_LISTENING && to == VT_DEVICE_THINKING) return true;
     if (from == VT_DEVICE_THINKING && to == VT_DEVICE_SPEAKING) return true;
@@ -30,6 +34,8 @@ bool vt_state_apply(vt_device_state_machine_t *machine, vt_device_event_t event)
     case VT_EVENT_LISTEN_STOP: next = VT_DEVICE_THINKING; break;
     case VT_EVENT_TTS_START: next = VT_DEVICE_SPEAKING; break;
     case VT_EVENT_TTS_STOP: next = VT_DEVICE_LISTENING; break;
+    case VT_EVENT_TTS_STOP_MANUAL: next = VT_DEVICE_IDLE; break;
+    case VT_EVENT_TTS_STOP_AUTO: next = VT_DEVICE_LISTENING; break;
     case VT_EVENT_ABORT: next = VT_DEVICE_LISTENING; machine->generation++; break;
     case VT_EVENT_DISCONNECT: next = VT_DEVICE_IDLE; machine->generation++; break;
     default: return false;

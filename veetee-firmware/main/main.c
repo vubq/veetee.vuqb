@@ -161,6 +161,11 @@ typedef enum {
     VT_WAKE_COMMAND_ARM = 1,
 } vt_wake_command_t;
 
+typedef enum {
+    VT_INTERACTION_MANUAL = 0,
+    VT_INTERACTION_AUTO,
+} vt_interaction_mode_t;
+
 typedef struct {
     vt_audio_t audio;
     vt_display_t display;
@@ -179,7 +184,10 @@ typedef struct {
     volatile bool wake_rearm_pending;
     volatile bool stop_requested;
     volatile bool wifi_stop_requested;
+    bool tts_stop_pending;
     bool wake_auto_capture;
+    volatile vt_interaction_mode_t interaction_mode;
+    vt_interaction_mode_t pending_tts_stop_mode;
     char device_id[32];
     char client_id[96];
 } vt_app_t;
@@ -204,6 +212,7 @@ static vt_device_state_t state_read(vt_app_t *app);
 static int send_control(vt_app_t *app, const char *type, const char *state, const char *reason);
 static int send_listen_start(vt_app_t *app, bool auto_mode);
 static int device_identity(vt_app_t *app);
+static void service_playback_idle(vt_app_t *app);
 
 static void request_wake_arm(vt_app_t *app) {
     if (app == NULL || app->wake_command_queue == NULL) return;
@@ -219,15 +228,90 @@ static bool playback_is_idle(const vt_app_t *app) {
 }
 
 static void request_wake_arm_when_playback_idle(vt_app_t *app) {
-    if (app == NULL) return;
-    app->wake_rearm_pending = true;
-    if (!playback_is_idle(app)) {
-        ESP_LOGI(TAG, "wake re-arm deferred until playback idle");
+    if (app == NULL || app->state_lock == NULL) return;
+    if (xSemaphoreTake(app->state_lock, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGW(TAG, "wake re-arm request skipped: state lock timeout");
         return;
     }
+    app->wake_rearm_pending = true;
+    xSemaphoreGive(app->state_lock);
+    service_playback_idle(app);
+}
+
+/* A graceful tts/stop is not an abort: the ordered packet stream may still
+   contain audio already received before the stop control frame. Keep the
+   target under the state lock and let the single playback owner complete it
+   only after both decoder work and the bounded packet queue are idle. */
+static void clear_pending_tts_stop(vt_app_t *app) {
+    if (app == NULL || app->state_lock == NULL) return;
+    if (xSemaphoreTake(app->state_lock, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGW(TAG, "clearing graceful tts stop skipped: state lock timeout");
+        return;
+    }
+    app->tts_stop_pending = false;
     app->wake_rearm_pending = false;
-    request_wake_arm(app);
-    ESP_LOGI(TAG, "wake detector re-arm requested after playback idle");
+    xSemaphoreGive(app->state_lock);
+}
+
+static bool schedule_graceful_tts_stop(vt_app_t *app, vt_interaction_mode_t mode) {
+    if (app == NULL || app->state_lock == NULL) return false;
+    if (xSemaphoreTake(app->state_lock, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGW(TAG, "graceful tts stop skipped: state lock timeout");
+        return false;
+    }
+    const bool speaking = app->state.state == VT_DEVICE_SPEAKING;
+    if (speaking) {
+        app->tts_stop_pending = true;
+        app->pending_tts_stop_mode = mode;
+        /* Only an auto interaction needs a fresh detector after draining.
+           A manual PTT turn never consumed the detector in the first place. */
+        app->wake_rearm_pending = mode == VT_INTERACTION_AUTO;
+    }
+    xSemaphoreGive(app->state_lock);
+    if (!speaking) return false;
+    service_playback_idle(app);
+    return true;
+}
+
+static void service_playback_idle(vt_app_t *app) {
+    if (app == NULL || app->state_lock == NULL || !playback_is_idle(app)) return;
+
+    bool request_arm = false;
+    bool stop_applied = false;
+    vt_device_state_t stop_state = VT_DEVICE_IDLE;
+    uint32_t stop_generation = 0U;
+    if (xSemaphoreTake(app->state_lock, pdMS_TO_TICKS(100)) != pdTRUE) return;
+
+    if (app->tts_stop_pending) {
+        const vt_interaction_mode_t mode = app->pending_tts_stop_mode;
+        app->tts_stop_pending = false;
+        if (app->state.state == VT_DEVICE_SPEAKING) {
+            const vt_device_event_t event = mode == VT_INTERACTION_AUTO
+                ? VT_EVENT_TTS_STOP_AUTO
+                : VT_EVENT_TTS_STOP_MANUAL;
+            stop_applied = vt_state_apply(&app->state, event);
+            if (stop_applied) {
+                stop_state = app->state.state;
+                stop_generation = app->state.generation;
+                request_arm = mode == VT_INTERACTION_AUTO;
+            }
+        }
+    }
+
+    if (app->wake_rearm_pending) {
+        app->wake_rearm_pending = false;
+        request_arm = true;
+    }
+    xSemaphoreGive(app->state_lock);
+
+    if (stop_applied) {
+        ESP_LOGI(TAG, "graceful tts drain complete state=%s generation=%lu",
+                 vt_state_name(stop_state), (unsigned long)stop_generation);
+    }
+    if (request_arm) {
+        request_wake_arm(app);
+        ESP_LOGI(TAG, "wake detector re-arm requested after playback idle");
+    }
 }
 
 static bool state_apply(vt_app_t *app, vt_device_event_t event) {
@@ -335,7 +419,7 @@ static void websocket_text_callback(const cJSON *message, void *context) {
         cJSON *tts_state = cJSON_GetObjectItemCaseSensitive(message, "state");
         if (!cJSON_IsString(tts_state) || tts_state->valuestring == NULL) return;
         if (strcmp(tts_state->valuestring, "start") == 0) {
-            app->wake_rearm_pending = false;
+            clear_pending_tts_stop(app);
             (void)xQueueReset(app->playback_queue);
             vt_audio_reset_acoustic_reference(&app->audio);
             /* Stop capture before resetting the decoder. The decoder mutex
@@ -346,30 +430,46 @@ static void websocket_text_callback(const cJSON *message, void *context) {
             app->capture_active = false;
             if (!audio_decoder_reset_locked(app)) ESP_LOGW(TAG, "audio decoder reset skipped: lock timeout");
             if (app->wake_auto_capture) {
-                /* Auto-mode is half-duplex until AFE/AEC realtime capture is
-                   promoted. Stop uplink as soon as the server starts speaking;
-                   keep the flag so tts/stop can re-arm WakeNet exactly once. */
+                /* Stop uplink as soon as the server starts speaking. With the
+                   configured AEC gate, WakeNet may still consume local capture
+                   during playback; retain the origin flag for a button abort
+                   before this TTS turn drains. */
                 ESP_LOGI(TAG, "wake capture paused while server is speaking");
             }
-            (void)state_apply(app, VT_EVENT_TTS_START);
-        } else if (strcmp(tts_state->valuestring, "stop") == 0) {
-            if (app->wake_auto_capture) {
-                app->capture_active = false;
-                app->wake_auto_capture = false;
-                request_wake_arm_when_playback_idle(app);
-                ESP_LOGI(TAG, "wake capture complete; detector re-arm scheduled");
+#if CONFIG_VEETEE_WAKE_DURING_PLAYBACK
+            const bool tts_started = state_apply(app, VT_EVENT_TTS_START);
+            /* WakeNet disarms after detection. Re-arm it at the beginning of
+               auto-mode playback so a second configured wake phrase can
+               interrupt the response. Manual PTT playback remains half-duplex. */
+            if (tts_started && app->interaction_mode == VT_INTERACTION_AUTO &&
+                vt_audio_aec_ready(&app->audio)) {
+                request_wake_arm(app);
+                ESP_LOGI(TAG, "wake detector re-arm requested for auto playback");
             }
-            (void)state_apply(app, VT_EVENT_TTS_STOP);
+#else
+            (void)state_apply(app, VT_EVENT_TTS_START);
+#endif
+        } else if (strcmp(tts_state->valuestring, "stop") == 0) {
+            const vt_interaction_mode_t mode = app->interaction_mode;
+            app->capture_active = false;
+            app->wake_auto_capture = false;
+            if (schedule_graceful_tts_stop(app, mode)) {
+                ESP_LOGI(TAG, "graceful tts stop scheduled mode=%s",
+                         mode == VT_INTERACTION_AUTO ? "auto" : "manual");
+            } else {
+                ESP_LOGW(TAG, "ignoring stale tts stop outside speaking state");
+            }
         }
         return;
     }
     if (strcmp(type->valuestring, "alert") == 0) {
+        clear_pending_tts_stop(app);
         app->capture_active = false;
         app->wake_auto_capture = false;
         (void)xQueueReset(app->playback_queue);
         vt_audio_reset_acoustic_reference(&app->audio);
-        request_wake_arm_when_playback_idle(app);
         (void)state_apply(app, VT_EVENT_ABORT);
+        request_wake_arm_when_playback_idle(app);
         cJSON *code = cJSON_GetObjectItemCaseSensitive(message, "code");
         ESP_LOGW(TAG, "server alert code=%s", cJSON_IsString(code) ? code->valuestring : "unknown");
         return;
@@ -407,14 +507,14 @@ static void playback_task(void *context) {
             if (!audio_decoder_lock_take(app)) {
                 ESP_LOGW(TAG, "audio decoder lock timeout before playback");
                 app->playback_busy = false;
-                if (app->wake_rearm_pending) request_wake_arm_when_playback_idle(app);
+                service_playback_idle(app);
                 continue;
             }
             int result = vt_audio_decode_and_play(&app->audio, packet.bytes, packet.length);
             audio_decoder_lock_give(app);
             if (result != ESP_OK) ESP_LOGW(TAG, "Opus playback decode failed");
             app->playback_busy = false;
-            if (app->wake_rearm_pending) request_wake_arm_when_playback_idle(app);
+            service_playback_idle(app);
         }
     }
     vTaskDelete(NULL);
@@ -464,7 +564,9 @@ static void capture_task(void *context) {
         bool wake_allowed = !app->capture_active;
 #if CONFIG_VEETEE_WAKE_DURING_PLAYBACK
         wake_allowed = wake_allowed &&
-                       (audio_state != VT_DEVICE_SPEAKING || vt_audio_aec_ready(&app->audio));
+                       (audio_state != VT_DEVICE_SPEAKING ||
+                        (app->interaction_mode == VT_INTERACTION_AUTO &&
+                         vt_audio_aec_ready(&app->audio)));
 #else
         wake_allowed = wake_allowed && audio_state != VT_DEVICE_SPEAKING;
 #endif
@@ -563,13 +665,14 @@ static void ptt_task(void *context) {
             pending_auto = true;
             vt_device_state_t current = state_read(app);
             if (vt_state_is_interruptible(current)) {
+                clear_pending_tts_stop(app);
                 app->capture_active = false;
                 app->wake_auto_capture = false;
                 (void)send_control(app, "abort", NULL, "wake_word_detected");
                 (void)xQueueReset(app->playback_queue);
                 vt_audio_reset_acoustic_reference(&app->audio);
-                request_wake_arm_when_playback_idle(app);
                 (void)state_apply(app, VT_EVENT_ABORT);
+                request_wake_arm_when_playback_idle(app);
                 ESP_LOGI(TAG, "wake interrupt");
             }
         }
@@ -587,13 +690,14 @@ static void ptt_task(void *context) {
                     vt_device_state_t current = state_read(app);
                     if (vt_state_is_interruptible(current)) {
                         bool was_auto_capture = app->wake_auto_capture;
+                        clear_pending_tts_stop(app);
                         app->capture_active = false;
                         app->wake_auto_capture = false;
                         (void)send_control(app, "abort", NULL, "button_interrupt");
                         (void)xQueueReset(app->playback_queue);
                         vt_audio_reset_acoustic_reference(&app->audio);
-                        if (was_auto_capture) request_wake_arm_when_playback_idle(app);
                         (void)state_apply(app, VT_EVENT_ABORT);
+                        if (was_auto_capture) request_wake_arm_when_playback_idle(app);
                         ESP_LOGI(TAG, "PTT interrupt state=%s", vt_state_name(current));
                     }
                 } else if (app->capture_active) {
@@ -610,15 +714,24 @@ static void ptt_task(void *context) {
                 }
             }
         }
-        if ((stable || pending_auto) && pending_start && !app->capture_active && state_read(app) == VT_DEVICE_LISTENING) {
+        vt_device_state_t current = state_read(app);
+        if ((stable || pending_auto) && pending_start && !app->capture_active &&
+            (current == VT_DEVICE_LISTENING ||
+             (current == VT_DEVICE_IDLE && vt_transport_is_ready(&app->transport)))) {
             TickType_t now = xTaskGetTickCount();
             if ((int32_t)(now - retry_after) >= 0) {
                 int result = send_listen_start(app, pending_auto);
                 if (result == ESP_OK) {
-                    app->capture_active = true;
-                    app->wake_auto_capture = pending_auto;
                     pending_start = false;
-                    ESP_LOGI(TAG, "%s start", pending_auto ? "wake" : "PTT");
+                    app->interaction_mode = pending_auto ? VT_INTERACTION_AUTO : VT_INTERACTION_MANUAL;
+                    if (state_apply(app, VT_EVENT_LISTEN_START)) {
+                        app->capture_active = true;
+                        app->wake_auto_capture = pending_auto;
+                        ESP_LOGI(TAG, "%s start", pending_auto ? "wake" : "PTT");
+                    } else {
+                        ESP_LOGW(TAG, "%s start accepted by transport but state changed before capture enable",
+                                 pending_auto ? "wake" : "PTT");
+                    }
                 } else {
                     retry_after = now + pdMS_TO_TICKS(VT_PTT_RETRY_DELAY_MS);
                     ESP_LOGW(TAG, "PTT start send failed result=%s; retrying", esp_err_to_name(result));
@@ -668,6 +781,8 @@ static void network_task(void *context) {
         }
         app->capture_active = false;
         app->wake_auto_capture = false;
+        clear_pending_tts_stop(app);
+        app->interaction_mode = VT_INTERACTION_MANUAL;
         request_wake_arm(app);
         (void)vt_transport_stop(&app->transport);
         (void)state_apply(app, VT_EVENT_DISCONNECT);

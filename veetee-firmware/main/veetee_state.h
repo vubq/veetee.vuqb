@@ -18,6 +18,11 @@ typedef enum {
     VT_EVENT_LISTEN_STOP,
     VT_EVENT_TTS_START,
     VT_EVENT_TTS_STOP,
+    /* Internal mode-aware graceful-stop events.  The wire message remains
+       `{"type":"tts","state":"stop"}`; the owner records interaction
+       mode locally before selecting one of these events. */
+    VT_EVENT_TTS_STOP_MANUAL,
+    VT_EVENT_TTS_STOP_AUTO,
     VT_EVENT_ABORT,
     VT_EVENT_DISCONNECT,
 } vt_device_event_t;
