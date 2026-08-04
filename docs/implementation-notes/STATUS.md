@@ -772,3 +772,15 @@
 - Không restart các service đang chạy, không gọi Groq, không phát audio/mở
   microphone/speaker/serial audio, không flash/reset/erase ESP32, không đổi
   Wi-Fi/Tailscale và không mutate production DB `veetee_vubq`.
+
+### InMemory/PostgreSQL publication parity (2026-08-05, host-only)
+
+- InMemory publish snapshot giờ giữ cùng metadata như PostgreSQL cho provider
+  selection từ config revision: `providerConfigId`, `configRevision`, version,
+  config clone và secretRefs. Điều này tránh Voice Server nhận snapshot khác
+  shape tùy adapter.
+- Regression Manager API dedicated PostgreSQL `veetee_vubq_test`: **43/43**,
+  lint/build/`openapi:check` pass; test mới kiểm tra publish InMemory parity.
+- Không đổi wire protocol, provider fallback, runtime process hay production DB;
+  không phát audio/mở microphone/speaker/serial audio, không flash/reset ESP32,
+  không đổi Wi-Fi/Tailscale.

@@ -518,7 +518,14 @@ export class InMemoryStore implements Store {
       const installation = selected ? this.installations.find((item) => item.id === selected.installationId) : undefined
       if (!selected || !installation) throw problem('CONFIG_NOT_PUBLISHABLE', `Provider selection is not configured: ${kind}`, 422)
       validateSecretBindings(installation, selected.secretRefs, { requireComplete: true })
-      resolvedProviders[kind] = { providerId: installation.id, version: installation.version, config: selected.config, secretRefs: [...selected.secretRefs] }
+      resolvedProviders[kind] = {
+        providerId: installation.id,
+        version: installation.version,
+        providerConfigId: selected.id,
+        configRevision: selected.revision,
+        config: structuredClone(selected.config),
+        secretRefs: [...selected.secretRefs],
+      }
     }
     const snapshot: RuntimeSnapshot = {
       ...roleExtras(current.role),

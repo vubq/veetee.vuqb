@@ -228,6 +228,34 @@ test('provider selection validates config ownership and kind before changing the
   }
 })
 
+test('InMemory publish includes provider revision metadata used by PostgreSQL snapshots', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistant = (await app.inject({ method: 'GET', url: '/api/v1/assistants' })).json().items[0] as { id: string; etag: string }
+    const provider = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'veetee.llm.fixture', name: 'revision-parity', config: { segments: ['Parity check.'] },
+    } })
+    assert.equal(provider.statusCode, 201)
+
+    const selection = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/assistants/${assistant.id}/model-memory/provider`,
+      headers: { 'if-match': assistant.etag },
+      payload: { kind: 'llm', mode: 'selected', providerConfigId: provider.json().id },
+    })
+    assert.equal(selection.statusCode, 200)
+
+    const published = await app.inject({ method: 'POST', url: `/api/v1/assistants/${assistant.id}/publish`, headers: { 'if-match': selection.headers.etag } })
+    assert.equal(published.statusCode, 200)
+    const llm = published.json().snapshot.providers.llm as { providerConfigId?: string; configRevision?: number }
+    assert.equal(llm.providerConfigId, provider.json().id)
+    assert.equal(llm.configRevision, 1)
+  } finally {
+    await app.close()
+  }
+})
+
 test('InMemory provider selection rejects a config owned by another owner', async () => {
   const store = new InMemoryStore([{
     id: 'selection.llm', kind: 'llm', displayNameKey: 'provider.selection.llm', version: '1.0.0', manifest: {}, configSchema: { type: 'object', additionalProperties: true },
