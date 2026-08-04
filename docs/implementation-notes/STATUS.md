@@ -44,12 +44,14 @@
    Tailscale hostname/Serve mapping phải xem bằng `tailscale serve status`; không
    suy đoán hoặc ghi cứng hostname vào source.
 
-   Read-only status hiện tại (binary local Tailscale 1.98.9):
-   `https://veetee.tail52a635.ts.net/` là **tailnet-only**, proxy vào Manager
-   Web `18181`; Vite proxy cùng origin chuyển `/api` tới `18101` và `/veetee`
-   tới Voice `18100`. Hostname đã được operator yêu cầu đổi từ `veetee-dev` sang
-   `veetee`; toàn bộ Funnel/Serve mapping cũ đã reset. ESP32 vẫn dùng LAN WS,
-   vì dashboard hostname không thay thế Tailscale client trên firmware.
+   Read-only status hiện tại (binary local Tailscale 1.98.9): node là
+   `veetee.tail52a635.ts.net` và private Serve chỉ có một origin:
+   `https://veetee.tail52a635.ts.net/` → Manager Web `18181`. Cùng origin phân
+   bổ route như sau: `/api/v1/...` → Manager API `18101`, `/openapi.json` →
+   Manager API, và `/veetee/v1/` (WebSocket; `Protocol-Version: 3`) → Voice
+   Server `18100`. Không còn dùng hostname `veetee-dev`, port `18443` hay Funnel.
+   ESP32 vẫn dùng LAN WS, vì dashboard hostname không thay thế Tailscale client
+   trên firmware.
 
 ## Quy ước cập nhật
 
@@ -88,10 +90,10 @@
   động. Suite hiện **62 passed**.
 - URL kiểm tra chắc chắn trên máy này: `http://127.0.0.1:18181` (UI),
   `http://127.0.0.1:18101/health/ready` (Manager API),
-  `http://127.0.0.1:18100/health/ready` và `/metrics` (Voice). Endpoint private
-  Tailscale `:18443` vẫn được ghi theo mapping đã kiểm tra trước đó; nếu không
-  truy cập được từ thiết bị đang xem, dùng local UI hoặc kiểm tra tailnet/Serve
-  status trên chính máy host.
+  `http://127.0.0.1:18100/health/ready` và `/metrics` (Voice). URL kiểm tra
+  qua tailnet là `https://veetee.tail52a635.ts.net/`; nếu thiết bị đang xem
+  không ở cùng tailnet, dùng local UI hoặc kiểm tra tailnet/Serve status trên
+  chính máy host.
 - Kiểm tra read-only hostname được đề xuất `https://veetee.tail52a635.ts.net/`
   trong lượt hiện tại: DNS không phân giải (`Could not resolve host`). Host
   `veetee-dev.tail52a635.ts.net` có phân giải nhưng root/legacy ports trả `502`
@@ -176,3 +178,22 @@
 - Benchmark 70B với long-response config trước đó có outlier TTFA tới `3720 ms`,
   nên M1 TTFA/promotion chưa được đánh dấu đạt. Không đổi model production;
   production Voice revision `87` đã được giữ nguyên sau khi dừng fixture.
+
+### Canonical URL runtime cleanup (2026-08-04)
+
+- Đã dừng riêng stack preview cũ của checkout này đang giữ `18000/18001/18081`;
+  không dừng PostgreSQL, Redis, Wi‑Fi hoặc stack canonical.
+- Listener canonical hiện còn: Voice `0.0.0.0:18100`, Manager API
+  `127.0.0.1:18101`, Manager Web `127.0.0.1:18181`. Readiness cả ba trả HTTP
+  `200` sau cleanup.
+- `tailscale status --json` hiện trả node `veetee.tail52a635.ts.net` và
+  `tailscale serve status --json` chỉ có `443 / → http://127.0.0.1:18181`;
+  không còn `veetee-dev`, `18443` hoặc Funnel mapping.
+- URL sử dụng thống nhất: Web `https://veetee.tail52a635.ts.net/`, API
+  `https://veetee.tail52a635.ts.net/api/v1/...`, OpenAPI
+  `https://veetee.tail52a635.ts.net/openapi.json`, Voice WebSocket
+  `wss://veetee.tail52a635.ts.net/veetee/v1/` (wire v3). ESP32 dùng LAN
+  `ws://<host-lan-ip>:18100/veetee/v1/`; database/health không public.
+- TLS/HTML/WebSocket từ hostname cần được xác nhận trên một peer khác trong
+  tailnet; userspace Tailscale trên chính host không được coi là self-route
+  evidence.

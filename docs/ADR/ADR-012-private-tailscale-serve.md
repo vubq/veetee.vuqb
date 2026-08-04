@@ -25,6 +25,10 @@ khi binary đã có, tailnet đã đăng nhập và operator đã yêu cầu exp
 
 - HTTPS hostname/CA do Tailscale cấp và phải lấy từ command output, không hard-code.
 - Chỉ thiết bị/peer trong tailnet truy cập được.
+- Một origin duy nhất được dùng để tránh tạo hostname con không có certificate:
+  `/` tới Manager Web, `/api/v1` và `/openapi.json` qua Vite tới Manager API,
+  `/veetee/v1/` qua WebSocket proxy tới Voice Server. Các process vẫn bind
+  loopback/LAN theo deployment port plan.
 - ESP32 cần trust/certificate strategy riêng; dashboard URL không tự dùng được làm
   firmware endpoint.
 - Nếu host chưa có Tailscale, deployment vẫn chạy LAN/loopback và ghi rõ block.

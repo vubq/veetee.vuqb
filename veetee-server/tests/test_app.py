@@ -55,6 +55,9 @@ async def test_websocket_v3_handshake_and_turn(monkeypatch):
                     break
         assert any(message.get("type") == "stt" for message in messages)
         assert any(message.get("type") == "tts" and message.get("state") == "start" for message in messages)
+        await asyncio.sleep(0.05)
+        session = next(iter(service._sessions))
+        assert session.phase == "ready_idle"
     finally:
         await client.close()
         await runtime.stop()

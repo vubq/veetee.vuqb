@@ -406,15 +406,23 @@ loại bỏ hostname/mapping cũ:
 |---|---|---|
 | `https://veetee.tail52a635.ts.net/` | `127.0.0.1:18181` | Manager Web |
 | `https://veetee.tail52a635.ts.net/api/v1/...` | Vite proxy → `127.0.0.1:18101` | Manager API |
+| `https://veetee.tail52a635.ts.net/openapi.json` | Vite proxy → `127.0.0.1:18101` | Manager API contract |
 | `wss://veetee.tail52a635.ts.net/veetee/v1/` | Vite WebSocket proxy → `127.0.0.1:18100` | Voice Server |
 
 Hostname hiện tại lấy từ `tailscale status`: `veetee.tail52a635.ts.net`; node
 đã đổi từ `veetee-dev`. Toàn bộ Serve/Funnel mapping cũ đã reset, không còn
-public Funnel. Probe từ chính host có userspace Tailscale không tự route được tới
+public Funnel. `/veetee/v1/` là route tương thích ổn định; profile wire mặc
+định vẫn là WebSocket v3 (`Protocol-Version: 3`) và server không silent
+downgrade. Probe từ chính host có userspace Tailscale không tự route được tới
 địa chỉ tailnet của chính nó và có thể timeout; cần một peer tailnet khác để
 xác nhận TLS/HTML/API/WebSocket thực tế. Không coi self-route timeout là lỗi
 Manager Web. ESP32 không có Tailscale client nên vẫn dùng endpoint LAN
 `ws://<host-lan-ip>:18100/veetee/v1/`, không dùng dashboard HTTPS hostname.
+
+Không tạo hostname con kiểu `api.veetee.tail52a635.ts.net` hoặc
+`voice.veetee.tail52a635.ts.net`: MagicDNS/Tailscale certificate hiện chỉ cấp
+cho node `veetee`. Path routing cùng origin giữ cookie/CORS đơn giản và không
+phải mở thêm port trên tailnet.
 
 Không hard-code `tail*.ts.net` trong firmware, UI hoặc docs runtime. Checklist:
 
