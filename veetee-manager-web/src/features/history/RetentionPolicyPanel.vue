@@ -4,7 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { RetentionPolicy, RetentionPolicyInput } from '@/domain'
 import VtButton from '@/ui/primitives/VtButton.vue'
 import VtCard from '@/ui/primitives/VtCard.vue'
-import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
+import VtInput from '@/ui/primitives/VtInput.vue'
 import VtStatus from '@/ui/primitives/VtStatus.vue'
 import VtSwitch from '@/ui/primitives/VtSwitch.vue'
 
@@ -21,13 +21,6 @@ const emit = defineEmits<{
 const transcriptEnabled = ref(props.policy.captureTranscript)
 const transcriptDays = ref(String(props.policy.transcriptDays ?? 30))
 const errorHeading = ref<HTMLElement | null>(null)
-
-const transcriptOptions: VtSelectOption[] = [
-  { value: '7', label: '7 ngày', description: 'Lưu ngắn hạn' },
-  { value: '30', label: '30 ngày', description: 'Mặc định hiện tại' },
-  { value: '90', label: '90 ngày', description: 'Lưu theo quý' },
-  { value: '365', label: '365 ngày', description: 'Lưu dài hạn' },
-]
 
 const transcriptDaysValid = computed(() => {
   if (!transcriptEnabled.value) return true
@@ -95,11 +88,15 @@ function save() {
           class="control-label"
           for="retention-transcript-days"
         >Thời hạn transcript</label>
-        <VtSelect
+        <VtInput
           id="retention-transcript-days"
           v-model="transcriptDays"
-          label="Thời hạn transcript"
-          :options="transcriptOptions"
+          name="retention-transcript-days"
+          type="number"
+          min="1"
+          max="3650"
+          step="1"
+          inputmode="numeric"
           :disabled="saving || !transcriptEnabled"
           :invalid="!transcriptDaysValid"
           :aria-invalid="!transcriptDaysValid"

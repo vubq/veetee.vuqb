@@ -568,7 +568,9 @@
 ### Retention policy editor (2026-08-05, non-audio)
 
 - History workspace đã có `RetentionPolicyPanel` component để chỉnh transcript
-  retention bằng typed ETag mutation. Tắt transcript tự gửi `transcriptDays=null`;
+  retention bằng typed ETag mutation; thời hạn dùng `VtInput` số theo miền
+  1–3.650 ngày, không khóa vào danh sách option cố định. Tắt transcript tự gửi
+  `transcriptDays=null`;
   audio recording luôn disabled và payload bị khóa ở `captureAudio=false`,
   `audioDays=null` cho tới khi artifact audio được hỗ trợ/promote.
 - Offline, stale revision và validation không làm mất draft; lỗi được focus,

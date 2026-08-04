@@ -46,6 +46,15 @@ describe('RetentionPolicyPanel', () => {
     })
   })
 
+  it('accepts the full configured retention range instead of a fixed option list', async () => {
+    const view = render(RetentionPolicyPanel, { props: { policy } })
+    const days = view.getByRole('spinbutton', { name: 'Thời hạn transcript' })
+    await fireEvent.update(days, '3650')
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu retention policy' }))
+
+    expect((view.emitted('save') as unknown[][] | undefined)?.[0]?.[0]).toMatchObject({ transcriptDays: 3650 })
+  })
+
   it('announces and focuses a save error', async () => {
     const view = render(RetentionPolicyPanel, { props: { policy } })
     await view.rerender({ policy, error: 'Retention policy đã thay đổi.' })
