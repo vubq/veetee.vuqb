@@ -9,6 +9,8 @@ import { buildApp } from './app.js'
 import type { Environment } from './config.js'
 import { assertSafeTestDatabaseUrl, configurePostgresTestIsolation } from './postgres-test-isolation.js'
 import { EncryptedFileSecretStore } from './secret-store.js'
+import { loadInitialSnapshot, parseCatalog } from './store.js'
+import { createPostgresStore } from './postgres-store.js'
 
 const databaseUrlFile = process.env.VEETEE_TEST_DATABASE_URL_FILE
 const root = resolve(import.meta.dirname, '..')
@@ -122,6 +124,58 @@ test('PostgreSQL provider edits create immutable revisions and reject stale writ
     assert.equal(persisted.config.minSilenceMs, 360)
   } finally {
     await restarted.close()
+  }
+})
+
+test('PostgreSQL provider selection validates config ownership and kind before writing a revision', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8022, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
+  }
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistant = (await app.inject({ method: 'GET', url: '/api/v1/assistants' })).json().items[0] as { id: string; etag: string }
+    const vad = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'veetee.vad.energy', name: `selection-vad-${Date.now()}`, config: { speechThreshold: 0.01, releaseThreshold: 0.005, minSpeechMs: 100, minSilenceMs: 300 },
+    } })
+    assert.equal(vad.statusCode, 201)
+    const llm = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'groq.chat', name: `selection-llm-${Date.now()}`, config: { endpoint: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant', maxTokens: 64 },
+    } })
+    assert.equal(llm.statusCode, 201)
+
+    const unknown = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/model-memory/provider`, headers: { 'if-match': assistant.etag }, payload: { kind: 'llm', mode: 'selected', providerConfigId: '11111111-1111-4111-8111-111111111111' } })
+    assert.equal(unknown.statusCode, 422)
+    assert.equal(unknown.json().code, 'CONFIG_INVALID')
+    const mismatched = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/model-memory/provider`, headers: { 'if-match': assistant.etag }, payload: { kind: 'llm', mode: 'selected', providerConfigId: vad.json().id } })
+    assert.equal(mismatched.statusCode, 422)
+    assert.equal(mismatched.json().code, 'CONFIG_INVALID')
+    const unchanged = (await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistant.id}` })).json() as { etag: string }
+    assert.equal(unchanged.etag, assistant.etag)
+
+    const selected = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/model-memory/provider`, headers: { 'if-match': assistant.etag }, payload: { kind: 'llm', mode: 'selected', providerConfigId: llm.json().id } })
+    assert.equal(selected.statusCode, 200)
+    assert.equal(selected.json().selections.find((item: { kind: string }) => item.kind === 'llm').providerConfigId, llm.json().id)
+  } finally {
+    await app.close()
+  }
+
+  const catalog = parseCatalog(JSON.parse(await readFile(resolve(root, 'config/provider-catalog.json'), 'utf8')))
+  const initial = await loadInitialSnapshot(resolve(root, '../veetee-server/config/fixtures/m0.json'))
+  const store = await createPostgresStore({ catalog, initial, databaseUrlFile })
+  try {
+    const assistant = (await store.listAssistants('local-owner'))[0]
+    assert.ok(assistant)
+    const foreign = await store.createProviderConfig('foreign-owner', { installationId: 'groq.chat', name: `foreign-selection-${Date.now()}`, config: { endpoint: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant', maxTokens: 64 } })
+    await assert.rejects(
+      store.updateProviderSelection('local-owner', assistant.id, { kind: 'llm', mode: 'selected', providerConfigId: foreign.id }, assistant.etag),
+      (error: unknown) => (error as { code?: string; statusCode?: number }).code === 'CONFIG_INVALID' && (error as { statusCode?: number }).statusCode === 422,
+    )
+  } finally {
+    await store.close()
   }
 })
 

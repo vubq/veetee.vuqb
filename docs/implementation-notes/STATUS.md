@@ -410,3 +410,19 @@
 - Host firmware CMake/CTest với warning-as-error pass **1/1**, gồm regression
   bounce/press/release/threshold. Chưa flash image, chưa mô phỏng GPIO vật lý
   và không phát audio; PTT/mic/speaker vẫn là physical gate mở.
+
+### Provider selection validation (2026-08-05, host-only)
+
+- Provider selection PATCH không còn ghi draft tham chiếu config unknown/foreign
+  owner hoặc sai provider `kind`. `disabled` kèm `providerConfigId` cũng bị từ
+  chối. Domain error ổn định là `CONFIG_INVALID`/422; invalid write giữ nguyên
+  assistant ETag/revision. Semantics được áp dụng đồng nhất cho InMemory và
+  PostgreSQL.
+- Dedicated PostgreSQL test DB `veetee_vubq_test`: **36/36 passed**; Manager API
+  lint/build/OpenAPI check pass. Manager Web generated client đã regenerate;
+  typecheck/lint/Vitest **66/66** và production build pass.
+- Không mutate database production `veetee_vubq`, không restart runtime, không
+  flash/đổi firmware, không đổi Wi-Fi/Tailscale.
+- Operator audio pause vẫn có hiệu lực: không phát audio, không chạy wake/PTT
+  acoustic harness, không mở microphone/speaker; physical acceptance chờ cấp
+  quyền lại.

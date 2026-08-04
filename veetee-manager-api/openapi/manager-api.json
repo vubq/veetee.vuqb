@@ -8060,7 +8060,9 @@
                     ]
                   },
                   "providerConfigId": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
                   }
                 }
               }

@@ -434,7 +434,13 @@ export class InMemoryStore implements Store {
     const current = this.assistants.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Assistant not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Assistant changed', 409)
-    if (value.mode === 'selected' && !value.providerConfigId) throw problem('CONFIG_INVALID', 'Selected provider requires providerConfigId', 422)
+    validateProviderSelectionShape(value)
+    if (value.mode === 'selected') {
+      const selected = this.providerConfigs.get(value.providerConfigId!)
+      const installation = selected ? this.installations.find((item) => item.id === selected.installationId) : undefined
+      if (!selected || selected.ownerId !== ownerId || !installation) throw problem('CONFIG_INVALID', 'Provider config is not available for this owner', 422)
+      if (installation.kind !== value.kind) throw problem('CONFIG_INVALID', 'Provider config kind does not match selection kind', 422)
+    }
     current.providerSelections = { ...current.providerSelections, [value.kind]: value.mode === 'selected' ? { mode: value.mode, providerConfigId: value.providerConfigId } : { mode: value.mode } }
     current.draftRevision += 1
     current.etag = etag({ selections: current.providerSelections, revision: current.draftRevision })
@@ -817,6 +823,11 @@ export function problem(code: string, message: string, statusCode: number): Erro
   error.code = code
   error.statusCode = statusCode
   return error
+}
+
+export function validateProviderSelectionShape(value: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string }): void {
+  if (value.mode === 'selected' && (!value.providerConfigId || value.providerConfigId.trim().length === 0)) throw problem('CONFIG_INVALID', 'Selected provider requires providerConfigId', 422)
+  if (value.mode === 'disabled' && value.providerConfigId !== undefined) throw problem('CONFIG_INVALID', 'Disabled provider selection must not include providerConfigId', 422)
 }
 
 export function hashPairingCode(value: string): string {

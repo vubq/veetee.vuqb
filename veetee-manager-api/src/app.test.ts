@@ -132,6 +132,57 @@ test('provider config is schema-driven and rejects unknown fields', async () => 
   }
 })
 
+test('provider selection validates config ownership and kind before changing the draft', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistant = (await app.inject({ method: 'GET', url: '/api/v1/assistants' })).json().items[0] as { id: string; etag: string }
+    const vad = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'veetee.vad.energy', name: 'selection-vad', config: { speechThreshold: 0.01, releaseThreshold: 0.005, minSpeechMs: 100, minSilenceMs: 300 },
+    } })
+    assert.equal(vad.statusCode, 201)
+    const llm = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'groq.chat', name: 'selection-llm', config: { endpoint: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant', maxTokens: 64 },
+    } })
+    assert.equal(llm.statusCode, 201)
+
+    const unknown = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/model-memory/provider`, headers: { 'if-match': assistant.etag }, payload: { kind: 'llm', mode: 'selected', providerConfigId: 'missing-provider-config' } })
+    assert.equal(unknown.statusCode, 422)
+    assert.equal(unknown.json().code, 'CONFIG_INVALID')
+
+    const mismatched = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/model-memory/provider`, headers: { 'if-match': assistant.etag }, payload: { kind: 'llm', mode: 'selected', providerConfigId: vad.json().id } })
+    assert.equal(mismatched.statusCode, 422)
+    assert.equal(mismatched.json().code, 'CONFIG_INVALID')
+
+    const disabledWithId = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/model-memory/provider`, headers: { 'if-match': assistant.etag }, payload: { kind: 'llm', mode: 'disabled', providerConfigId: llm.json().id } })
+    assert.equal(disabledWithId.statusCode, 422)
+    assert.equal(disabledWithId.json().code, 'CONFIG_INVALID')
+
+    const unchanged = (await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistant.id}` })).json() as { etag: string }
+    assert.equal(unchanged.etag, assistant.etag)
+
+    const selected = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/model-memory/provider`, headers: { 'if-match': assistant.etag }, payload: { kind: 'llm', mode: 'selected', providerConfigId: llm.json().id } })
+    assert.equal(selected.statusCode, 200)
+    assert.equal(selected.json().selections.find((item: { kind: string }) => item.kind === 'llm').providerConfigId, llm.json().id)
+  } finally {
+    await app.close()
+  }
+})
+
+test('InMemory provider selection rejects a config owned by another owner', async () => {
+  const store = new InMemoryStore([{
+    id: 'selection.llm', kind: 'llm', displayNameKey: 'provider.selection.llm', version: '1.0.0', manifest: {}, configSchema: { type: 'object', additionalProperties: true },
+  }])
+  const assistant = await store.createAssistant('owner-a', 'Ownership test')
+  const foreign = await store.createProviderConfig('owner-b', { installationId: 'selection.llm', name: 'foreign', config: { model: 'fixture' } })
+  await assert.rejects(
+    store.updateProviderSelection('owner-a', assistant.id, { kind: 'llm', mode: 'selected', providerConfigId: foreign.id }, assistant.etag),
+    (error: unknown) => (error as { code?: string; statusCode?: number }).code === 'CONFIG_INVALID' && (error as { statusCode?: number }).statusCode === 422,
+  )
+  const unchanged = await store.getAssistant('owner-a', assistant.id)
+  assert.equal(unchanged?.etag, assistant.etag)
+})
+
 test('device pairing challenge is single-use and binds a device to an assistant', async () => {
   const app = await buildApp({ env })
   await app.ready()

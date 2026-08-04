@@ -48,6 +48,7 @@ import {
   type Store,
   roleExtras,
   roleFromSnapshot,
+  validateProviderSelectionShape,
 } from './store.js'
 
 type JsonObject = Record<string, unknown>
@@ -232,7 +233,13 @@ export class PostgresStore implements Store {
     const current = await this.findAssistantRevision(id, identity.draftRevision)
     if (!current) throw new Error('assistant draft revision is missing')
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Assistant changed', 409)
-    if (value.mode === 'selected' && !value.providerConfigId) throw problem('CONFIG_INVALID', 'Selected provider requires providerConfigId', 422)
+    validateProviderSelectionShape(value)
+    if (value.mode === 'selected') {
+      const selected = await this.findProviderIdentity(ownerId, value.providerConfigId!)
+      const installation = selected ? this.installations.find((item) => item.id === selected.installationId) : undefined
+      if (!selected || !installation) throw problem('CONFIG_INVALID', 'Provider config is not available for this owner', 422)
+      if (installation.kind !== value.kind) throw problem('CONFIG_INVALID', 'Provider config kind does not match selection kind', 422)
+    }
     const selections = { ...asProviderSelections(current.providerSelections), [value.kind]: value.mode === 'selected' ? { mode: value.mode, providerConfigId: value.providerConfigId } : { mode: value.mode } }
     const revision = identity.draftRevision + 1
     const nextEtag = etag({ selections, revision })
