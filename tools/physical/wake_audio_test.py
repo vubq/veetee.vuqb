@@ -301,12 +301,20 @@ def preflight_firmware_config(scenario: Scenario) -> dict[str, Any]:
             "CONFIG_VEETEE_WAKE_ENABLED=y and a model name before physical audio"
         )
 
+    wake_during_playback = _sdkconfig_value(lines, "VEETEE_WAKE_DURING_PLAYBACK") == "y"
+    if scenario.barge_in is not None and not wake_during_playback:
+        raise HarnessError(
+            "bargeIn requires CONFIG_VEETEE_WAKE_DURING_PLAYBACK=y; "
+            "an AEC-off/half-duplex build cannot produce acoustic barge-in evidence"
+        )
+
     return {
         "path": str(scenario.firmware_config),
         "websocketScheme": urlparse(uri).scheme,
         "protocolProfile": int(profile),
         "wakeEnabled": wake_enabled,
         "wakeModelConfigured": bool(model_name),
+        "wakeDuringPlayback": wake_during_playback,
     }
 
 

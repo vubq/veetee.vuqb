@@ -118,6 +118,37 @@ class WakeAudioHarnessTest(unittest.TestCase):
             with self.assertRaisesRegex(wake_audio_test.HarnessError, "final events stage"):
                 wake_audio_test.load_scenario(scenario_file)
 
+    def test_barge_in_preflight_rejects_half_duplex_sdkconfig(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            firmware_config = base / "sdkconfig"
+            firmware_config.write_text(
+                'CONFIG_VEETEE_WS_URI="ws://127.0.0.1:18100/veetee/v3/"\n'
+                'CONFIG_VEETEE_PROTOCOL_PROFILE=3\n'
+                'CONFIG_VEETEE_WAKE_ENABLED=y\n'
+                'CONFIG_VEETEE_WAKE_MODEL_NAME="wn9_computer_tts"\n'
+                '# CONFIG_VEETEE_WAKE_DURING_PLAYBACK is not set\n',
+                encoding="utf-8",
+            )
+            scenario_file = base / "scenario.json"
+            scenario_file.write_text(json.dumps({
+                "monitor": {"command": ["never-run"], "projectDir": str(base), "serialPort": "/dev/null", "baud": 115200},
+                "player": {"command": ["never-run", "{file}"]},
+                "clips": {"wake": str(base / "wake.wav"), "utterance": str(base / "utterance.wav")},
+                "firmware": {"configFile": str(firmware_config), "requiredProtocolProfile": 3},
+                "events": [
+                    {"name": "speaking", "marker": "state=speaking", "timeoutSeconds": 1},
+                ],
+                "bargeIn": {
+                    "clip": str(base / "interrupt.wav"),
+                    "afterStage": "speaking",
+                    "events": [{"name": "wake", "marker": "wake detected", "timeoutSeconds": 1}],
+                },
+            }), encoding="utf-8")
+            scenario = wake_audio_test.load_scenario(scenario_file)
+            with self.assertRaisesRegex(wake_audio_test.HarnessError, "WAKE_DURING_PLAYBACK"):
+                wake_audio_test.preflight_firmware_config(scenario)
+
     def test_forbidden_serial_markers_are_configured_and_fail_fast(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
