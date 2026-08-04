@@ -181,8 +181,8 @@
 
 ### Canonical URL runtime cleanup (2026-08-04)
 
-- Đã dừng riêng stack preview cũ của checkout này đang giữ `18000/18001/18081`;
-  không dừng PostgreSQL, Redis, Wi‑Fi hoặc stack canonical.
+- Đã dừng riêng các preview process cũ của checkout này đang giữ `5173` và
+  `18000/18001/18081`; không dừng PostgreSQL, Redis, Wi‑Fi hoặc stack canonical.
 - Listener canonical hiện còn: Voice `0.0.0.0:18100`, Manager API
   `127.0.0.1:18101`, Manager Web `127.0.0.1:18181`. Readiness cả ba trả HTTP
   `200` sau cleanup.
