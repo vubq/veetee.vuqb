@@ -925,8 +925,34 @@ export function deviceEtag(value: { id: string; ownerId: string | null; assistan
 }
 
 export function parseCatalog(raw: unknown): ProviderInstallation[] {
-  if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { installations?: unknown }).installations)) throw new Error('provider catalog must contain installations')
-  return (raw as { installations: ProviderInstallation[] }).installations.map((item) => ({ ...item, manifest: item.manifest ?? {}, configSchema: item.configSchema ?? {} }))
+  if (!isRecord(raw) || !Array.isArray(raw.installations)) throw new Error('provider catalog must contain installations')
+  const ids = new Set<string>()
+  return raw.installations.map((value, index) => {
+    if (!isRecord(value)) throw new Error(`provider catalog installation[${index}] must be an object`)
+    const id = catalogString(value.id, `provider catalog installation[${index}].id`)
+    if (ids.has(id)) throw new Error(`provider catalog contains duplicate installation id: ${id}`)
+    ids.add(id)
+    const kindValue = catalogString(value.kind, `provider catalog installation[${index}].kind`)
+    if (!providerKinds.has(kindValue as ProviderKind)) throw new Error(`provider catalog installation[${index}].kind is unsupported: ${kindValue}`)
+    const displayNameKey = catalogString(value.displayNameKey, `provider catalog installation[${index}].displayNameKey`)
+    const version = catalogString(value.version, `provider catalog installation[${index}].version`)
+    const manifest = value.manifest == null ? {} : value.manifest
+    const configSchema = value.configSchema == null ? {} : value.configSchema
+    if (!isRecord(manifest)) throw new Error(`provider catalog installation[${index}].manifest must be an object`)
+    if (!isRecord(configSchema)) throw new Error(`provider catalog installation[${index}].configSchema must be an object`)
+    return { id, kind: kindValue as ProviderKind, displayNameKey, version, manifest, configSchema }
+  })
+}
+
+const providerKinds = new Set<ProviderKind>(['vad', 'asr', 'llm', 'tts', 'intent', 'memory'])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function catalogString(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} must be a non-empty string`)
+  return value.trim()
 }
 
 export async function loadInitialSnapshot(path: string | undefined): Promise<RuntimeSnapshot | undefined> {

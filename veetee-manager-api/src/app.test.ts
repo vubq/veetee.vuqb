@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { buildApp } from './app.js'
 import type { Environment } from './config.js'
-import { InMemoryStore, isPresenceFresh } from './store.js'
+import { InMemoryStore, isPresenceFresh, parseCatalog } from './store.js'
 
 const root = resolve(import.meta.dirname, '..')
 const env: Environment = {
@@ -134,6 +134,16 @@ test('voice catalog total matches the locale-filtered items', async () => {
   } finally {
     await app.close()
   }
+})
+
+test('provider catalog parsing fails closed on duplicate or malformed installations', () => {
+  const installation = { id: 'test.tts', kind: 'tts', displayNameKey: 'provider.tts.test', version: '1.0.0', manifest: {}, configSchema: {} }
+  assert.throws(() => parseCatalog({ installations: [installation, { ...installation }] }), /duplicate installation id/)
+  assert.throws(() => parseCatalog({ installations: [{ ...installation, kind: 'unknown' }] }), /kind is unsupported/)
+  assert.throws(() => parseCatalog({ installations: [{ ...installation, manifest: [] }] }), /manifest must be an object/)
+  const defaults = parseCatalog({ installations: [{ ...installation, manifest: null, configSchema: null }] })
+  assert.deepEqual(defaults[0]?.manifest, {})
+  assert.deepEqual(defaults[0]?.configSchema, {})
 })
 
 test('provider config is schema-driven and rejects unknown fields', async () => {

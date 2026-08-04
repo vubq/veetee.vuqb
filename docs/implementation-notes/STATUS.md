@@ -709,3 +709,18 @@
 - Verification: Manager API dedicated `veetee_vubq_test` **40/40**, lint/build/
   `openapi:check` pass. Không restart service, không phát audio, không mutate
   production DB, không đổi Wi-Fi/Tailscale/firmware.
+
+### Provider catalog fail-closed validation (2026-08-05, host-only)
+
+- `parseCatalog()` giờ kiểm tra từng installation trước khi đưa manifest vào
+  runtime: id/displayNameKey/version phải là chuỗi không rỗng, kind phải thuộc
+  registry `vad|asr|llm|tts|intent|memory`, id không được trùng, manifest và
+  configSchema phải là object; `null` được chuẩn hóa thành object rỗng.
+- Dữ liệu catalog sai bị từ chối ngay (fail-closed), tránh provider giả hoặc
+  schema không hợp lệ lọt vào control plane. Không tự thêm fallback provider,
+  không đổi wire protocol, không đổi production DB và không trim/ghi đè catalog
+  nguồn ngoài phần parse boundary.
+- Regression Manager API PostgreSQL dedicated `veetee_vubq_test`: **41/41**;
+  `npm run lint`, `npm run build`, `npm run openapi:check` đều pass.
+- Audio lock vẫn bật: không `pw-play`, wake/audio harness, microphone/speaker/
+  serial audio, flash/reset/erase ESP32 hoặc đổi Wi-Fi/Tailscale.
