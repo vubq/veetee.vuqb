@@ -117,6 +117,8 @@ async function openConversation(item: ConversationSummary) {
     detailState.value = result.meta.offline ? 'offline' : 'error'
     detailError.value = result.meta.offline
       ? 'Đang ngoại tuyến; chưa thể tải chi tiết lượt nói.'
+      : result.problem.code === 'RETENTION_EXPIRED'
+        ? 'Conversation đã hết retention hoặc đã bị xóa.'
       : 'Không tải được chi tiết lượt nói từ Manager API.'
     await focusDetailState()
   } catch {
@@ -139,6 +141,8 @@ async function exportSelectedConversation() {
     if (!result.ok) {
       exportError.value = result.meta.offline
         ? 'Đang ngoại tuyến; chưa thể tải bản export.'
+        : result.problem.code === 'RETENTION_EXPIRED'
+          ? 'Conversation đã hết retention hoặc đã bị xóa; không còn bản export.'
         : 'Không tải được bản export của conversation.'
       await focusExportError()
       return
