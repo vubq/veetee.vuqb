@@ -23,7 +23,7 @@
 | M1 — realtime conversation | Đang làm, **chưa đóng DoD** | Streaming/cancellation/tool loop, v1/v2/v3 fixture, WakeNet, noise suppression, multi-key fixture 10/10, AEC lifecycle/resource 10/10; stale `tts/stop` barrier đã sửa; normal wake 2 lượt, barge-in lifecycle physical, corpus smoke 1 negative/1 positive và host TTFA warm p95 `1481,4 ms` pass. | Acoustic echo-only, false accept/reject corpus đủ lớn, voice-onset barge-in/time-to-silence, 100 repetition, provider promotion và cross-peer physical conformance. Các lần timeout AEC/bypass trước guard vẫn là diagnostic history, không coi là acoustic verdict. Xem [`M1.md`](M1.md). |
 | Groq multi-key | Hoàn tất cho **test harness** | `VEETEE_TEST_GROQ_KEYS_FILE` chỉ với fixture; round-robin; chỉ retry `429` trước delta đầu; không replay partial stream; firmware không chứa key. | Không phải production fallback/key rotation; nhiều key vẫn có thể cùng dính quota account/org/model/IP. |
 | M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary, TTL freshness, privacy export, async conversation delete/tombstone và host regression. | Promotion provider/model/VRAM, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
-| M3 — transport/hardware/OTA | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | MQTT/UDP, MCP phần cứng, assets/OTA cần mở milestone và input board/BOM. |
+| M3 — transport/hardware/OTA | Đang mở ở host-only slice | UDP v3 framing/AES-CTR/bounded reorder và `tts/start`/`tts/stop` stream barrier đã có golden/unit evidence; chưa nối carrier vào runtime. | MQTT client/gateway/socket, firmware carrier, MCP phần cứng, assets/OTA, loss/soak và transport-promotion cần mở sau. |
 | M4 — hardening/multilingual | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | Capacity, backup/restore, security, locale thứ hai và soak dài. |
 
 ## Nơi xem trực tiếp
@@ -879,3 +879,24 @@
   hardware MCP, assets/OTA, loss/soak và transport-promotion evidence còn mở.
 - Audio/physical lock vẫn giữ nguyên; WebSocket v3 vẫn là default và không có
   silent fallback sang MQTT/UDP.
+
+### M3 MQTT/UDP ordering barrier — host-only (2026-08-05)
+
+- `UdpTtsStreamBarrier` trong `veetee-server/src/veetee_server/mqtt_udp.py` đã
+  nối semantics control/audio theo §5.6 mà không mở MQTT broker, UDP socket,
+  route hoặc audio device.
+- Pre-start buffer keyed theo `{session_id,audio_stream_id}` tối đa 8 packet/
+  480 ms; overflow/timeout invalidates stream. `tts/start` kiểm tra boundary,
+  marks unresolved prefix lost và chỉ release từ `start_sequence`. `tts/stop`
+  drain chính xác tới `end_sequence`, drop packet sau end và abort/flush sau
+  1.200 ms nếu chưa release đủ.
+- Abort/reset/key rotation xóa mọi pre-start/active/expired state. Wrong stream,
+  stale/out-of-range control hoặc packet không được đưa vào playback; metrics
+  bounded nằm ở `UdpStreamMetrics`.
+- Verification: Voice Server **99 passed**, Ruff và compileall pass. Không
+  restart service, không gọi Groq/provider, không phát/thu audio, không mở
+  serial, không flash/reset ESP32, không đổi Wi-Fi/Tailscale và không mutate
+  production `veetee_vubq`.
+- M3 vẫn chưa đạt DoD: MQTT client/gateway/socket, firmware transport,
+  loss/reorder soak, hardware MCP, assets/OTA và promotion comparison còn mở;
+  direct WebSocket v3 vẫn là default.
