@@ -226,3 +226,21 @@
   test-key pool bị loại khỏi environment; health `200`, `activeConnections=1`,
   `activeTurns=0`. M1 vẫn mở false-reject/AEC/acoustic gate và chưa đạt 100
   repetition.
+
+### Wake threshold A/B re-check (2026-08-04)
+
+- Threshold `60%` và `65%` đã được chạy đối chứng cùng fixture TTS VieNeu,
+  profile 3, clip và delay 10 giây: mỗi threshold **20/20** lifecycle pass,
+  không forbidden marker; threshold 60 thêm corpus `1 negative + 1 positive`
+  pass. Một run delay 0,75 giây fail lượt 2, được giữ là diagnostic playback
+  tail chứ không phải threshold verdict.
+- Không có bằng chứng đủ để hạ mặc định; `sdkconfig.defaults`/production image
+  giữ `CONFIG_VEETEE_WAKE_THRESHOLD_PERCENT=65`. Firmware 65 đã build/flash
+  hash verify không erase NVS. Fixture đã dừng và production Voice revision 87
+  đã khôi phục (`activeConnections=1`, `activeTurns=0`, `protocol_errors=0`).
+- Đây chưa phải 100-repetition hoặc acoustic barge-in acceptance; M0/M1 vẫn
+  chưa đóng DoD physical.
+- Regression sau khi khôi phục production: Voice Server **62 passed**, firmware
+  host CTest **1/1**, physical/runtime tooling **38 passed**, Manager API
+  **21 passed/10 skipped** (PostgreSQL test suite không được bật trong env này),
+  Manager Web typecheck/lint/Vitest **63 passed** và production build pass.
