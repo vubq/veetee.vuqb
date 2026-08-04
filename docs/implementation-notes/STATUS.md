@@ -385,7 +385,9 @@
   pool đang warm; `stop()` chờ activation để tránh publish sau shutdown.
 - Regression mới chứng minh lease cũ vẫn acquire được trong lúc candidate bị giữ
   ở `prepare()`; regression cancellation cũng chứng minh candidate dở dang được
-  close khi shutdown/hủy task. Voice Server full suite **66 passed**, Ruff pass.
+  close khi shutdown/hủy task. Native/untyped activation exception cũng được
+  close fail-closed và giữ last-known-good view. Voice Server full suite **67
+  passed**, Ruff pass.
 - Không phát audio, không chạy wake harness, không flash/đổi firmware, không
   restart runtime production, không đổi Wi-Fi/network và không mutate
   `veetee_vubq`.

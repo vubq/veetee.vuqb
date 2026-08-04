@@ -144,6 +144,34 @@ async def test_cancelled_candidate_prepare_closes_partial_registry(monkeypatch, 
 
 
 @pytest.mark.asyncio
+async def test_untyped_candidate_failure_is_closed_and_keeps_last_good_view(monkeypatch, tmp_path):
+    source = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    source["revision"] = 2
+    replacement = tmp_path / "replacement.json"
+    replacement.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(FIXTURE))
+
+    class UnexpectedRegistry(TrackingRegistry):
+        async def prepare(self) -> None:
+            if self.snapshot.revision == 2:
+                raise RuntimeError("native model loader failed")
+            await super().prepare()
+
+    monkeypatch.setattr("veetee_server.runtime.ProviderRegistry", UnexpectedRegistry)
+    TrackingRegistry.instances.clear()
+    TrackingRegistry.fail_revisions.clear()
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    await runtime.start()
+    old_view = runtime.view
+    assert await runtime._activate(load_snapshot(replacement)) is False
+    assert runtime.view is old_view
+    assert runtime.last_activation_error_type == "RuntimeError"
+    assert TrackingRegistry.instances[-1].close_calls == 1
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_failed_candidate_is_closed_and_old_generation_stays_active(monkeypatch, tmp_path):
     source = json.loads(FIXTURE.read_text(encoding="utf-8"))
     source["revision"] = 3

@@ -219,6 +219,17 @@ class RuntimeConfigManager:
                 self.last_activation_error_type = type(exc).__name__
                 LOG.warning("runtime activation failed error_type=%s", self.last_activation_error_type)
                 return False
+            except Exception as exc:  # noqa: BLE001 - preserve last-known-good generation
+                # Native model/driver failures do not always arrive wrapped in
+                # ProviderError. Treat every candidate failure transactionally:
+                # close partial resources, keep the old generation and expose
+                # only the exception type in readiness diagnostics.
+                if candidate is not None:
+                    await self._close_registry(candidate)
+                self.activation_failures += 1
+                self.last_activation_error_type = type(exc).__name__
+                LOG.warning("runtime activation failed error_type=%s", self.last_activation_error_type)
+                return False
             async with self._lock:
                 old = self._view
                 self._view = view
