@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { buildApp } from './app.js'
 import type { Environment } from './config.js'
+import { InMemoryStore, isPresenceFresh } from './store.js'
 
 const root = resolve(import.meta.dirname, '..')
 const env: Environment = {
@@ -254,6 +255,36 @@ test('assistant summaries are derived from owner-scoped paired devices and retai
   } finally {
     await app.close()
   }
+})
+
+test('device online state expires from lastSeenAt instead of trusting stale presence', () => {
+  const now = new Date('2026-08-04T12:00:00.000Z')
+  assert.equal(isPresenceFresh('2026-08-04T11:59:30.000Z', 'online', now, 60_000), true)
+  assert.equal(isPresenceFresh('2026-08-04T11:58:59.000Z', 'online', now, 60_000), false)
+  assert.equal(isPresenceFresh('2026-08-04T11:59:59.000Z', 'offline', now, 60_000), false)
+  assert.equal(isPresenceFresh('not-a-time', 'online', now, 60_000), false)
+})
+
+test('InMemory dashboard keeps device count while deriving stale device offline', async () => {
+  let now = new Date('2026-08-04T12:00:00.000Z')
+  const store = new InMemoryStore([], undefined, { onlineTtlSeconds: 60, now: () => now })
+  const assistant = await store.createAssistant('local-owner', 'TTL fixture')
+  const challenge = await store.createPairingChallenge({
+    identityHash: 'identity-ttl',
+    clientIdHash: 'client-ttl',
+    maskedMac: 'AA:BB:CC:••:••:10',
+    board: 'ESP32-S3 N16R8',
+    firmwareVersion: 'ttl-test',
+  })
+  await store.pairDevice('local-owner', { assistantId: assistant.id, verificationCode: challenge.verificationCode })
+  const fresh = await store.getAssistant('local-owner', assistant.id)
+  assert.deepEqual({ deviceCount: fresh?.deviceCount, onlineDeviceCount: fresh?.onlineDeviceCount }, { deviceCount: 1, onlineDeviceCount: 1 })
+
+  now = new Date('2026-08-04T12:01:01.000Z')
+  const stale = await store.getAssistant('local-owner', assistant.id)
+  assert.equal(stale?.deviceCount, 1)
+  assert.equal(stale?.onlineDeviceCount, 0)
+  assert.equal((await store.listDevices('local-owner', assistant.id))[0]?.onlineState, 'offline')
 })
 
 test('device binding unlink is ETag guarded, idempotent and preserves identity/history', async () => {

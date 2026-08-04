@@ -22,7 +22,7 @@
 | M0 — một lượt ESP32 qua server | Đang hoàn thiện, **chưa đóng DoD** | Firmware/host protocol, WS v3, provider path, runtime manager snapshot, unattended wake và fixture physical flow đã chạy. | Người dùng xác nhận thực tế loa/LCD/PTT và acceptance audio path; 30-turn DoD phải giữ đủ evidence. Xem [`M0.md`](M0.md) và [`10-roadmap.md`](../10-roadmap.md). |
 | M1 — realtime conversation | Đang làm, **chưa đóng DoD** | Streaming/cancellation/tool loop, v1/v2/v3 fixture, WakeNet, noise suppression, multi-key fixture 10/10, AEC lifecycle/resource 10/10; harness barge-in có phase/delay cấu hình, preflight duplex và diagnostic AEC bypass. | AEC-on và AEC-transform-bypass đều timeout ở `interrupt_wake_detected`, kể cả probe delay 4 s trong speaking; acoustic echo-only, false accept/reject corpus đủ lớn, voice-onset barge-in/time-to-silence, 100 repetition, provider promotion và cross-peer physical conformance. Xem [`M1.md`](M1.md). |
 | Groq multi-key | Hoàn tất cho **test harness** | `VEETEE_TEST_GROQ_KEYS_FILE` chỉ với fixture; round-robin; chỉ retry `429` trước delta đầu; không replay partial stream; firmware không chứa key. | Không phải production fallback/key rotation; nhiều key vẫn có thể cùng dính quota account/org/model/IP. |
-| M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary và host regression. | Promotion provider/model/VRAM, online TTL derivation, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
+| M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary, TTL freshness và host regression. | Promotion provider/model/VRAM, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
 | M3 — transport/hardware/OTA | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | MQTT/UDP, MCP phần cứng, assets/OTA cần mở milestone và input board/BOM. |
 | M4 — hardening/multilingual | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | Capacity, backup/restore, security, locale thứ hai và soak dài. |
 
@@ -64,10 +64,14 @@
   `onlineDeviceCount`, `lastConversationAt` từ Manager API thay vì Web hiển thị
   số `0` cố định. Chi tiết, tests và giới hạn TTL nằm ở
   [`M2.md`](M2.md#derived-assistant-dashboard-summary-contract-2026-08-04).
-- Source regression cho slice này: Manager API memory **19 passed** (PostgreSQL
-  suite skip an toàn khi không cấp test DSN), Web **63/63** unit và Chromium
-  **9/9** E2E; API/Voice/Web production readiness `18101/18100/18181` đều
-  `200` bằng probe read-only. Không restart runtime hoặc mutate database.
+- Presence freshness đã được harden theo ADR-022: `onlineDeviceCount` và
+  `Device.onlineState` suy ra từ `lastSeenAt + VEETEE_DEVICE_ONLINE_TTL_SECONDS`
+  (mặc định 120 giây); `deviceCount` không bị giảm khi device stale.
+- Source regression cho slice này: Manager API InMemory **21 passed** và
+  PostgreSQL dedicated `veetee_vubq_test` **31/31 passed** (runtime
+  `veetee_vubq` không dùng cho test), Web **63/63** unit và Chromium **9/9**
+  E2E; API/Voice/Web production readiness `18101/18100/18181` đều `200` bằng
+  probe read-only. Không restart runtime hoặc mutate database runtime.
 - Đã flash lại firmware AEC-on sau A/B diagnostic, không erase NVS; serial
   xác nhận `wake_ready=1` và không có panic/Opus/queue error trong cửa sổ kiểm tra.
 - Fixture Voice Server test-only đã dừng. Production Voice Server được khởi

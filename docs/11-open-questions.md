@@ -77,6 +77,7 @@ Composition API + `<script setup lang="ts">`, typed API client, route/feature bo
 | D-014 | UI preview foundation | Owner-approved current foundation: hybrid top-nav/context workspace, screenshot-aligned tokens và Be Vietnam Pro self-host. |
 | D-015 | Runtime configuration | Manager Web/API publish immutable snapshot; Voice Server poll ETag và atomic apply, không restart turn/process. |
 | D-016 | HTTPS inspection | Private Tailscale Serve; domain lấy từ `tailscale serve status`, không Funnel cho route Veetee. |
+| D-017 | Device presence freshness | `onlineState=online` chỉ được coi là online trong `VEETEE_DEVICE_ONLINE_TTL_SECONDS` (mặc định 120 giây); `deviceCount` vẫn đếm mọi device đã bind. |
 
 ## 3. Blocking trước khi implement M0
 

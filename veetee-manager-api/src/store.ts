@@ -71,6 +71,25 @@ export interface DevicePresenceResult {
   lastSeenAt: string
 }
 
+export const DEFAULT_DEVICE_ONLINE_TTL_SECONDS = 120
+
+export interface PresenceStoreOptions {
+  onlineTtlSeconds?: number
+  now?: () => Date
+}
+
+export function isPresenceFresh(
+  lastSeenAt: string | Date,
+  onlineState: 'online' | 'offline',
+  now: Date,
+  ttlMs: number,
+): boolean {
+  if (onlineState !== 'online') return false
+  const lastSeen = lastSeenAt instanceof Date ? lastSeenAt.getTime() : Date.parse(lastSeenAt)
+  if (!Number.isFinite(lastSeen) || !Number.isFinite(now.getTime()) || ttlMs <= 0) return false
+  return lastSeen >= now.getTime() - ttlMs
+}
+
 export interface RetentionPurgeResult {
   conversations: number
 }
@@ -304,10 +323,14 @@ export class InMemoryStore implements Store {
   private readonly pairingChallenges = new Map<string, { id: string; deviceId: string; codeHash: string; expiresAt: string; attempts: number; state: 'pending' | 'used' }>()
   private readonly retentionPolicies = new Map<string, RetentionPolicy>()
   private readonly conversations = new Map<string, { ownerId: string; summary: ConversationSummary; turns: ConversationTurn[] }>()
+  private readonly presenceTtlMs: number
+  private readonly clock: () => Date
   private publication: RuntimePublication | undefined
 
-  constructor(installations: ProviderInstallation[], initial?: RuntimeSnapshot) {
+  constructor(installations: ProviderInstallation[], initial?: RuntimeSnapshot, options: PresenceStoreOptions = {}) {
     this.installations = installations
+    this.presenceTtlMs = (options.onlineTtlSeconds ?? DEFAULT_DEVICE_ONLINE_TTL_SECONDS) * 1000
+    this.clock = options.now ?? (() => new Date())
     if (initial) {
       const assistant: AssistantRecord = {
         id: initial.assistantId,
@@ -539,20 +562,21 @@ export class InMemoryStore implements Store {
   }
 
   async listDevices(ownerId: string, assistantId: string): Promise<Device[]> {
+    const now = this.clock()
     return [...this.devices.values()]
       .filter((item) => item.ownerId === ownerId && item.assistantId === assistantId)
-      .map((item) => publicDevice(item))
+      .map((item) => publicDevice(item, now, this.presenceTtlMs))
   }
 
   async reportDevicePresence(value: DevicePresenceInput): Promise<DevicePresenceResult> {
+    const now = this.clock().toISOString()
     const existing = [...this.devices.values()].find((item) => item.identityHash === value.identityHash && item.clientIdHash === value.clientIdHash)
     const device: DeviceRecord = existing ?? {
       id: randomUUID(), ownerId: '', assistantId: '', displayName: '', maskedMac: value.maskedMac,
       firmwareVersion: value.firmwareVersion, board: value.board, onlineState: value.onlineState,
-      lastSeenAt: new Date().toISOString(), lastConversationAt: null,
+      lastSeenAt: now, lastConversationAt: null,
       identityHash: value.identityHash, clientIdHash: value.clientIdHash,
     }
-    const now = new Date().toISOString()
     device.maskedMac = value.maskedMac
     device.firmwareVersion = value.firmwareVersion
     device.board = value.board
@@ -563,20 +587,22 @@ export class InMemoryStore implements Store {
   }
 
   async createPairingChallenge(value: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string }): Promise<PairingChallenge> {
+    const now = this.clock()
+    const nowIso = now.toISOString()
     const existing = [...this.devices.values()].find((item) => item.identityHash === value.identityHash && item.clientIdHash === value.clientIdHash)
     const device: DeviceRecord = existing ?? {
       id: randomUUID(), ownerId: '', assistantId: '', displayName: '', maskedMac: value.maskedMac, firmwareVersion: value.firmwareVersion, board: value.board,
-      onlineState: 'online', lastSeenAt: new Date().toISOString(), lastConversationAt: null, identityHash: value.identityHash, clientIdHash: value.clientIdHash,
+      onlineState: 'online', lastSeenAt: nowIso, lastConversationAt: null, identityHash: value.identityHash, clientIdHash: value.clientIdHash,
     }
     device.maskedMac = value.maskedMac
     device.firmwareVersion = value.firmwareVersion
     device.board = value.board
     device.onlineState = 'online'
-    device.lastSeenAt = new Date().toISOString()
+    device.lastSeenAt = nowIso
     this.devices.set(device.id, device)
     const id = randomUUID()
     const verificationCode = `VT-${randomInt(0, 10000).toString().padStart(4, '0')}`
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString()
     this.pairingChallenges.set(id, { id, deviceId: device.id, codeHash: hashPairingCode(verificationCode), expiresAt, attempts: 0, state: 'pending' })
     return { id, deviceId: device.id, verificationCode, expiresAt }
   }
@@ -585,7 +611,7 @@ export class InMemoryStore implements Store {
     const assistant = this.assistants.get(value.assistantId)
     if (!assistant || assistant.ownerId !== ownerId) throw problem('NOT_FOUND', 'Assistant not found', 404)
     const codeHash = hashPairingCode(value.verificationCode.trim().toUpperCase())
-    const now = Date.now()
+    const now = this.clock().getTime()
     const challenge = [...this.pairingChallenges.values()].find((item) => item.state === 'pending' && item.attempts < 5 && Date.parse(item.expiresAt) > now && item.codeHash === codeHash)
     if (!challenge) throw problem('PAIRING_CODE_INVALID', 'Pairing code is invalid or expired', 422)
     const device = this.devices.get(challenge.deviceId)
@@ -595,9 +621,9 @@ export class InMemoryStore implements Store {
     device.assistantId = value.assistantId
     device.displayName = value.displayName?.trim() || device.displayName || `Veetee ${device.id.slice(0, 8)}`
     device.onlineState = 'online'
-    device.lastSeenAt = new Date().toISOString()
+    device.lastSeenAt = this.clock().toISOString()
     challenge.state = 'used'
-    return publicDevice(device)
+    return publicDevice(device, this.clock(), this.presenceTtlMs)
   }
 
   async unlinkDevice(ownerId: string, id: string, ifMatch: string): Promise<void> {
@@ -736,6 +762,7 @@ export class InMemoryStore implements Store {
 
   private withAssistantSummary(current: AssistantRecord): Assistant {
     const devices = [...this.devices.values()].filter((device) => device.ownerId === current.ownerId && device.assistantId === current.id)
+    const now = this.clock()
     let lastConversationAt: string | null = null
     for (const record of this.conversations.values()) {
       if (record.ownerId !== current.ownerId || record.summary.assistantId !== current.id) continue
@@ -745,7 +772,7 @@ export class InMemoryStore implements Store {
     return {
       ...structuredClone(current),
       deviceCount: devices.length,
-      onlineDeviceCount: devices.filter((device) => device.onlineState === 'online').length,
+      onlineDeviceCount: devices.filter((device) => isPresenceFresh(device.lastSeenAt, device.onlineState, now, this.presenceTtlMs)).length,
       lastConversationAt,
     }
   }
@@ -814,7 +841,7 @@ function validateConversationTurn(value: ConversationTurnInput): void {
   if (value.transcript.length > 128 || value.toolCalls.length > 64) throw problem('HISTORY_LIMIT_EXCEEDED', 'conversation event is too large', 413)
 }
 
-function publicDevice(value: DeviceRecord): Device {
+function publicDevice(value: DeviceRecord, now: Date, presenceTtlMs: number): Device {
   return {
     id: value.id,
     ownerId: value.ownerId,
@@ -824,7 +851,7 @@ function publicDevice(value: DeviceRecord): Device {
     maskedMac: value.maskedMac,
     firmwareVersion: value.firmwareVersion,
     board: value.board,
-    onlineState: value.onlineState,
+    onlineState: isPresenceFresh(value.lastSeenAt, value.onlineState, now, presenceTtlMs) ? 'online' : 'offline',
     lastSeenAt: value.lastSeenAt,
     lastConversationAt: value.lastConversationAt,
   }

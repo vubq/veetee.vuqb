@@ -619,7 +619,10 @@ binding nằm trong một transaction để hai user không claim cùng device.
 
 `DeviceCard/Detail` chỉ hiển thị masked MAC, firmware version, board, last seen,
 derived online state, last conversation, OTA toggle và linked assistant. Online
-TTL do config quyết định; UI không tự suy ra từ màu/icon.
+TTL do bootstrap policy `VEETEE_DEVICE_ONLINE_TTL_SECONDS` quyết định (mặc định
+120 giây, giới hạn 10–86.400). Server suy ra `onlineState` và
+`onlineDeviceCount` từ `lastSeenAt`; UI không tự suy ra từ màu/icon. `deviceCount`
+vẫn gồm device đã bind dù presence đã stale.
 
 ### 7.5 Conversation history, audio và tool observability
 

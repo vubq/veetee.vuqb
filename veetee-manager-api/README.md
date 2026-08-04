@@ -24,6 +24,11 @@ Migration chạy one-shot trước khi API khởi động:
 VEETEE_DATABASE_URL_FILE=../secrets/manager.database-url npm run db:migrate
 ```
 
+`VEETEE_DEVICE_ONLINE_TTL_SECONDS` (10–86.400, mặc định 120) quyết định khi
+presence `online` hết hạn. Đây là bootstrap policy; `deviceCount` vẫn gồm mọi
+device đã bind, còn `onlineDeviceCount` và `Device.onlineState` được suy ra từ
+`lastSeenAt` trong TTL.
+
 PostgreSQL adapter dùng immutable `assistant_revision` và
 `provider_config_revision`; các row current chỉ giữ pointer/ETag. Secret chỉ là
 reference metadata, không lưu plaintext trong PostgreSQL.

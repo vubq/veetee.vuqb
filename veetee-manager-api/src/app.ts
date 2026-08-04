@@ -690,9 +690,9 @@ async function createStore(env: Environment): Promise<Store> {
   const initial = await loadInitialSnapshot(env.VEETEE_INITIAL_SNAPSHOT_FILE)
   if (env.VEETEE_DATABASE_MODE === 'postgres') {
     const { createPostgresStore } = await import('./postgres-store.js')
-    return createPostgresStore({ catalog, initial, databaseUrlFile: env.VEETEE_DATABASE_URL_FILE })
+    return createPostgresStore({ catalog, initial, databaseUrlFile: env.VEETEE_DATABASE_URL_FILE, presenceTtlSeconds: env.VEETEE_DEVICE_ONLINE_TTL_SECONDS })
   }
-  return new InMemoryStore(catalog, initial)
+  return new InMemoryStore(catalog, initial, { onlineTtlSeconds: env.VEETEE_DEVICE_ONLINE_TTL_SECONDS })
 }
 
 function owner(request: FastifyRequest): string { return (request as OwnerRequest).ownerId ?? 'local-owner' }

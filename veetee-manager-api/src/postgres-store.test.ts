@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { test } from 'node:test'
+import { Pool } from 'pg'
 import { buildApp } from './app.js'
 import type { Environment } from './config.js'
 import { EncryptedFileSecretStore } from './secret-store.js'
@@ -53,7 +54,7 @@ test('PostgreSQL persists a published assistant across Manager API restart', { s
   try {
     const list = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
     assert.equal(list.statusCode, 200)
-    assistantId = list.json().items[0]?.id
+    assistantId = list.json().items.find((item: { role?: { locale?: unknown }; id?: string }) => typeof item.role?.locale === 'string')?.id
     assert.ok(assistantId)
     const role = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/role-config` })
     assert.equal(role.statusCode, 200)
@@ -222,6 +223,7 @@ test('PostgreSQL derives assistant dashboard summaries without exposing device i
   const app = await buildApp({ env })
   await app.ready()
   let assistantId = ''
+  let staleDeviceId = ''
   try {
     const created = await app.inject({ method: 'POST', url: '/api/v1/assistants', payload: { name: `PostgreSQL summary ${entropy.slice(0, 8)}` } })
     assert.equal(created.statusCode, 201)
@@ -232,12 +234,13 @@ test('PostgreSQL derives assistant dashboard summaries without exposing device i
       assert.equal(challenge.statusCode, 201)
       const paired = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: challenge.json().verificationCode, displayName: `PostgreSQL summary ${maskedMac}` } })
       assert.equal(paired.statusCode, 201)
+      return paired.json().id as string
     }
 
     const firstIdentity = hash('1')
     const firstClient = hash('2')
     await pair(firstIdentity, firstClient, 'AA:BB:CC:••:••:41')
-    await pair(hash('3'), hash('4'), 'AA:BB:CC:••:••:42')
+    staleDeviceId = await pair(hash('3'), hash('4'), 'AA:BB:CC:••:••:42')
     assert.equal((await app.inject({ method: 'POST', url: '/internal/v1/devices/presence', payload: { identityHash: firstIdentity, clientIdHash: firstClient, maskedMac: 'AA:BB:CC:••:••:41', board: 'ESP32-S3 N16R8', firmwareVersion: 'summary-pg', onlineState: 'offline' } })).statusCode, 202)
     assert.equal((await app.inject({ method: 'POST', url: '/internal/v1/devices/presence', payload: { identityHash: hash('5'), clientIdHash: hash('6'), maskedMac: 'AA:BB:CC:••:••:43', board: 'ESP32-S3 N16R8', firmwareVersion: 'summary-pg', onlineState: 'online' } })).statusCode, 202)
 
@@ -280,6 +283,13 @@ test('PostgreSQL derives assistant dashboard summaries without exposing device i
     assert.equal(reassigned.statusCode, 404)
   } finally { await app.close() }
 
+  const pool = new Pool({ connectionString: (await readFile(databaseUrlFile!, 'utf8')).trim() })
+  try {
+    await pool.query("update veetee_manager.device set last_seen_at = now() - interval '5 minutes' where id = $1", [staleDeviceId])
+  } finally {
+    await pool.end()
+  }
+
   const restarted = await buildApp({ env })
   await restarted.ready()
   try {
@@ -288,7 +298,7 @@ test('PostgreSQL derives assistant dashboard summaries without exposing device i
     const card = listed.json().items.find((item: { id: string }) => item.id === assistantId) as Record<string, unknown> | undefined
     assert.ok(card)
     assert.equal(card?.deviceCount, 2)
-    assert.equal(card?.onlineDeviceCount, 1)
+    assert.equal(card?.onlineDeviceCount, 0)
     assert.equal(card?.lastConversationAt, latestEndedAt)
     assert.equal('identityHash' in (card ?? {}), false)
     assert.equal('clientIdHash' in (card ?? {}), false)

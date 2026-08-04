@@ -20,7 +20,9 @@ import {
   etag,
   defaultRetentionPolicy,
   deviceEtag,
+  DEFAULT_DEVICE_ONLINE_TTL_SECONDS,
   hashPairingCode,
+  isPresenceFresh,
   problem,
   validateSecretBindings,
   type Assistant,
@@ -65,18 +67,27 @@ export interface PostgresStoreOptions {
   catalog: ProviderInstallation[]
   initial?: RuntimeSnapshot
   databaseUrlFile: string | undefined
+  presenceTtlSeconds?: number
+  now?: () => Date
 }
 
 export class PostgresStore implements Store {
   private constructor(
     private readonly handle: DatabaseHandle,
     private readonly installations: ProviderInstallation[],
+    private readonly presenceTtlMs: number,
+    private readonly clock: () => Date,
   ) {}
 
   static async open(options: PostgresStoreOptions): Promise<PostgresStore> {
     const url = await readDatabaseUrl(options.databaseUrlFile)
     const handle = await openDatabase(url)
-    const store = new PostgresStore(handle, options.catalog)
+    const store = new PostgresStore(
+      handle,
+      options.catalog,
+      (options.presenceTtlSeconds ?? DEFAULT_DEVICE_ONLINE_TTL_SECONDS) * 1000,
+      options.now ?? (() => new Date()),
+    )
     try {
       await store.assertMigrated()
       if (options.initial) await store.seedIfEmpty(options.initial)
@@ -381,7 +392,8 @@ export class PostgresStore implements Store {
 
   async listDevices(ownerId: string, assistantId: string): Promise<Device[]> {
     const rows = await this.handle.db.select().from(deviceTable).where(and(eq(deviceTable.ownerId, ownerId), eq(deviceTable.assistantId, assistantId))).orderBy(desc(deviceTable.updatedAt))
-    return rows.map((row) => this.mapDevice(row))
+    const now = this.clock()
+    return rows.map((row) => this.mapDevice(row, now))
   }
 
   async reportDevicePresence(value: DevicePresenceInput): Promise<DevicePresenceResult> {
@@ -447,7 +459,7 @@ export class PostgresStore implements Store {
       const [updated] = await tx.update(deviceTable).set({ ownerId, assistantId: value.assistantId, displayName: value.displayName?.trim() || device.displayName || `Veetee ${device.id.slice(0, 8)}`, onlineState: 'online', lastSeenAt: now, updatedAt: now }).where(eq(deviceTable.id, device.id)).returning()
       await tx.update(pairingChallengeTable).set({ state: 'used', usedAt: now }).where(and(eq(pairingChallengeTable.id, challenge.id), eq(pairingChallengeTable.state, 'pending')))
       if (!updated) throw new Error('device pairing update returned no row')
-      return this.mapDevice(updated)
+      return this.mapDevice(updated, this.clock())
     })
   }
 
@@ -617,12 +629,13 @@ export class PostgresStore implements Store {
   private async assistantSummaries(ownerId: string, assistantIds: readonly string[]): Promise<Map<string, AssistantSummary>> {
     const summaries = new Map<string, AssistantSummary>(assistantIds.map((id) => [id, emptyAssistantSummary()]))
     if (!assistantIds.length) return summaries
+    const presenceCutoff = new Date(this.clock().getTime() - this.presenceTtlMs)
 
     const [devices, conversations] = await Promise.all([
       this.handle.db.select({
         assistantId: deviceTable.assistantId,
         deviceCount: sql<unknown>`count(${deviceTable.id})`,
-        onlineDeviceCount: sql<unknown>`count(${deviceTable.id}) filter (where ${deviceTable.onlineState} = 'online')`,
+        onlineDeviceCount: sql<unknown>`count(${deviceTable.id}) filter (where ${deviceTable.onlineState} = 'online' and ${deviceTable.lastSeenAt} >= ${presenceCutoff})`,
       }).from(deviceTable)
         .where(and(eq(deviceTable.ownerId, ownerId), inArray(deviceTable.assistantId, [...assistantIds])))
         .groupBy(deviceTable.assistantId),
@@ -670,9 +683,9 @@ export class PostgresStore implements Store {
     return { id: row.id, ownerId: row.ownerId, name: row.name, store: 'encrypted-local', locatorMasked: row.locatorMasked, version: row.version, metadataRevision: row.metadataRevision, status: row.status === 'available' || row.status === 'revoked' ? row.status : 'unavailable', lastRotatedAt: row.lastRotatedAt?.toISOString() ?? null, etag: row.etag, updatedAt: row.updatedAt.toISOString() }
   }
 
-  private mapDevice(row: DeviceRow): Device {
+  private mapDevice(row: DeviceRow, now = this.clock()): Device {
     if (!row.ownerId || !row.assistantId) throw new Error('paired device is missing owner or assistant')
-    return { id: row.id, ownerId: row.ownerId, assistantId: row.assistantId, etag: deviceEtag(row), displayName: row.displayName, maskedMac: row.maskedMac, firmwareVersion: row.firmwareVersion, board: row.board, onlineState: row.onlineState === 'online' ? 'online' : 'offline', lastSeenAt: row.lastSeenAt.toISOString(), lastConversationAt: row.lastConversationAt?.toISOString() ?? null }
+    return { id: row.id, ownerId: row.ownerId, assistantId: row.assistantId, etag: deviceEtag(row), displayName: row.displayName, maskedMac: row.maskedMac, firmwareVersion: row.firmwareVersion, board: row.board, onlineState: isPresenceFresh(row.lastSeenAt, row.onlineState === 'online' ? 'online' : 'offline', now, this.presenceTtlMs) ? 'online' : 'offline', lastSeenAt: row.lastSeenAt.toISOString(), lastConversationAt: row.lastConversationAt?.toISOString() ?? null }
   }
 
   private mapRetentionPolicy(row: RetentionPolicyRow): RetentionPolicy {
