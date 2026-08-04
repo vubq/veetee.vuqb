@@ -666,3 +666,14 @@
   bật: không `pw-play`, wake/audio harness, microphone/speaker/serial audio,
   flash/reset/erase ESP32, đổi Wi-Fi/Tailscale hoặc mutate production
   `veetee_vubq`; không restart các service đang chạy.
+
+### Secret log-redaction hardening (2026-08-05, host-only)
+
+- Manager API logger redaction đã bao phủ explicit request paths cho bearer,
+  cookie/CSRF, `password`, `secretValue`, `apiKey`, access/refresh token và
+  pairing code; wildcard tương ứng vẫn giữ cho nested error metadata.
+- Secret canary regression vẫn pass và response/storage không chứa plaintext;
+  thay đổi chỉ ở logging policy, không đưa key/token vào source hoặc note.
+- Verification: Manager API dedicated `veetee_vubq_test` **39/39**, lint/build/
+  `openapi:check` pass. Không restart service, không mutate production DB,
+  không gọi Groq, không đụng firmware/audio/Wi-Fi/Tailscale.

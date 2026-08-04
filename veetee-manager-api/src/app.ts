@@ -318,7 +318,27 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   const secretStore = overrides?.secretStore ?? await createSecretStore(env)
   if (env.VEETEE_AUTH_MODE === 'local' && !authSecret) throw new Error('VEETEE_AUTH_SECRET_FILE is required when VEETEE_AUTH_MODE=local')
   const app = Fastify({
-    logger: { level: env.VEETEE_LOG_LEVEL, redact: ['req.headers.authorization', '*.password', '*.secret', '*.apiKey', '*.verificationCode'] },
+    logger: {
+      level: env.VEETEE_LOG_LEVEL,
+      redact: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        'req.headers.x-veetee-csrf',
+        'req.body.password',
+        'req.body.secretValue',
+        'req.body.apiKey',
+        'req.body.accessToken',
+        'req.body.refreshToken',
+        'req.body.verificationCode',
+        '*.password',
+        '*.secret',
+        '*.secretValue',
+        '*.apiKey',
+        '*.accessToken',
+        '*.refreshToken',
+        '*.verificationCode',
+      ],
+    },
   })
   const loginThrottle = new LoginThrottle({
     maxAttempts: env.VEETEE_LOGIN_MAX_ATTEMPTS ?? 5,
