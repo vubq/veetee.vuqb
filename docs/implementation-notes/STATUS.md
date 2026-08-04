@@ -677,3 +677,12 @@
 - Verification: Manager API dedicated `veetee_vubq_test` **39/39**, lint/build/
   `openapi:check` pass. Không restart service, không mutate production DB,
   không gọi Groq, không đụng firmware/audio/Wi-Fi/Tailscale.
+
+### Dependency and static-quality recheck (2026-08-05, non-audio)
+
+- Manager API và Manager Web `npm audit --omit=dev --audit-level=high` đều báo
+  **0 vulnerabilities**; không đổi lockfile hay cài thêm dependency.
+- Voice Server `compileall` và Ruff trên `src`/`tests` đều pass. Đây là kiểm tra
+  tĩnh bổ sung sau hai hardening slice, không phải provider/physical acceptance.
+- Audio lock, production DB isolation, service/process ownership và network
+  boundaries vẫn giữ nguyên.
