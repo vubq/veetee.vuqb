@@ -297,3 +297,11 @@
   riêng), Voice Server **62 passed**, Manager Web **63/63** + typecheck/lint/
   build, firmware host CTest **1/1**, runtime tests **20 passed**. Không chạy
   wake harness hoặc `pw-play` trong lượt này.
+
+### Firmware display HAL hardening (2026-08-05)
+
+- Display init đã guard backlight GPIO âm trước khi gọi `gpio_set_level`, giữ
+  nguyên profile hiện tại (ST7789 backlight GPIO42) nhưng an toàn cho board
+  descriptor không có backlight.
+- ESP-IDF 6.0.2 build pass, binary còn 66% app partition; firmware host CTest
+  1/1 pass. Không flash, không phát audio, không đổi NVS/Wi-Fi/network.

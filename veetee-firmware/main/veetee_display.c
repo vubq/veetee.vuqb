@@ -126,7 +126,9 @@ esp_err_t vt_display_init(vt_display_t *display, const vt_display_config_t *conf
         return ESP_ERR_NO_MEM;
     }
     display->ready = true;
-    (void)gpio_set_level(config->backlight_gpio, config->backlight_active_level ? 1 : 0);
+    if (config->backlight_gpio >= 0) {
+        (void)gpio_set_level(config->backlight_gpio, config->backlight_active_level ? 1 : 0);
+    }
     ESP_LOGI(TAG, "ST7789 ready %dx%d offset=%d,%d spi=%d", config->width, config->height,
              config->offset_x, config->offset_y, config->spi_host);
     return vt_display_show_state(display, 0);
