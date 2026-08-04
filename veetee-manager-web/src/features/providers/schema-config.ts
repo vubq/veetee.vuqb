@@ -151,3 +151,89 @@ export function validatePrimitiveValue(field: PrimitiveSchemaField, value: unkno
   }
   return undefined
 }
+
+/**
+ * Validate the schema-owned advanced portion before sending it to the API.
+ * This intentionally follows the catalog's JSON Schema subset instead of
+ * branching on provider names, so a new provider can add fields without a Web
+ * code change. The API remains the authoritative validation boundary.
+ */
+export function validateSchemaValue(schema: Record<string, unknown>, value: unknown, path = 'config'): string | undefined {
+  const expected = schema.type
+  const typeValid = typeof expected === 'string'
+    ? matchesSchemaType(value, expected)
+    : Array.isArray(expected)
+      ? expected.some((item) => typeof item === 'string' && matchesSchemaType(value, item))
+      : true
+  if (!typeValid) return `${path} có type không hợp lệ.`
+
+  if (Array.isArray(schema.enum) && !schema.enum.some((candidate) => jsonValuesEqual(candidate, value))) {
+    return `${path} không nằm trong danh sách cho phép.`
+  }
+  if (typeof value === 'string') {
+    if (typeof schema.minLength === 'number' && value.length < schema.minLength) return `${path} quá ngắn.`
+    if (typeof schema.maxLength === 'number' && value.length > schema.maxLength) return `${path} quá dài.`
+    if (schema.format === 'uri') {
+      try {
+        const parsed = new URL(value)
+        if (!parsed.protocol || !parsed.hostname) return `${path} phải là URI hợp lệ.`
+      } catch {
+        return `${path} phải là URI hợp lệ.`
+      }
+    }
+  }
+  if (typeof value === 'number') {
+    if (typeof schema.minimum === 'number' && value < schema.minimum) return `${path} nhỏ hơn minimum.`
+    if (typeof schema.maximum === 'number' && value > schema.maximum) return `${path} lớn hơn maximum.`
+  }
+  if (Array.isArray(value)) {
+    if (typeof schema.minItems === 'number' && value.length < schema.minItems) return `${path} thiếu item bắt buộc.`
+    if (typeof schema.maxItems === 'number' && value.length > schema.maxItems) return `${path} có quá nhiều item.`
+    if (isRecord(schema.items)) {
+      for (const [index, item] of value.entries()) {
+        const error = validateSchemaValue(schema.items, item, `${path}[${index}]`)
+        if (error) return error
+      }
+    }
+  }
+  if (!isRecord(value)) return undefined
+
+  const properties = isRecord(schema.properties) ? schema.properties : {}
+  if (Array.isArray(schema.required)) {
+    for (const key of schema.required) {
+      if (typeof key !== 'string' || !Object.prototype.hasOwnProperty.call(value, key)) return `${path}.${String(key)} là bắt buộc.`
+    }
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const childSchema = properties[key]
+    if (isRecord(childSchema)) {
+      const error = validateSchemaValue(childSchema, child, `${path}.${key}`)
+      if (error) return error
+      continue
+    }
+    if (schema.additionalProperties === false) return `${path}.${key} không được khai báo trong schema.`
+    if (isRecord(schema.additionalProperties)) {
+      const error = validateSchemaValue(schema.additionalProperties, child, `${path}.${key}`)
+      if (error) return error
+    }
+  }
+  return undefined
+}
+
+function matchesSchemaType(value: unknown, expected: string): boolean {
+  switch (expected) {
+    case 'object': return isRecord(value)
+    case 'array': return Array.isArray(value)
+    case 'string': return typeof value === 'string'
+    case 'number': return typeof value === 'number' && Number.isFinite(value)
+    case 'integer': return typeof value === 'number' && Number.isInteger(value)
+    case 'boolean': return typeof value === 'boolean'
+    case 'null': return value === null
+    default: return true
+  }
+}
+
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true
+  try { return JSON.stringify(left) === JSON.stringify(right) } catch { return false }
+}

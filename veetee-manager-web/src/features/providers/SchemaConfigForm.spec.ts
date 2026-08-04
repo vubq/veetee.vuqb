@@ -88,4 +88,17 @@ describe('SchemaConfigForm', () => {
     expect(onUpdate.mock.calls.length).toBe(before)
     expect(onValidity).toHaveBeenCalledWith(false)
   })
+
+  it('validates advanced values against the schema before emitting a draft', async () => {
+    const { view, onUpdate } = renderForm()
+    const before = onUpdate.mock.calls.length
+
+    await fireEvent.update(
+      view.getByRole('textbox', { name: 'Advanced JSON' }),
+      JSON.stringify({ rules: 'not-an-array', unknownField: 'preserve-me' }),
+    )
+
+    expect(await view.findByText(/advanced\.rules có type không hợp lệ/)).toBeTruthy()
+    expect(onUpdate.mock.calls.length).toBe(before)
+  })
 })

@@ -738,3 +738,15 @@
   DB hay runtime process.
 - Audio lock vẫn bật; không phát audio, mở microphone/speaker/serial audio,
   flash/reset/erase ESP32 hoặc đổi Wi-Fi/Tailscale.
+
+### Manager Web advanced provider validation (2026-08-05, host-only)
+
+- `SchemaConfigForm` dùng cùng subset JSON Schema ở phía UI cho phần Advanced
+  JSON: nested object/array, type, enum, range, length/item count, required,
+  additionalProperties và URI được kiểm tra trước khi emit draft.
+- Draft sai được giữ nguyên, hiển thị lỗi theo path (ví dụ `advanced.rules`)
+  và không gửi mutation; API vẫn là boundary authoritative nên không có bypass
+  bằng cách gọi HTTP trực tiếp. Không branch theo provider hoặc field name.
+- Verification: Manager Web typecheck/lint/build, unit **91/91**; Manager API
+  schema tests **42/42** vẫn pass. Không đổi wire/provider fallback, không
+  restart service, không mutate production DB và audio lock vẫn bật.

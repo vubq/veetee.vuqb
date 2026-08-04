@@ -12,6 +12,7 @@ import {
   primitiveSchemaFields,
   schemaProperties,
   validatePrimitiveValue,
+  validateSchemaValue,
   type PrimitiveSchemaField,
 } from './schema-config'
 
@@ -73,8 +74,12 @@ function setAdvancedError(parsed: Record<string, unknown> | undefined) {
     advancedError.value = 'JSON nâng cao không hợp lệ; cần một object JSON.'
     return
   }
-  const missing = requiredKeys().filter((key) => !primitiveKeys.value.has(key) && !(key in parsed))
-  advancedError.value = missing.length > 0 ? `Thiếu field bắt buộc: ${missing.join(', ')}.` : undefined
+  const properties = Object.fromEntries(
+    Object.entries(schemaProperties(props.schema)).filter(([key]) => !primitiveKeys.value.has(key)),
+  )
+  const required = requiredKeys().filter((key) => !primitiveKeys.value.has(key))
+  const schemaError = validateSchemaValue({ ...props.schema, properties, required }, parsed, 'advanced')
+  advancedError.value = schemaError ? `JSON nâng cao không hợp lệ: ${schemaError}` : undefined
   if (!advancedError.value) advancedJson.value = JSON.stringify(stripPrimitiveKeys(parsed), null, 2)
 }
 
