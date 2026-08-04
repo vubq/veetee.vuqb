@@ -1,19 +1,28 @@
 import pytest
+import csv
+from pathlib import Path
 
 from veetee_server.protocol import AudioFrame, ProtocolError, decode_audio, encode_audio
 
 
+def _golden_rows() -> list[dict[str, str]]:
+    fixture = Path(__file__).parents[2] / "tests/fixtures/ws_audio_golden.csv"
+    with fixture.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows
+    return rows
+
+
 @pytest.mark.parametrize(
-    ("profile", "expected"),
-    [
-        ("ws-v1-compat", bytes.fromhex("deadbeef")),
-        ("ws-v2", bytes.fromhex("00020000000000000102030400000004deadbeef")),
-        ("ws-v3", bytes.fromhex("00000004deadbeef")),
-    ],
+    "row",
+    _golden_rows(),
+    ids=lambda row: row["profile"],
 )
-def test_golden_audio_frames(profile, expected):
-    timestamp = 0x01020304 if profile == "ws-v2" else 0
-    frame = AudioFrame(profile=profile, payload=bytes.fromhex("deadbeef"), timestamp_ms=timestamp)
+def test_golden_audio_frames(row):
+    profile = row["profile"]
+    timestamp = int(row["timestamp_ms"])
+    expected = bytes.fromhex(row["wire_hex"])
+    frame = AudioFrame(profile=profile, payload=bytes.fromhex(row["payload_hex"]), timestamp_ms=timestamp)
     assert encode_audio(frame) == expected
     parsed = decode_audio(profile, expected)
     assert parsed.payload == frame.payload

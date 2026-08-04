@@ -13,6 +13,12 @@ cmake --build host-tests/build
 ctest --test-dir host-tests/build --output-on-failure
 ```
 
+The C host test and `veetee-server` Python protocol test read the same
+language-neutral oracle at `tests/fixtures/ws_audio_golden.csv`; this prevents
+the two implementations from silently drifting while keeping reference repos
+read-only. It validates framing/round-trip bytes, not a full peer-server
+conformance run.
+
 ## ESP-IDF compile gate
 
 Sau khi source ESP-IDF đã được activate:

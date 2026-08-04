@@ -3,38 +3,108 @@
 #include "veetee_state.h"
 
 #include <assert.h>
+#include <ctype.h>
+#include <errno.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
+#ifndef VT_WIRE_GOLDEN_FIXTURE_PATH
+#define VT_WIRE_GOLDEN_FIXTURE_PATH "../../tests/fixtures/ws_audio_golden.csv"
+#endif
+
+static int hex_value(char value) {
+    if (value >= '0' && value <= '9') return value - '0';
+    if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+    if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+    return -1;
+}
+
+static size_t decode_hex(const char *text, uint8_t *output, size_t capacity) {
+    const size_t length = strlen(text);
+    assert(length % 2U == 0U);
+    assert(length / 2U <= capacity);
+    for (size_t index = 0U; index < length / 2U; ++index) {
+        const int high = hex_value(text[index * 2U]);
+        const int low = hex_value(text[index * 2U + 1U]);
+        assert(high >= 0 && low >= 0);
+        output[index] = (uint8_t)((high << 4) | low);
+    }
+    return length / 2U;
+}
+
+static vt_protocol_profile_t profile_from_name(const char *name) {
+    if (strcmp(name, "ws-v1-compat") == 0) return VT_PROFILE_WS_V1_COMPAT;
+    if (strcmp(name, "ws-v2") == 0) return VT_PROFILE_WS_V2;
+    if (strcmp(name, "ws-v3") == 0) return VT_PROFILE_WS_V3;
+    assert(!"unknown protocol profile in golden fixture");
+    return VT_PROFILE_WS_V3;
+}
+
+static char *next_field(char **cursor) {
+    char *field = *cursor;
+    char *separator = strchr(field, ',');
+    if (separator != NULL) {
+        *separator = '\0';
+        *cursor = separator + 1;
+    } else {
+        *cursor = field + strlen(field);
+    }
+    return field;
+}
+
+static void trim_line(char *line) {
+    const size_t length = strlen(line);
+    if (length > 0U && line[length - 1U] == '\n') line[length - 1U] = '\0';
+    const size_t trimmed = strlen(line);
+    if (trimmed > 0U && line[trimmed - 1U] == '\r') line[trimmed - 1U] = '\0';
+}
+
 static void test_protocol(void) {
-    const uint8_t payload[] = {0xdeU, 0xadU, 0xbeU, 0xefU};
-    uint8_t encoded[32];
-    size_t encoded_len = 0U;
-    vt_audio_frame_t decoded = {0};
-    const uint8_t expected_v1[] = {0xdeU, 0xadU, 0xbeU, 0xefU};
-    const uint8_t expected_v2[] = {
-        0x00U, 0x02U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-        0x01U, 0x02U, 0x03U, 0x04U, 0x00U, 0x00U, 0x00U, 0x04U,
-        0xdeU, 0xadU, 0xbeU, 0xefU,
-    };
-    const uint8_t expected_v3[] = {0x00U, 0x00U, 0x00U, 0x04U, 0xdeU, 0xadU, 0xbeU, 0xefU};
-    const vt_protocol_profile_t profiles[] = {VT_PROFILE_WS_V1_COMPAT, VT_PROFILE_WS_V2, VT_PROFILE_WS_V3};
-    const uint8_t *expected[] = {expected_v1, expected_v2, expected_v3};
-    const size_t expected_lengths[] = {sizeof(expected_v1), sizeof(expected_v2), sizeof(expected_v3)};
-    for (size_t index = 0U; index < sizeof(profiles) / sizeof(profiles[0]); ++index) {
+    FILE *fixture = fopen(VT_WIRE_GOLDEN_FIXTURE_PATH, "r");
+    assert(fixture != NULL);
+    char line[4096];
+    assert(fgets(line, sizeof(line), fixture) != NULL);
+    size_t row_count = 0U;
+    while (fgets(line, sizeof(line), fixture) != NULL) {
+        trim_line(line);
+        if (line[0] == '\0' || line[0] == '#') continue;
+        char *cursor = line;
+        char *profile_name = next_field(&cursor);
+        char *timestamp_text = next_field(&cursor);
+        char *payload_text = next_field(&cursor);
+        char *wire_text = next_field(&cursor);
+        assert(*cursor == '\0');
+        errno = 0;
+        char *end = NULL;
+        const unsigned long timestamp_value = strtoul(timestamp_text, &end, 10);
+        assert(errno == 0 && end != timestamp_text && *end == '\0');
+        uint8_t payload[VT_MAX_OPUS_PAYLOAD_BYTES];
+        uint8_t expected[VT_MAX_OPUS_PAYLOAD_BYTES + 16U];
+        const size_t payload_length = decode_hex(payload_text, payload, sizeof(payload));
+        const size_t expected_length = decode_hex(wire_text, expected, sizeof(expected));
+        const vt_protocol_profile_t profile = profile_from_name(profile_name);
+        const uint32_t timestamp = (uint32_t)timestamp_value;
+        uint8_t encoded[VT_MAX_OPUS_PAYLOAD_BYTES + 16U];
+        size_t encoded_len = 0U;
+        vt_audio_frame_t decoded = {0};
         vt_audio_frame_t frame = {
-            .profile = profiles[index],
+            .profile = profile,
             .payload = payload,
-            .payload_len = (uint16_t)sizeof(payload),
-            .timestamp_ms = profiles[index] == VT_PROFILE_WS_V2 ? 0x01020304U : 0U,
+            .payload_len = (uint16_t)payload_length,
+            .timestamp_ms = timestamp,
         };
         assert(vt_protocol_encode_audio(&frame, encoded, sizeof(encoded), &encoded_len) == VT_PROTOCOL_OK);
-        assert(encoded_len == expected_lengths[index]);
-        assert(memcmp(encoded, expected[index], expected_lengths[index]) == 0);
-        assert(vt_protocol_decode_audio(profiles[index], encoded, encoded_len, &decoded) == VT_PROTOCOL_OK);
-        assert(decoded.payload_len == sizeof(payload));
+        assert(encoded_len == expected_length);
+        assert(memcmp(encoded, expected, expected_length) == 0);
+        assert(vt_protocol_decode_audio(profile, encoded, encoded_len, &decoded) == VT_PROTOCOL_OK);
+        assert(decoded.payload_len == payload_length);
         assert(decoded.timestamp_ms == frame.timestamp_ms);
+        ++row_count;
     }
+    assert(fclose(fixture) == 0);
+    assert(row_count == 3U);
 }
 
 static void test_protocol_rejections(void) {

@@ -1,0 +1,4 @@
+profile,timestamp_ms,payload_hex,wire_hex
+ws-v1-compat,0,deadbeef,deadbeef
+ws-v2,16909060,deadbeef,00020000000000000102030400000004deadbeef
+ws-v3,0,deadbeef,00000004deadbeef
