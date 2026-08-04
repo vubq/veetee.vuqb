@@ -13,6 +13,8 @@
 **/*.tsbuildinfo
 **/build*/
 /veetee-firmware/sdkconfig
+# ESP-IDF may rename a local credential-bearing sdkconfig during set-target.
+/veetee-firmware/sdkconfig.old
 /veetee-firmware/managed_components/
 
 # Local environment and secrets
