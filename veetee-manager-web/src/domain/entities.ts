@@ -288,6 +288,18 @@ export interface ConversationDetail {
   retention: RetentionPolicy
 }
 
+export type ConversationExportSummary = Omit<ConversationSummary, 'deviceKey'>
+
+export interface ConversationExport {
+  exportVersion: 1
+  exportedAt: IsoDateTime
+  conversation: {
+    summary: ConversationExportSummary
+    turns: ConversationTurn[]
+    retention: RetentionPolicy
+  }
+}
+
 export interface PairDeviceInput {
   assistantId: string
   verificationCode: string

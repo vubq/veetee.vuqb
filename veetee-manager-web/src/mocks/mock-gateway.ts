@@ -2,6 +2,7 @@ import type {
   AssistantCard,
   AssistantListQuery,
   ConversationDetail,
+  ConversationExport,
   ConversationSummary,
   CreateAssistantInput,
   DemoResetSummary,
@@ -806,6 +807,33 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     if (this.scenario === 'history') {
       const conversation = Object.values(HISTORY_CONVERSATIONS).find((item) => item.summary.id === id)
       if (conversation) return this.success(clone(conversation), request)
+    }
+    return this.failure(this.notFound('conversation', id, request.requestId), request)
+  }
+
+  async exportConversation(id: string): Promise<GatewayResult<ConversationExport, NotFoundProblem | OfflineProblem>> {
+    const request = await this.begin('read')
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    if (this.scenario === 'history') {
+      const conversation = Object.values(HISTORY_CONVERSATIONS).find((item) => item.summary.id === id)
+      if (conversation) {
+        const source = conversation.summary
+        const summary = {
+          id: source.id,
+          assistantId: source.assistantId,
+          startedAt: source.startedAt,
+          endedAt: source.endedAt,
+          locale: source.locale,
+          configRevision: source.configRevision,
+          status: source.status,
+          turnCount: source.turnCount,
+          lastTurnAt: source.lastTurnAt,
+          aggregateTimings: clone(source.aggregateTimings),
+          retentionUntil: source.retentionUntil,
+        }
+        return this.success({ exportVersion: 1, exportedAt: this.now(), conversation: { summary, turns: clone(conversation.turns), retention: clone(conversation.retention) } }, request)
+      }
     }
     return this.failure(this.notFound('conversation', id, request.requestId), request)
   }

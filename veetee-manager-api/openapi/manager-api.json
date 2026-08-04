@@ -12877,6 +12877,703 @@
         }
       }
     },
+    "/api/v1/conversations/{id}/export": {
+      "get": {
+        "operationId": "getApiV1ConversationsByIdExport",
+        "summary": "GET /api/v1/conversations/:id/export",
+        "tags": [
+          "history"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "veeteeSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "exportVersion",
+                    "exportedAt",
+                    "conversation"
+                  ],
+                  "properties": {
+                    "exportVersion": {
+                      "type": "integer",
+                      "enum": [
+                        1
+                      ]
+                    },
+                    "exportedAt": {
+                      "type": "string"
+                    },
+                    "conversation": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "summary",
+                        "turns",
+                        "retention"
+                      ],
+                      "properties": {
+                        "summary": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "assistantId",
+                            "startedAt",
+                            "endedAt",
+                            "locale",
+                            "configRevision",
+                            "status",
+                            "turnCount",
+                            "lastTurnAt",
+                            "aggregateTimings",
+                            "retentionUntil"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "assistantId": {
+                              "type": "string"
+                            },
+                            "startedAt": {
+                              "type": "string"
+                            },
+                            "endedAt": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "locale": {
+                              "type": "string"
+                            },
+                            "configRevision": {
+                              "type": "integer"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "active",
+                                "completed",
+                                "aborted",
+                                "error"
+                              ]
+                            },
+                            "turnCount": {
+                              "type": "integer"
+                            },
+                            "lastTurnAt": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "aggregateTimings": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "number"
+                              }
+                            },
+                            "retentionUntil": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            }
+                          }
+                        },
+                        "turns": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "id",
+                              "conversationId",
+                              "turnId",
+                              "sequence",
+                              "state",
+                              "startedAt",
+                              "endedAt",
+                              "finishReason",
+                              "timings",
+                              "transcript",
+                              "toolCalls"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "conversationId": {
+                                "type": "string"
+                              },
+                              "turnId": {
+                                "type": "string"
+                              },
+                              "sequence": {
+                                "type": "integer"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "completed",
+                                  "aborted",
+                                  "error"
+                                ]
+                              },
+                              "startedAt": {
+                                "type": "string"
+                              },
+                              "endedAt": {
+                                "type": "string"
+                              },
+                              "finishReason": {
+                                "type": "string"
+                              },
+                              "timings": {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "type": "number"
+                                }
+                              },
+                              "transcript": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "required": [
+                                    "speaker",
+                                    "text",
+                                    "locale",
+                                    "confidence",
+                                    "startedAtMs",
+                                    "endedAtMs",
+                                    "isFinal"
+                                  ],
+                                  "properties": {
+                                    "speaker": {
+                                      "type": "string",
+                                      "enum": [
+                                        "user",
+                                        "assistant",
+                                        "system"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "maxLength": 16000
+                                    },
+                                    "locale": {
+                                      "type": "string"
+                                    },
+                                    "confidence": {
+                                      "type": [
+                                        "null",
+                                        "number"
+                                      ]
+                                    },
+                                    "startedAtMs": {
+                                      "type": [
+                                        "null",
+                                        "integer"
+                                      ]
+                                    },
+                                    "endedAtMs": {
+                                      "type": [
+                                        "null",
+                                        "integer"
+                                      ]
+                                    },
+                                    "isFinal": {
+                                      "type": "boolean"
+                                    }
+                                  }
+                                }
+                              },
+                              "toolCalls": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "required": [
+                                    "toolName",
+                                    "source",
+                                    "status",
+                                    "startedAt",
+                                    "endedAt",
+                                    "latencyMs",
+                                    "input",
+                                    "output",
+                                    "errorCode"
+                                  ],
+                                  "properties": {
+                                    "toolName": {
+                                      "type": "string",
+                                      "maxLength": 240
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "enum": [
+                                        "llm",
+                                        "system"
+                                      ]
+                                    },
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "completed",
+                                        "error",
+                                        "cancelled"
+                                      ]
+                                    },
+                                    "startedAt": {
+                                      "type": "string"
+                                    },
+                                    "endedAt": {
+                                      "type": [
+                                        "null",
+                                        "string"
+                                      ]
+                                    },
+                                    "latencyMs": {
+                                      "type": [
+                                        "null",
+                                        "number"
+                                      ]
+                                    },
+                                    "input": {
+                                      "type": "object",
+                                      "additionalProperties": true
+                                    },
+                                    "output": {
+                                      "type": [
+                                        "null",
+                                        "object"
+                                      ],
+                                      "additionalProperties": true
+                                    },
+                                    "errorCode": {
+                                      "type": [
+                                        "null",
+                                        "string"
+                                      ]
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "retention": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "ownerId",
+                            "captureTranscript",
+                            "transcriptDays",
+                            "captureAudio",
+                            "audioDays",
+                            "effectiveAt",
+                            "revision",
+                            "etag"
+                          ],
+                          "properties": {
+                            "ownerId": {
+                              "type": "string"
+                            },
+                            "captureTranscript": {
+                              "type": "boolean"
+                            },
+                            "transcriptDays": {
+                              "type": [
+                                "null",
+                                "integer"
+                              ]
+                            },
+                            "captureAudio": {
+                              "type": "boolean"
+                            },
+                            "audioDays": {
+                              "type": [
+                                "null",
+                                "integer"
+                              ]
+                            },
+                            "effectiveAt": {
+                              "type": "string"
+                            },
+                            "revision": {
+                              "type": "integer"
+                            },
+                            "etag": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "code": "VALIDATION_ERROR",
+                      "detail": "Request validation failed"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Authentication required",
+                    "value": {
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication required"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Request forbidden",
+                    "value": {
+                      "code": "FORBIDDEN",
+                      "detail": "The authenticated principal is not allowed to perform this operation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Resource not found",
+                    "value": {
+                      "code": "NOT_FOUND",
+                      "detail": "The requested resource was not found"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "State conflict",
+                    "value": {
+                      "code": "REVISION_CONFLICT",
+                      "detail": "The resource changed; reload the current revision"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Domain validation failed",
+                    "value": {
+                      "code": "CONFIG_INVALID",
+                      "detail": "The supplied configuration is not valid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Precondition required",
+                    "value": {
+                      "code": "IF_MATCH_REQUIRED",
+                      "detail": "If-Match header is required"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Unexpected server error",
+                    "value": {
+                      "code": "INTERNAL_ERROR",
+                      "detail": "Unexpected server error"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Dependency unavailable",
+                    "value": {
+                      "code": "SERVICE_UNAVAILABLE",
+                      "detail": "A required dependency is unavailable"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/devices/pairing-challenges": {
       "post": {
         "operationId": "postInternalV1DevicesPairingChallenges",

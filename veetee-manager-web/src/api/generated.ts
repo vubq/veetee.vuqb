@@ -418,6 +418,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/v1/conversations/:id/export */
+        get: operations["getApiV1ConversationsByIdExport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/internal/v1/devices/pairing-challenges": {
         parameters: {
             query?: never;
@@ -5203,6 +5220,227 @@ export interface operations {
                             effectiveAt: string;
                             revision: number;
                             etag: string;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Domain validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Precondition required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+        };
+    };
+    getApiV1ConversationsByIdExport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {integer} */
+                        exportVersion: 1;
+                        exportedAt: string;
+                        conversation: {
+                            summary: {
+                                id: string;
+                                assistantId: string;
+                                startedAt: string;
+                                endedAt: null | string;
+                                locale: string;
+                                configRevision: number;
+                                /** @enum {string} */
+                                status: "active" | "completed" | "aborted" | "error";
+                                turnCount: number;
+                                lastTurnAt: null | string;
+                                aggregateTimings: {
+                                    [key: string]: number;
+                                };
+                                retentionUntil: null | string;
+                            };
+                            turns: {
+                                id: string;
+                                conversationId: string;
+                                turnId: string;
+                                sequence: number;
+                                /** @enum {string} */
+                                state: "completed" | "aborted" | "error";
+                                startedAt: string;
+                                endedAt: string;
+                                finishReason: string;
+                                timings: {
+                                    [key: string]: number;
+                                };
+                                transcript: {
+                                    /** @enum {string} */
+                                    speaker: "user" | "assistant" | "system";
+                                    text: string;
+                                    locale: string;
+                                    confidence: null | number;
+                                    startedAtMs: null | number;
+                                    endedAtMs: null | number;
+                                    isFinal: boolean;
+                                }[];
+                                toolCalls: {
+                                    toolName: string;
+                                    /** @enum {string} */
+                                    source: "llm" | "system";
+                                    /** @enum {string} */
+                                    status: "completed" | "error" | "cancelled";
+                                    startedAt: string;
+                                    endedAt: null | string;
+                                    latencyMs: null | number;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    output: null | {
+                                        [key: string]: unknown;
+                                    };
+                                    errorCode: null | string;
+                                }[];
+                            }[];
+                            retention: {
+                                ownerId: string;
+                                captureTranscript: boolean;
+                                transcriptDays: null | number;
+                                captureAudio: boolean;
+                                audioDays: null | number;
+                                effectiveAt: string;
+                                revision: number;
+                                etag: string;
+                            };
                         };
                     };
                 };

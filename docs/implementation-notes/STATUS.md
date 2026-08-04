@@ -602,3 +602,14 @@
 - Voice hiện báo `revision=87`, `activeConnections=1`, `activeTurns=0`,
   `maxActiveTurns=1`; các counter/resource lịch sử không được diễn giải là
   physical acceptance. Không gửi frame, không gọi Groq, không mở serial/audio.
+
+### Conversation privacy export (2026-08-05, non-audio)
+
+- History API/Web đã có export từng conversation JSON theo ADR-024. Endpoint
+  owner/retention-scoped dùng response allow-list, loại `deviceKey`, secret,
+  raw identity và audio; Web download object URL ngắn hạn rồi revoke.
+- API PostgreSQL test `veetee_vubq_test` **37/37**, OpenAPI check/lint/build pass;
+  Web unit **84/84**, Chromium E2E **10/10**, gồm export download và a11y gate.
+- Bulk archive và delete conversation vẫn deferred tới retention-delete job;
+  không ghi export content vào log/browser storage. Không gọi Groq, không phát
+  audio, không flash/reset ESP32, không đổi Wi-Fi/Tailscale hoặc production DB.

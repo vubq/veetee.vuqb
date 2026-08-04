@@ -5,6 +5,7 @@ import type {
   DemoResetSummary,
   DeviceCard,
   ConversationDetail,
+  ConversationExport,
   ConversationSummary,
   GatewayResult,
   ModelMemoryWorkspace,
@@ -159,6 +160,7 @@ export interface HistoryGateway {
   ): Promise<GatewayResult<RetentionPolicy, RetentionMutationProblem>>
   listConversations(assistantId: string, limit?: number): Promise<GatewayResult<Page<ConversationSummary>, NotFoundProblem>>
   getConversation(id: string): Promise<GatewayResult<ConversationDetail, NotFoundProblem>>
+  exportConversation(id: string): Promise<GatewayResult<ConversationExport, NotFoundProblem | OfflineProblem>>
 }
 
 export interface ManagerGateway

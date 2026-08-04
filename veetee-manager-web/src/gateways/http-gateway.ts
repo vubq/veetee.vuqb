@@ -1,6 +1,8 @@
 import type {
   AssistantCard,
   AssistantListQuery,
+  ConversationExport,
+  ConversationExportSummary,
   ConversationDetail,
   ConversationSummary,
   CreateAssistantInput,
@@ -9,6 +11,7 @@ import type {
   GatewayProblem,
   GatewayResult,
   ModelMemoryWorkspace,
+  NotFoundProblem,
   Page,
   PairDeviceInput,
   PreviewScenarioDefinition,
@@ -53,6 +56,7 @@ type DeviceResource = paths['/api/v1/assistants/{id}/devices']['get']['responses
 type RetentionResource = paths['/api/v1/retention-policy']['get']['responses'][200]['content']['application/json']
 type ConversationSummaryResource = paths['/api/v1/assistants/{id}/conversations']['get']['responses'][200]['content']['application/json']['items'][number]
 type ConversationDetailResource = paths['/api/v1/conversations/{id}']['get']['responses'][200]['content']['application/json']
+type ConversationExportResource = paths['/api/v1/conversations/{id}/export']['get']['responses'][200]['content']['application/json']
 type SecretReferenceResource = paths['/api/v1/secret-references']['get']['responses'][200]['content']['application/json']['items'][number]
 
 export function createHttpGatewayDependencies(baseUrl: string): GatewayDependencies {
@@ -284,6 +288,12 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     return this.success(conversationDetail(result.data))
   }
 
+  async exportConversation(id: string): Promise<GatewayResult<ConversationExport, NotFoundProblem | OfflineProblem>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/conversations/{id}/export', { params: { path: { id } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(conversationExport(result.data))
+  }
+
   getScenario(): PreviewScenarioId { return this.scenario }
   setScenario(scenario: PreviewScenarioId): void { this.scenario = scenario }
   listScenarios(): readonly PreviewScenarioDefinition[] { return [] }
@@ -426,4 +436,21 @@ function conversationSummary(value: ConversationSummaryResource): ConversationSu
 
 function conversationDetail(value: ConversationDetailResource): ConversationDetail {
   return { summary: conversationSummary(value.summary), turns: value.turns, retention: retentionPolicy(value.retention) }
+}
+
+function conversationExport(value: ConversationExportResource): ConversationExport {
+  const summary: ConversationExportSummary = {
+    id: value.conversation.summary.id,
+    assistantId: value.conversation.summary.assistantId,
+    startedAt: value.conversation.summary.startedAt,
+    endedAt: value.conversation.summary.endedAt,
+    locale: value.conversation.summary.locale,
+    configRevision: value.conversation.summary.configRevision,
+    status: value.conversation.summary.status,
+    turnCount: value.conversation.summary.turnCount,
+    lastTurnAt: value.conversation.summary.lastTurnAt,
+    aggregateTimings: value.conversation.summary.aggregateTimings,
+    retentionUntil: value.conversation.summary.retentionUntil,
+  }
+  return { exportVersion: 1, exportedAt: value.exportedAt, conversation: { summary, turns: value.conversation.turns, retention: retentionPolicy(value.conversation.retention) } }
 }

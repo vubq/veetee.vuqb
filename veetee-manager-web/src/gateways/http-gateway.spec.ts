@@ -155,6 +155,31 @@ describe('HTTP gateway read failure metadata', () => {
     expect(JSON.parse(await request!.clone().text())).toEqual({ captureTranscript: true, transcriptDays: 90, captureAudio: false, audioDays: null })
   })
 
+  it('maps the privacy export allow-list without reintroducing device identity', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init)
+      if (request.url.endsWith('/api/v1/auth/me')) return new Response(JSON.stringify({ user: { id: 'owner' }, csrfToken: 'csrf-test' }), { status: 200 })
+      return new Response(JSON.stringify({
+        exportVersion: 1,
+        exportedAt: '2026-08-05T00:00:00.000Z',
+        conversation: {
+          summary: {
+            id: 'conversation-1', assistantId: 'assistant-1', startedAt: '2026-08-04T00:00:00.000Z', endedAt: '2026-08-04T00:01:00.000Z',
+            locale: 'vi-VN', configRevision: 4, status: 'completed', turnCount: 1, lastTurnAt: '2026-08-04T00:01:00.000Z', aggregateTimings: {}, retentionUntil: null,
+          },
+          turns: [],
+          retention: { ownerId: 'owner', captureTranscript: true, transcriptDays: 30, captureAudio: false, audioDays: null, effectiveAt: '2026-08-01T00:00:00.000Z', revision: 1, etag: '"retention-1"' },
+        },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+
+    const result = await createHttpGatewayDependencies('https://manager.test').managerGateway.exportConversation('conversation-1')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data.exportVersion).toBe(1)
+    expect(result.data.conversation.summary).not.toHaveProperty('deviceKey')
+  })
+
   it('sends write-only secret create and maps metadata without exposing a value', async () => {
     const calls: Request[] = []
     const metadata = {

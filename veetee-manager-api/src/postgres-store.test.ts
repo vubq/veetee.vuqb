@@ -479,5 +479,9 @@ test('PostgreSQL persists conversation turns and retention policy across restart
     assert.equal(detail.statusCode, 200)
     assert.equal(detail.json().retention.transcriptDays, 30)
     assert.equal(detail.json().turns[0].transcript[0].text, 'Xin chào')
+    const exported = await restarted.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}/export` })
+    assert.equal(exported.statusCode, 200)
+    assert.equal(exported.json().exportVersion, 1)
+    assert.equal(exported.json().conversation.summary.deviceKey, undefined)
   } finally { await restarted.close() }
 })

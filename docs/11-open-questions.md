@@ -173,7 +173,8 @@ Phương án A: transcript 30 ngày, audio off mặc định; local Owner có th
 Phương án B: không lưu transcript/audio, chỉ latency/error metadata.  
 Phương án C: retention khác do chủ dự án chỉ định.  
 Chọn transcript 30 ngày, audio capture off mặc định; Owner có thể export/delete
-và UI luôn hiển thị retention notice. Thay đổi policy tạo revision.
+và UI luôn hiển thị retention notice. Export từng conversation JSON đã triển khai
+qua ADR-024; delete vẫn chờ retention-delete job/tombstone contract riêng.
 
 ### Q-010 — Chỉ LAN hay cần remote/public access?
 

@@ -8,7 +8,7 @@ import swagger from '@fastify/swagger'
 import argon2 from 'argon2'
 import { publicBaseUrl, readEnvironment, type Environment } from './config.js'
 import { EncryptedFileSecretStore, type SecretValueStore } from './secret-store.js'
-import { InMemoryStore, loadInitialSnapshot, parseCatalog, type ConversationTurnInput, type ProviderKind, type Store } from './store.js'
+import { InMemoryStore, loadInitialSnapshot, parseCatalog, type ConversationDetail, type ConversationTurnInput, type ProviderKind, type Store } from './store.js'
 import { LoginThrottle, normalizeLoginIdentity } from './auth-throttle.js'
 
 type OwnerRequest = FastifyRequest & { ownerId?: string; sessionToken?: string; csrfToken?: string; sessionExpiresAt?: string }
@@ -258,6 +258,27 @@ const conversationTurnResponseSchema = {
 const conversationDetailResponseSchema = {
   type: 'object', additionalProperties: false, required: ['summary', 'turns', 'retention'],
   properties: { summary: conversationSummarySchema, turns: { type: 'array', items: conversationTurnResponseSchema }, retention: retentionPolicyResponseSchema },
+} as const
+const conversationExportSummarySchema = {
+  type: 'object', additionalProperties: false,
+  required: ['id', 'assistantId', 'startedAt', 'endedAt', 'locale', 'configRevision', 'status', 'turnCount', 'lastTurnAt', 'aggregateTimings', 'retentionUntil'],
+  properties: {
+    id: { type: 'string' }, assistantId: { type: 'string' }, startedAt: { type: 'string' },
+    endedAt: { type: ['string', 'null'] }, locale: { type: 'string' }, configRevision: { type: 'integer' },
+    status: { type: 'string', enum: ['active', 'completed', 'aborted', 'error'] }, turnCount: { type: 'integer' },
+    lastTurnAt: { type: ['string', 'null'] }, aggregateTimings: { type: 'object', additionalProperties: { type: 'number' } },
+    retentionUntil: { type: ['string', 'null'] },
+  },
+} as const
+const conversationExportResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['exportVersion', 'exportedAt', 'conversation'],
+  properties: {
+    exportVersion: { type: 'integer', const: 1 }, exportedAt: { type: 'string' },
+    conversation: {
+      type: 'object', additionalProperties: false, required: ['summary', 'turns', 'retention'],
+      properties: { summary: conversationExportSummarySchema, turns: { type: 'array', items: conversationTurnResponseSchema }, retention: retentionPolicyResponseSchema },
+    },
+  },
 } as const
 const conversationTurnBodySchema = {
   type: 'object', additionalProperties: false, required: ['conversationId', 'assistantId', 'locale', 'configRevision', 'conversationStartedAt', 'turnId', 'sequence', 'state', 'startedAt', 'endedAt', 'finishReason', 'timings', 'transcript', 'toolCalls'],
@@ -663,6 +684,15 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     if (!value) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Conversation not found')
     return value
   })
+  app.get<{ Params: { id: string } }>('/api/v1/conversations/:id/export', { schema: { params: resourceIdParamsSchema, response: { 200: conversationExportResponseSchema } } }, async (request, reply) => {
+    const value = await store.getConversation(owner(request), request.params.id)
+    if (!value) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Conversation not found')
+    const exported = mapConversationExport(value)
+    return reply
+      .header('Content-Disposition', `attachment; filename="veetee-conversation-${safeExportFilename(request.params.id)}.json"`)
+      .type('application/json; charset=utf-8')
+      .send(exported)
+  })
 
   app.post<{ Body: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string } }>('/internal/v1/devices/pairing-challenges', { schema: { body: pairingChallengeBodySchema, response: { 201: pairingChallengeResponseSchema } } }, async (request, reply) => {
     if (!authorizeMachine(request.headers.authorization, machineToken, machineAuthRequired)) return sendProblemCode(reply, 401, 'MACHINE_UNAUTHORIZED', 'Machine authentication required')
@@ -733,6 +763,35 @@ async function createStore(env: Environment): Promise<Store> {
 }
 
 function owner(request: FastifyRequest): string { return (request as OwnerRequest).ownerId ?? 'local-owner' }
+
+function mapConversationExport(value: ConversationDetail) {
+  const summary = value.summary
+  return {
+    exportVersion: 1 as const,
+    exportedAt: new Date().toISOString(),
+    conversation: {
+      summary: {
+        id: summary.id,
+        assistantId: summary.assistantId,
+        startedAt: summary.startedAt,
+        endedAt: summary.endedAt,
+        locale: summary.locale,
+        configRevision: summary.configRevision,
+        status: summary.status,
+        turnCount: summary.turnCount,
+        lastTurnAt: summary.lastTurnAt,
+        aggregateTimings: summary.aggregateTimings,
+        retentionUntil: summary.retentionUntil,
+      },
+      turns: value.turns,
+      retention: value.retention,
+    },
+  }
+}
+
+function safeExportFilename(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 128) || 'conversation'
+}
 
 function sendProblem(reply: FastifyReply, error: unknown): FastifyReply {
   const value = error as { code?: string; statusCode?: number; message?: string }

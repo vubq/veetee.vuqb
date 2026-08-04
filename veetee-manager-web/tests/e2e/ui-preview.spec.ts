@@ -78,6 +78,18 @@ test('history item mở được bằng keyboard Enter và Space', async ({ page
   await expect(item).toHaveAttribute('aria-pressed', 'true')
 })
 
+test('history export tải JSON allow-list cho conversation đang chọn', async ({ page }) => {
+  await page.goto(`/assistants/${assistantId}/history`)
+  const scenario = page.getByRole('combobox', { name: 'Tình huống mô phỏng' })
+  await scenario.click()
+  await page.getByRole('option', { name: /Có lịch sử/ }).click()
+  await page.getByRole('button').filter({ hasText: 'TTFA' }).first().click()
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Tải JSON' }).click()
+  const download = await downloadPromise
+  expect(download.suggestedFilename()).toMatch(/^veetee-conversation-.*\.json$/)
+})
+
 test('provider unavailable không fallback và conflict giữ draft', async ({ page }) => {
   await page.goto(`/assistants/${assistantId}/config/model-memory`)
   const scenario = page.getByRole('combobox', { name: 'Tình huống mô phỏng' })

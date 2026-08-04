@@ -64,6 +64,15 @@ function gateway(overrides: Partial<ManagerGateway> = {}): ManagerGateway {
     getRetentionPolicy: vi.fn(async () => success(retention)),
     updateRetentionPolicy: vi.fn(async () => success(retention)),
     getConversation: vi.fn(async () => success(detail)),
+    exportConversation: vi.fn(async () => success({
+      exportVersion: 1,
+      exportedAt: '2026-08-05T00:00:00.000Z',
+      conversation: {
+        summary: { id: detail.summary.id, assistantId: detail.summary.assistantId, startedAt: detail.summary.startedAt, endedAt: detail.summary.endedAt, locale: detail.summary.locale, configRevision: detail.summary.configRevision, status: detail.summary.status, turnCount: detail.summary.turnCount, lastTurnAt: detail.summary.lastTurnAt, aggregateTimings: detail.summary.aggregateTimings, retentionUntil: detail.summary.retentionUntil },
+        turns: detail.turns,
+        retention,
+      },
+    })),
     ...overrides,
   } as unknown as ManagerGateway
 }
@@ -193,5 +202,19 @@ describe('ConversationHistoryFeature retention mutation', () => {
 
     expect((await view.findByRole('alert')).textContent).toContain('Đang ngoại tuyến; retention policy chưa được thay đổi.')
     expect(view.getByRole('heading', { name: 'Lưu trữ hội thoại' })).toBeTruthy()
+  })
+})
+
+describe('ConversationHistoryFeature export', () => {
+  it('keeps an export error local to the selected conversation', async () => {
+    const view = renderFeature(gateway({ exportConversation: vi.fn(async () => failure()) }))
+
+    await view.findByText(/1 lượt · TTFA/)
+    await fireEvent.click(historyItem(view))
+    await view.findByRole('button', { name: 'Tải JSON' })
+    await fireEvent.click(view.getByRole('button', { name: 'Tải JSON' }))
+
+    expect((await view.findByRole('alert')).textContent).toContain('Không tải được bản export')
+    expect(view.getByText('Chi tiết lượt nói')).toBeTruthy()
   })
 })

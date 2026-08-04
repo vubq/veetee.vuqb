@@ -435,6 +435,13 @@ test('conversation history ingest is idempotent and respects transcript retentio
     assert.equal(detail.statusCode, 200)
     assert.equal(detail.json().turns.length, 2)
     assert.equal(detail.json().turns[0].transcript[0].text, 'Xin chào')
+    const exported = await app.inject({ method: 'GET', url: '/api/v1/conversations/11111111-1111-4111-8111-111111111111/export' })
+    assert.equal(exported.statusCode, 200)
+    assert.match(String(exported.headers['content-disposition']), /attachment; filename="veetee-conversation-11111111-1111-4111-8111-111111111111\.json"/)
+    assert.match(String(exported.headers['content-type']), /^application\/json; charset=utf-8/)
+    assert.equal(exported.json().exportVersion, 1)
+    assert.equal(exported.json().conversation.summary.deviceKey, undefined)
+    assert.doesNotMatch(exported.body, /device-test/)
 
     const invalidAudio = await app.inject({ method: 'PATCH', url: '/api/v1/retention-policy', headers: { 'if-match': policy.headers.etag }, payload: { captureTranscript: true, transcriptDays: 30, captureAudio: true, audioDays: 1 } })
     assert.equal(invalidAudio.statusCode, 422)
@@ -563,7 +570,7 @@ test('OpenAPI is generated from every registered route', async () => {
       '/api/v1/provider-configs', '/api/v1/provider-configs/{id}', '/api/v1/voices', '/api/v1/assistants',
       '/api/v1/assistants/{id}', '/api/v1/assistants/{id}/role-config', '/api/v1/assistants/{id}/model-memory',
       '/api/v1/assistants/{id}/model-memory/provider', '/api/v1/assistants/{id}/model-memory/memory',
-      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/api/v1/devices/{id}/binding', '/internal/v1/devices/pairing-challenges', '/internal/v1/devices/presence', '/internal/v1/retention/purge',
+      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/api/v1/devices/{id}/binding', '/api/v1/conversations/{id}/export', '/internal/v1/devices/pairing-challenges', '/internal/v1/devices/presence', '/internal/v1/retention/purge',
       '/internal/v1/runtime-config',
     ]
     for (const path of requiredPaths) assert.ok(document.paths[path], `missing OpenAPI path ${path}`)

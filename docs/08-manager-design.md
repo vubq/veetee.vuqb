@@ -630,6 +630,7 @@ vẫn gồm device đã bind dù presence đã stale.
 |---|---|---|---|---|---|
 | `GET /assistants/{id}/conversations` | User:R | `deviceId,from,to,status,search,limit,cursor,sort` | `200 Page<ConversationSummary>` | `404` | `C`. |
 | `GET /conversations/{id}` | User:R | none | `200 ConversationDetail` | `404`; `410 RETENTION_EXPIRED` | Safe. |
+| `GET /conversations/{id}/export` | User:R | none | `200 ConversationExport` attachment | `404` current baseline; `410 RETENTION_EXPIRED` after tombstone ADR | Safe; explicit allow-list, no device identity/audio/secret. |
 | `GET /conversations/{id}/turns` | User:R | `afterSequence,limit,cursor` | `200 Page<TurnDetail>` | `404` | `C`; stable sequence. |
 | `GET /turns/{id}/tool-calls` | User:R | `status,limit,cursor` | `200 Page<ToolCallView>` | `404` | `C`; redacted payload. |
 | `GET /audio-artifacts/{id}` | User:R | none | `200 AudioArtifactMetadata` | `404` hoặc `410` | Safe. |
