@@ -98,6 +98,19 @@ test('provider unavailable không fallback và conflict giữ draft', async ({ p
   await expect(prompt).toHaveValue(localDraft)
 })
 
+test('provider registry sinh form từ schema và lưu revision', async ({ page }) => {
+  await page.goto('/providers')
+  await expect(page.getByRole('heading', { name: 'Provider registry' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Endpoint' })).toHaveValue('https://api.groq.com/openai/v1')
+  await expect(page.getByRole('spinbutton', { name: 'Max Tokens' })).toHaveValue('512')
+  await expect(page.getByRole('switch', { name: 'Supports Tools' })).toBeChecked()
+  await expect(page.getByRole('textbox', { name: 'Advanced JSON' })).toHaveValue(/toolPolicy/)
+
+  await page.getByRole('spinbutton', { name: 'Max Tokens' }).fill('640')
+  await page.getByRole('button', { name: 'Lưu config revision' }).click()
+  await expect(page.getByText('Đã lưu provider config', { exact: true })).toBeVisible()
+})
+
 test('mobile không overflow và contextual navigation còn label', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`/assistants/${assistantId}/config/role`)
@@ -113,6 +126,7 @@ test('@a11y core surfaces không có serious hoặc critical violation', async (
     `/assistants/${assistantId}/config/model-memory`,
     `/assistants/${assistantId}/devices`,
     `/assistants/${assistantId}/history`,
+    '/providers',
     '/_preview/components',
   ]) {
     await page.goto(path)

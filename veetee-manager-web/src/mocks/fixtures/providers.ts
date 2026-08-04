@@ -1,6 +1,8 @@
 import type {
   ModelMemoryWorkspace,
   ProviderConfigSummary,
+  ProviderConfigRecord,
+  ProviderInstallationView,
   ProviderKind,
   ProviderSelection,
   Versioned,
@@ -15,6 +17,73 @@ export const PROVIDER_CONFIG_IDS: Record<ProviderKind, string> = {
   tts: '54444444-4444-4444-8444-444444444444',
   intent: '55555555-5555-4555-8555-555555555555',
   memory: '56666666-6666-4666-8666-666666666666',
+}
+
+export const PROVIDER_INSTALLATION_IDS = {
+  groq: 'preview.provider.groq',
+  vieneu: 'preview.provider.vieneu',
+} as const
+
+export function createProviderRegistryFixtures(): {
+  installations: ProviderInstallationView[]
+  configs: ProviderConfigRecord[]
+} {
+  const groq: ProviderInstallationView = {
+    id: PROVIDER_INSTALLATION_IDS.groq,
+    kind: 'llm',
+    displayNameKey: 'Groq streaming (preview)',
+    version: '1.0.0',
+    manifest: { locales: ['*'], supportsStreaming: true, supportsTools: true, secretFields: ['apiKey'] },
+    configSchema: {
+      type: 'object',
+      required: ['endpoint', 'model', 'maxTokens'],
+      properties: {
+        endpoint: { type: 'string', format: 'uri' },
+        model: { type: 'string', minLength: 1 },
+        maxTokens: { type: 'integer', minimum: 1, maximum: 32768 },
+        temperature: { type: 'number', minimum: 0, maximum: 2 },
+        supportsTools: { type: 'boolean' },
+        toolPolicy: { type: 'object' },
+      },
+    },
+  }
+  const vieneu: ProviderInstallationView = {
+    id: PROVIDER_INSTALLATION_IDS.vieneu,
+    kind: 'tts',
+    displayNameKey: 'VieNeu streaming (preview)',
+    version: '1.0.0',
+    manifest: { locales: ['vi-VN'], supportsStreaming: true, supportsCancel: true },
+    configSchema: {
+      type: 'object',
+      required: ['backboneRepo', 'sampleRate'],
+      properties: {
+        backboneRepo: { type: 'string', minLength: 1 },
+        sampleRate: { type: 'integer', minimum: 1, maximum: 48000 },
+        backend: { type: 'string', enum: ['onnx', 'auto'] },
+        precision: { type: 'string', enum: ['int8', 'fp32'] },
+        prewarm: { type: 'boolean' },
+      },
+    },
+  }
+  return {
+    installations: [groq, vieneu],
+    configs: [{
+      id: 'preview-config-groq',
+      installationId: groq.id,
+      name: 'Groq test config',
+      revision: 1,
+      config: {
+        endpoint: 'https://api.groq.com/openai/v1',
+        model: 'llama-3.3-70b-versatile',
+        maxTokens: 512,
+        temperature: 0.2,
+        supportsTools: true,
+        toolPolicy: { mode: 'allow-listed' },
+      },
+      secretRefs: [],
+      etag: '"preview-provider-groq-1"',
+    }],
+  }
 }
 
 function createProviderConfigs(): ProviderConfigSummary[] {

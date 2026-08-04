@@ -343,27 +343,32 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
 
   async listProviderInstallations(): Promise<GatewayResult<ProviderInstallationView[], never>> {
     const request = await this.begin('read')
-    return this.success([], request)
+    return this.success(clone(this.state.providerInstallations), request)
   }
 
   async listProviderConfigs(): Promise<GatewayResult<ProviderConfigRecord[], never>> {
     const request = await this.begin('read')
-    return this.success([], request)
+    return this.success(clone(this.state.providerConfigs), request)
   }
 
   async createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {
     const request = await this.begin('mutation')
-    const value: ProviderConfigRecord = { id: input.installationId, installationId: input.installationId, name: input.name, revision: 1, config: input.config, secretRefs: input.secretRefs ?? [], etag: '"preview"' }
+    const value: ProviderConfigRecord = { id: `${input.installationId}-${this.state.providerConfigs.length + 1}`, installationId: input.installationId, name: input.name, revision: 1, config: clone(input.config), secretRefs: input.secretRefs ?? [], etag: '"preview"' }
+    this.state.providerConfigs.push(value)
     return this.success(value, request)
   }
 
   async updateProviderConfig(id: string, input: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] }, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {
     const request = await this.begin('mutation')
-    if (expectedEtag !== '"preview"') {
+    const current = this.state.providerConfigs.find((item) => item.id === id)
+    if (!current) return this.failure(this.validationProblem([{ field: 'id', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    if (current.etag !== expectedEtag) {
       const problem = this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)
       if (problem) return this.failure(problem, request)
     }
-    return this.success({ id, installationId: id, name: input.name ?? id, revision: 2, config: input.config ?? {}, secretRefs: input.secretRefs ?? [], etag: '"preview"' }, request)
+    const next: ProviderConfigRecord = { ...current, name: input.name ?? current.name, config: clone(input.config ?? current.config), secretRefs: input.secretRefs ?? [...current.secretRefs], revision: current.revision + 1, etag: `"preview-provider-${current.revision + 1}"` }
+    this.state.providerConfigs = [...this.state.providerConfigs.filter((item) => item.id !== id), next]
+    return this.success(next, request)
   }
 
   async listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>> {

@@ -11,9 +11,11 @@ import VtCard from '@/ui/primitives/VtCard.vue'
 import VtFormField from '@/ui/primitives/VtFormField.vue'
 import VtInput from '@/ui/primitives/VtInput.vue'
 import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
-import VtTextArea from '@/ui/primitives/VtTextArea.vue'
 import VtStatus from '@/ui/primitives/VtStatus.vue'
 import { notify } from '@/ui/primitives/notifications'
+
+import SchemaConfigForm from './SchemaConfigForm.vue'
+import { cloneConfig } from './schema-config'
 
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
 const installations = ref<ProviderInstallationView[]>([])
@@ -21,7 +23,8 @@ const configs = ref<ProviderConfigRecord[]>([])
 const selectedId = ref('')
 const selectedConfigId = ref('')
 const name = ref('')
-const jsonConfig = ref('{}')
+const configDraft = ref<Record<string, unknown>>({})
+const configValid = ref(true)
 const secretRefs = ref('')
 const loading = ref(true)
 const saving = ref(false)
@@ -41,7 +44,8 @@ function chooseInstallation(value: string) {
   const item = configs.value.find((config) => config.installationId === value)
   selectedConfigId.value = item?.id ?? ''
   name.value = item?.name ?? ''
-  jsonConfig.value = JSON.stringify(item?.config ?? {}, null, 2)
+  configDraft.value = cloneConfig(item?.config ?? {})
+  configValid.value = true
   secretRefs.value = item?.secretRefs.join(', ') ?? ''
 }
 
@@ -103,19 +107,10 @@ async function focusSaveError() {
 }
 
 async function save() {
-  if (!selected.value || !name.value.trim()) return
+  if (!selected.value || !name.value.trim() || !configValid.value) return
   saveError.value = ''
-  let parsed: Record<string, unknown>
-  try {
-    const value: unknown = JSON.parse(jsonConfig.value)
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('object')
-    parsed = value as Record<string, unknown>
-  } catch {
-    notify('Cấu hình JSON không hợp lệ', { tone: 'error', assertive: true })
-    return
-  }
   saving.value = true
-  const payload = { name: name.value.trim(), config: parsed, secretRefs: secretRefs.value.split(',').map((item) => item.trim()).filter(Boolean) }
+  const payload = { name: name.value.trim(), config: cloneConfig(configDraft.value), secretRefs: secretRefs.value.split(',').map((item) => item.trim()).filter(Boolean) }
   try {
     const result = selectedConfigId.value
       ? await gateway.updateProviderConfig(selectedConfigId.value, payload, configs.value.find((item) => item.id === selectedConfigId.value)?.etag ?? '"missing"')
@@ -219,7 +214,7 @@ onMounted(load)
       <VtCard class="config-card">
         <h2>Config revision</h2>
         <p class="muted">
-          Secret chỉ tham chiếu bằng secretRef; plaintext key không đi vào browser.
+          Field được sinh từ manifest JSON Schema; secret chỉ tham chiếu bằng secretRef và plaintext key không đi vào browser.
         </p>
         <VtFormField
           label="Tên cấu hình"
@@ -231,17 +226,12 @@ onMounted(load)
             placeholder="Tên hiển thị"
           />
         </VtFormField>
-        <VtFormField
-          label="Config JSON"
-          for-id="provider-json"
-          :hint="schemaKeys.length ? `Fields: ${schemaKeys.join(', ')}` : 'Schema không có field hiển thị.'"
-        >
-          <VtTextArea
-            id="provider-json"
-            v-model="jsonConfig"
-            :rows="12"
-          />
-        </VtFormField>
+        <SchemaConfigForm
+          v-model="configDraft"
+          :schema="selected.configSchema"
+          :disabled="saving"
+          @validity-change="configValid = $event"
+        />
         <VtFormField
           label="Secret references"
           for-id="provider-secrets"
@@ -266,7 +256,7 @@ onMounted(load)
           <VtButton
             variant="primary"
             :loading="saving"
-            :disabled="!name.trim()"
+            :disabled="!name.trim() || !configValid"
             @click="save"
           >
             Lưu config revision
