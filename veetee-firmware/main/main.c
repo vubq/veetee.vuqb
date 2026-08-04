@@ -5,6 +5,7 @@
 #include "veetee_state.h"
 #include "veetee_transport.h"
 #include "veetee_wake.h"
+#include "veetee_wire_guard.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -416,6 +417,14 @@ static void websocket_text_callback(const cJSON *message, void *context) {
     if (strcmp(type->valuestring, "hello") == 0) {
         (void)state_apply(app, VT_EVENT_HELLO_READY);
         ESP_LOGI(TAG, "server hello accepted; session ready");
+        return;
+    }
+    cJSON *incoming_session = cJSON_GetObjectItemCaseSensitive(message, "session_id");
+    if (incoming_session != NULL &&
+        (!cJSON_IsString(incoming_session) ||
+         !vt_wire_session_matches(vt_transport_session_id(&app->transport), true,
+                                  incoming_session->valuestring))) {
+        ESP_LOGW(TAG, "ignoring server message with mismatched session");
         return;
     }
     if (strcmp(type->valuestring, "tts") == 0) {

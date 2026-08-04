@@ -1,6 +1,7 @@
 #include "veetee_config.h"
 #include "veetee_protocol.h"
 #include "veetee_state.h"
+#include "veetee_wire_guard.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -215,6 +216,14 @@ static void test_config_gate(void) {
     assert(vt_config_is_flash_safe(&config));
 }
 
+static void test_wire_session_guard(void) {
+    assert(vt_wire_session_matches("session-a", false, NULL));
+    assert(vt_wire_session_matches("session-a", true, "session-a"));
+    assert(!vt_wire_session_matches("session-a", true, "session-b"));
+    assert(!vt_wire_session_matches("session-a", true, ""));
+    assert(!vt_wire_session_matches(NULL, true, "session-a"));
+}
+
 int main(void) {
     test_protocol();
     test_protocol_rejections();
@@ -223,6 +232,7 @@ int main(void) {
     test_interruptible_states();
     test_mode_aware_graceful_tts_stop();
     test_config_gate();
+    test_wire_session_guard();
     puts("firmware host tests passed");
     return 0;
 }

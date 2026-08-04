@@ -79,6 +79,10 @@
 - Realtime Lab đã được parameterize theo profile 1/2/3; fixture smoke cả ba
   profile đều pass. Reference-server handshake smoke cũng pass trong venv/copy
   tạm, nhưng chưa có full provider turn hoặc firmware↔server cross-peer pass.
+- Firmware session-mismatch barrier đã build/flash: peer cũ không có
+  `session_id` vẫn tương thích, còn message có session sai/rỗng/không hợp lệ bị
+  bỏ qua. Host CTest `1/1`, ESP-IDF build/flash hash pass; serial thấy
+  `wake_ready=1`, capture idle, không panic và board reconnect lại runtime.
 - URL kiểm tra chắc chắn trên máy này: `http://127.0.0.1:18181` (UI),
   `http://127.0.0.1:18101/health/ready` (Manager API),
   `http://127.0.0.1:18100/health/ready` và `/metrics` (Voice). Endpoint private
