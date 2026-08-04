@@ -2309,6 +2309,7 @@ local-asr-cuda = [
     { name = "nvidia-cudnn-cu12" },
 ]
 local-tts = [
+    { name = "soxr" },
     { name = "vieneu" },
 ]
 local-vad = [
@@ -2318,6 +2319,7 @@ local-vad = [
 test = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "soxr" },
 ]
 
 [package.metadata]
@@ -2335,6 +2337,8 @@ requires-dist = [
     { name = "opuslib", specifier = ">=3.0,<4" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.23" },
+    { name = "soxr", marker = "extra == 'local-tts'", specifier = ">=0.3,<2" },
+    { name = "soxr", marker = "extra == 'test'", specifier = ">=0.3,<2" },
     { name = "vieneu", marker = "extra == 'local-tts'", specifier = ">=3.2.4,<4" },
 ]
 provides-extras = ["test", "local-tts", "local-asr", "local-asr-cuda", "local-vad"]

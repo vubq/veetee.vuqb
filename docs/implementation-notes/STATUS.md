@@ -842,3 +842,25 @@
   fallback, wire protocol, runtime process hoặc production DB.
 - Audio lock giữ nguyên: không phát audio, mở microphone/speaker/serial audio,
   flash/reset/erase ESP32 hoặc đổi Wi-Fi/Tailscale.
+
+### Audio test pause và reproducible host test dependencies (2026-08-05)
+
+- Theo yêu cầu operator, audio/physical lock tiếp tục có hiệu lực cho đến khi
+  được cấp quyền mới: không `pw-play`, không wake/audio harness, không mở
+  microphone/speaker hoặc serial audio, không flash/reset/erase ESP32, không đổi
+  Wi-Fi/Tailscale và không dùng production database `veetee_vubq` cho test.
+- Chuẩn hóa test discovery: `veetee-server` khai báo `pythonpath = ["src"]`;
+  `tools/runtime/pytest.ini` khai báo `pythonpath = .`. Lệnh test canonical
+  trong từng thư mục vì vậy không còn phụ thuộc `PYTHONPATH` thủ công.
+- Môi trường sạch đã cho thấy VieNeu adapter cần `soxr` để resample 48 kHz →
+  24 kHz, nhưng extra `test`/`local-tts` chưa khai báo dependency này. Đã bổ
+  sung `soxr>=0.3,<2` và regenerate `uv.lock`; đây là packaging fix, không
+  kích hoạt TTS hay phát audio.
+- Evidence host-only sau thay đổi: Voice Server `./.venv/bin/pytest -q`
+  **82 passed**; runtime tools `pytest -q` **20 passed**. Manager API dedicated
+  `veetee_vubq_test` **43/43** và Manager Web unit **93/93** cùng
+  typecheck/lint/build vẫn pass; readiness Voice/API/Web vẫn HTTP `200`.
+  Không restart process đang chạy.
+- Đây không đóng physical M0/M1 gates: LCD, loa, mic, PTT, wake corpus,
+  acoustic barge-in và cross-peer conformance vẫn cần kiểm tra khi operator mở
+  lại audio.

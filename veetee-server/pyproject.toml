@@ -15,8 +15,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "pytest-asyncio>=0.23"]
-local-tts = ["vieneu>=3.2.4,<4"]
+test = ["pytest>=8", "pytest-asyncio>=0.23", "soxr>=0.3,<2"]
+local-tts = ["vieneu>=3.2.4,<4", "soxr>=0.3,<2"]
 local-asr = ["faster-whisper>=1.2.1,<2"]
 local-asr-cuda = [
   "faster-whisper>=1.2.1,<2",
@@ -47,3 +47,4 @@ where = ["src"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["src"]
