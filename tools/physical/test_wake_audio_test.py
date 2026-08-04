@@ -119,6 +119,36 @@ class WakeAudioHarnessTest(unittest.TestCase):
         self.assertGreaterEqual(timestamp, boundary)
         self.assertEqual(line, "wake detected current")
 
+    def test_assert_absent_ignores_stale_marker_and_rejects_current_marker(self) -> None:
+        root = Path(__file__).resolve().parent
+        scenario = wake_audio_test.load_scenario(root / "wake-test.example.json")
+        monitor = wake_audio_test.Monitor(scenario, verbose=False)
+        boundary = time.monotonic()
+        with monitor._condition:
+            monitor._queue.append((boundary - 1, "wake detected stale"))
+        monitor.assert_absent("wake detected", 0.01, not_before=boundary)
+
+        with monitor._condition:
+            monitor._queue.append((boundary + 0.01, "wake detected current"))
+        with self.assertRaisesRegex(wake_audio_test.HarnessError, "unexpected serial marker"):
+            monitor.assert_absent("wake detected", 0.1, not_before=boundary)
+
+    def test_wait_for_any_returns_the_matching_configured_marker(self) -> None:
+        root = Path(__file__).resolve().parent
+        scenario = wake_audio_test.load_scenario(root / "wake-test.example.json")
+        monitor = wake_audio_test.Monitor(scenario, verbose=False)
+        boundary = time.monotonic()
+        with monitor._condition:
+            monitor._queue.append((boundary + 0.01, "server alert code=LLM_RATE_LIMITED"))
+        timestamp, line, marker = monitor.wait_for_any(
+            ("state=speaking", "server alert code="),
+            0.1,
+            not_before=boundary,
+        )
+        self.assertGreaterEqual(timestamp, boundary)
+        self.assertEqual(line, "server alert code=LLM_RATE_LIMITED")
+        self.assertEqual(marker, "server alert code=")
+
     def test_run_refuses_audio_without_allow_flag_before_monitor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

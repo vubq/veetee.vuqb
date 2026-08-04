@@ -1,0 +1,29 @@
+{
+  "markers": {
+    "wakeDetected": "wake detected",
+    "captureStarted": "wake start",
+    "assistantSpeaking": "state=speaking",
+    "completionFailed": "server alert code=",
+    "rearmed": "wake detector armed"
+  },
+  "completionClip": "./local-utterance-vi.wav",
+  "captureTimeoutSeconds": 8,
+  "speakingTimeoutSeconds": 45,
+  "rearmedTimeoutSeconds": 90,
+  "cases": [
+    {
+      "name": "negative-vietnamese-utterance",
+      "clip": "./local-utterance-vi.wav",
+      "expected": "not_detected",
+      "detectionTimeoutSeconds": 8,
+      "settleSeconds": 0.5
+    },
+    {
+      "name": "positive-computer",
+      "clip": "/tmp/veetee-computer.wav",
+      "expected": "detected",
+      "detectionTimeoutSeconds": 15,
+      "settleSeconds": 0
+    }
+  ]
+}

@@ -69,6 +69,32 @@ audio or microphone data. A wake timeout with `exitCode: 0` therefore separates 
 successful host playback process from a WakeNet/AFE recognition miss. A non-zero
 exit code fails the repetition immediately and preserves the diagnostic text.
 
+### Positive/negative wake corpus
+
+Use `wake_corpus_test.py` with a JSON corpus when the question is “did the
+detector recognize only the configured wake clip?” rather than “did one complete
+conversation work?” Each case declares `expected: "detected"` or
+`expected: "not_detected"`; markers, timeout and completion clip are config data.
+Run negative cases before positive cases so an intentionally detected positive
+turn cannot leave the board in capture state if its server completion path fails:
+
+```bash
+source /home/vubq/.espressif/v6.0.2/esp-idf/export.sh
+python3 tools/physical/wake_corpus_test.py \
+  --scenario tools/physical/wake-test.local.json \
+  --corpus tools/physical/wake-corpus.example.json \
+  --allow-audio \
+  --report /tmp/veetee-wake-corpus.json
+```
+
+The corpus report is redacted and records `wake_not_detected` for a negative
+window or the complete positive lifecycle (`wake_detected`, `capture_started`,
+`assistant_speaking`, `wake_rearmed`). A negative case that emits the detection
+marker fails immediately; stale serial markers before the case boundary are
+discarded. `markers.completionFailed` is optional; when configured, an upstream
+alert is recorded explicitly, the harness waits for re-arm, then fails the run
+so a provider/quota failure cannot be mistaken for a detector result.
+
 For a test-only Groq multi-key run, start Voice Server separately from a fixture
 snapshot with `VEETEE_TEST_GROQ_KEYS_FILE=...` (see
 `veetee-server/README.md`). The physical harness itself never reads or prints

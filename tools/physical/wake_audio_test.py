@@ -333,6 +333,46 @@ class Monitor:
                 print(f"serial: {line}", flush=True)
 
     def wait_for(self, marker: str, timeout_seconds: float, *, not_before: float | None = None) -> tuple[float, str]:
+        timestamp, line, _ = self.wait_for_any((marker,), timeout_seconds, not_before=not_before)
+        return timestamp, line
+
+    def wait_for_any(
+        self,
+        markers: tuple[str, ...],
+        timeout_seconds: float,
+        *,
+        not_before: float | None = None,
+    ) -> tuple[float, str, str]:
+        if not markers or any(not marker for marker in markers):
+            raise HarnessError("wait_for_any requires at least one non-empty marker")
+        deadline = time.monotonic() + timeout_seconds
+        with self._condition:
+            while True:
+                if self._forbidden_hits:
+                    _, forbidden, line = self._forbidden_hits[0]
+                    raise HarnessError(f"forbidden serial marker observed: {forbidden!r}: {line}")
+                if not_before is not None:
+                    self._queue = deque(item for item in self._queue if item[0] >= not_before)
+                for index, (timestamp, line) in enumerate(self._queue):
+                    for marker in markers:
+                        if marker in line:
+                            del self._queue[index]
+                            return timestamp, line, marker
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    tail = len(self.lines)
+                    labels = ", ".join(repr(marker) for marker in markers)
+                    raise HarnessError(f"serial marker timed out: one of ({labels}) ({tail} lines observed)")
+                if self.process is not None and self.process.poll() is not None and not self._queue:
+                    labels = ", ".join(repr(marker) for marker in markers)
+                    raise HarnessError(
+                        f"serial monitor exited with status {self.process.returncode} before one of ({labels})"
+                    )
+                self._condition.wait(timeout=remaining)
+
+    def assert_absent(self, marker: str, timeout_seconds: float, *, not_before: float | None = None) -> None:
+        """Wait a bounded window and fail if a marker appears in that window."""
+
         deadline = time.monotonic() + timeout_seconds
         with self._condition:
             while True:
@@ -344,13 +384,16 @@ class Monitor:
                 for index, (timestamp, line) in enumerate(self._queue):
                     if marker in line:
                         del self._queue[index]
-                        return timestamp, line
+                        raise HarnessError(
+                            f"unexpected serial marker observed: {marker!r} at {timestamp:.6f}: {line}"
+                        )
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    tail = len(self.lines)
-                    raise HarnessError(f"serial marker timed out: {marker!r} ({tail} lines observed)")
+                    return
                 if self.process is not None and self.process.poll() is not None and not self._queue:
-                    raise HarnessError(f"serial monitor exited with status {self.process.returncode} before marker {marker!r}")
+                    raise HarnessError(
+                        f"serial monitor exited with status {self.process.returncode} while checking absence of {marker!r}"
+                    )
                 self._condition.wait(timeout=remaining)
 
     def forbidden_hits(self) -> tuple[tuple[float, str, str], ...]:
@@ -384,13 +427,26 @@ def _start_player(command: tuple[str, ...], clip: Path, *, allow_audio: bool) ->
         raise HarnessError("audio playback is disabled; pass --allow-audio only after owner approval")
     rendered = _render_player(command, clip)
     try:
-        return subprocess.Popen(rendered, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True)
+        started = time.monotonic()
+        process = subprocess.Popen(
+            rendered,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        # Popen does not expose a public start timestamp. Keep one bounded
+        # monotonic value on the process object so a caller that waits for a
+        # serial marker first still gets the actual player runtime, not merely
+        # the time spent inside communicate().
+        setattr(process, "_veetee_started_monotonic", started)
+        return process
     except OSError as error:
         raise HarnessError(f"could not start audio player {' '.join(rendered)}: {error}") from error
 
 
 def _wait_player(process: subprocess.Popen[bytes], clip: Path, timeout_seconds: float = 300) -> PlayerResult:
-    started = time.monotonic()
+    started = float(getattr(process, "_veetee_started_monotonic", time.monotonic()))
     try:
         _, raw_stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as error:
