@@ -171,8 +171,10 @@ Lab E2E TTFA gate và long-session soak.
 Host-native Fastify/Vue/PostgreSQL control plane, provider config, history, pairing,
 opaque session auth và config publication.
 
-Manager Web mock preview hiện có không có API/PostgreSQL/auth/publication nên không
-được tính là đạt hoặc bắt đầu M2.
+Manager Web có hai mode: mock preview để review visual và API mode dùng typed
+gateway/OpenAPI với Manager API. API mode đã có auth/session, provider/config,
+assistant/device/history flows; preview vẫn không thay thế API/DB/physical DoD,
+và M2 chỉ được đánh giá theo toàn bộ gate trong roadmap.
 
 ### M3
 

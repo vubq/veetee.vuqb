@@ -6,6 +6,7 @@
 #include "veetee_transport.h"
 #include "veetee_wake.h"
 #include "veetee_wire_guard.h"
+#include "veetee_ptt.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -673,11 +674,10 @@ static void capture_task(void *context) {
 
 static void ptt_task(void *context) {
     vt_app_t *app = (vt_app_t *)context;
-    bool stable = false;
-    bool candidate = false;
+    vt_ptt_debouncer_t debouncer;
+    vt_ptt_debouncer_init(&debouncer, false, VT_PTT_DEBOUNCE_SAMPLES);
     bool pending_start = false;
     bool pending_auto = false;
-    int samples = 0;
     TickType_t retry_after = 0;
     ESP_LOGI(TAG, "PTT monitor gpio=%d active_level=%d initial_level=%d",
              CONFIG_VEETEE_PTT_GPIO, CONFIG_VEETEE_PTT_ACTIVE_LEVEL,
@@ -701,45 +701,39 @@ static void ptt_task(void *context) {
             }
         }
         bool active = gpio_get_level(CONFIG_VEETEE_PTT_GPIO) == CONFIG_VEETEE_PTT_ACTIVE_LEVEL;
-        if (active != candidate) {
-            candidate = active;
-            samples = 0;
-        } else if (samples < VT_PTT_DEBOUNCE_SAMPLES) {
-            ++samples;
-            if (samples >= VT_PTT_DEBOUNCE_SAMPLES && stable != candidate) {
-                stable = candidate;
-                if (stable) {
-                    pending_start = true;
-                    pending_auto = false;
-                    vt_device_state_t current = state_read(app);
-                    if (vt_state_is_interruptible(current)) {
-                        bool was_auto_capture = app->wake_auto_capture;
-                        clear_pending_tts_stop(app);
-                        app->capture_active = false;
-                        app->wake_auto_capture = false;
-                        (void)send_control(app, "abort", NULL, "button_interrupt");
-                        (void)xQueueReset(app->playback_queue);
-                        vt_audio_reset_acoustic_reference(&app->audio);
-                        (void)state_apply(app, VT_EVENT_ABORT);
-                        if (was_auto_capture) request_wake_arm_when_playback_idle(app);
-                        ESP_LOGI(TAG, "PTT interrupt state=%s", vt_state_name(current));
-                    }
-                } else if (app->capture_active) {
-                    pending_start = false;
-                    pending_auto = false;
-                    app->capture_active = false;
-                    app->wake_auto_capture = false;
-                    int result = send_control(app, "listen", "stop", NULL);
-                    (void)state_apply(app, VT_EVENT_LISTEN_STOP);
-                    ESP_LOGI(TAG, "PTT stop result=%s", esp_err_to_name(result));
-                } else {
-                    pending_start = false;
-                    pending_auto = false;
-                }
+        const vt_ptt_event_t ptt_event = vt_ptt_debouncer_update(&debouncer, active);
+        if (ptt_event == VT_PTT_EVENT_PRESSED) {
+            pending_start = true;
+            pending_auto = false;
+            vt_device_state_t current = state_read(app);
+            if (vt_state_is_interruptible(current)) {
+                bool was_auto_capture = app->wake_auto_capture;
+                clear_pending_tts_stop(app);
+                app->capture_active = false;
+                app->wake_auto_capture = false;
+                (void)send_control(app, "abort", NULL, "button_interrupt");
+                (void)xQueueReset(app->playback_queue);
+                vt_audio_reset_acoustic_reference(&app->audio);
+                (void)state_apply(app, VT_EVENT_ABORT);
+                if (was_auto_capture) request_wake_arm_when_playback_idle(app);
+                ESP_LOGI(TAG, "PTT interrupt state=%s", vt_state_name(current));
+            }
+        } else if (ptt_event == VT_PTT_EVENT_RELEASED) {
+            if (app->capture_active) {
+                pending_start = false;
+                pending_auto = false;
+                app->capture_active = false;
+                app->wake_auto_capture = false;
+                int result = send_control(app, "listen", "stop", NULL);
+                (void)state_apply(app, VT_EVENT_LISTEN_STOP);
+                ESP_LOGI(TAG, "PTT stop result=%s", esp_err_to_name(result));
+            } else {
+                pending_start = false;
+                pending_auto = false;
             }
         }
         vt_device_state_t current = state_read(app);
-        if ((stable || pending_auto) && pending_start && !app->capture_active &&
+        if ((vt_ptt_debouncer_is_stable(&debouncer) || pending_auto) && pending_start && !app->capture_active &&
             (current == VT_DEVICE_LISTENING ||
              (current == VT_DEVICE_IDLE && vt_transport_is_ready(&app->transport)))) {
             TickType_t now = xTaskGetTickCount();

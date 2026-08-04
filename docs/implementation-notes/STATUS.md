@@ -400,3 +400,13 @@
 - Regression history kiểm tra hash đúng và raw identity vắng mặt. Không phát
   audio, không restart runtime, không flash firmware và không mutate production
   database.
+
+### PTT debounce module extraction (2026-08-05, host-only)
+
+- Firmware debounce GPIO0 được tách thành module pure fixed-state
+  `veetee_ptt.c/.h`; `ptt_task` chỉ xử lý edge và giữ nguyên pending/retry,
+  interrupt, listen-start/stop behavior. Không allocation hoặc blocking trong
+  vòng poll.
+- Host firmware CMake/CTest với warning-as-error pass **1/1**, gồm regression
+  bounce/press/release/threshold. Chưa flash image, chưa mô phỏng GPIO vật lý
+  và không phát audio; PTT/mic/speaker vẫn là physical gate mở.

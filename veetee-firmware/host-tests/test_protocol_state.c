@@ -2,6 +2,7 @@
 #include "veetee_protocol.h"
 #include "veetee_state.h"
 #include "veetee_wire_guard.h"
+#include "veetee_ptt.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -209,6 +210,44 @@ static void test_mode_aware_graceful_tts_stop(void) {
     assert(machine.generation == 0U);
 }
 
+static void test_ptt_debouncer_edges_and_bounce(void) {
+    vt_ptt_debouncer_t debouncer;
+    vt_ptt_debouncer_init(&debouncer, false, 3U);
+    assert(!vt_ptt_debouncer_is_stable(&debouncer));
+
+    /* A transition sample starts a candidate; three following stable samples
+       are required before the task observes the edge. */
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_PRESSED);
+    assert(vt_ptt_debouncer_is_stable(&debouncer));
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_NONE);
+
+    /* Alternating samples never create a false press/release edge. */
+    vt_ptt_debouncer_init(&debouncer, false, 3U);
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, false) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, false) == VT_PTT_EVENT_NONE);
+    assert(!vt_ptt_debouncer_is_stable(&debouncer));
+
+    /* Release is emitted once and a zero threshold is made safe. */
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_PRESSED);
+    assert(vt_ptt_debouncer_update(&debouncer, false) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, false) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, false) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, false) == VT_PTT_EVENT_RELEASED);
+    assert(!vt_ptt_debouncer_is_stable(&debouncer));
+
+    vt_ptt_debouncer_init(&debouncer, false, 0U);
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_NONE);
+    assert(vt_ptt_debouncer_update(&debouncer, true) == VT_PTT_EVENT_PRESSED);
+}
+
 static void test_config_gate(void) {
     vt_runtime_config_t config = {.profile_id = "board.example", .endpoint = "wss://configured", .device_id = "device", .client_id = "client", .protocol_version = 3, .uplink_sample_rate = 16000, .downlink_sample_rate = 24000, .frame_duration_ms = 60, .verified_hardware = false};
     assert(!vt_config_is_flash_safe(&config));
@@ -231,6 +270,7 @@ int main(void) {
     test_abort_from_thinking();
     test_interruptible_states();
     test_mode_aware_graceful_tts_stop();
+    test_ptt_debouncer_edges_and_bounce();
     test_config_gate();
     test_wire_session_guard();
     puts("firmware host tests passed");
