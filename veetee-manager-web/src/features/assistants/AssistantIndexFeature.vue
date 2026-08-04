@@ -109,8 +109,10 @@ onUnmounted(() => {
           <VtInput
             v-model="search"
             :icon="Search"
+            name="assistant-search"
+            autocomplete="off"
             aria-label="Tìm trợ lý"
-            placeholder="Tìm theo tên hoặc ngôn ngữ"
+            placeholder="Tìm theo tên hoặc ngôn ngữ…"
           />
         </div>
         <div class="header-actions">

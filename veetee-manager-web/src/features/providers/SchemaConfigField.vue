@@ -118,7 +118,9 @@ watch(
       <VtInput
         v-else
         :id="fieldId"
+        :name="field.key"
         :model-value="inputText"
+        autocomplete="off"
         :type="field.type === 'string' ? (field.format === 'uri' ? 'url' : 'text') : 'number'"
         :step="field.type === 'integer' ? 1 : 'any'"
         :min="field.minimum"

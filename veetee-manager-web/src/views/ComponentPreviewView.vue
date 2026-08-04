@@ -139,6 +139,8 @@ async function runLongAction() {
               <VtInput
                 id="preview-name"
                 v-model="inputValue"
+                name="preview-name"
+                autocomplete="off"
                 :icon="Search"
                 :aria-describedby="describedby"
               />
@@ -152,7 +154,9 @@ async function runLongAction() {
             <template #default="{ describedby }">
               <VtInput
                 id="preview-readonly"
+                name="preview-device-code"
                 model-value="VT-9D1C-A7"
+                autocomplete="off"
                 readonly
                 :aria-describedby="describedby"
               />
@@ -167,7 +171,9 @@ async function runLongAction() {
             <template #default="{ describedby }">
               <VtTextArea
                 id="preview-prompt"
+                name="preview-prompt"
                 model-value="Quá ngắn"
+                autocomplete="off"
                 invalid
                 :aria-describedby="describedby"
               />
@@ -363,4 +369,3 @@ async function runLongAction() {
   .preview-intro p { margin-top: 8px; text-align: left; }
 }
 </style>
-

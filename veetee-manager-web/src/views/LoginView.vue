@@ -96,9 +96,11 @@ async function submit() {
               <VtInput
                 id="login-email"
                 v-model="email"
+                name="email"
                 :icon="Mail"
                 type="email"
                 autocomplete="username"
+                spellcheck="false"
                 :placeholder="t('auth.emailPlaceholder')"
                 :aria-describedby="describedby"
                 :invalid="errorCode === 'INVALID_CREDENTIALS'"
@@ -114,6 +116,7 @@ async function submit() {
               <VtInput
                 id="login-password"
                 v-model="password"
+                name="password"
                 :icon="LockKeyhole"
                 type="password"
                 autocomplete="current-password"

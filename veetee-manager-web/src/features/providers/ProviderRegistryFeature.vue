@@ -223,7 +223,9 @@ onMounted(load)
           <VtInput
             id="provider-name"
             v-model="name"
-            placeholder="Tên hiển thị"
+            name="provider-config-name"
+            autocomplete="off"
+            placeholder="Tên hiển thị…"
           />
         </VtFormField>
         <SchemaConfigForm
@@ -240,7 +242,10 @@ onMounted(load)
           <VtInput
             id="provider-secrets"
             v-model="secretRefs"
-            placeholder="secretRef.groq"
+            name="provider-secret-references"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="secretRef.groq…"
           />
         </VtFormField>
         <div class="actions">

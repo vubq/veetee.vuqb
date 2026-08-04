@@ -134,3 +134,18 @@
   evidence vì build đó không chạy WakeNet trong playback theo Kconfig.
 - Diagnostic bypass giữ AEC instance + duplex gate nhưng bỏ transform cũng
   timeout; chưa kết luận threshold, echo masking, reference alignment hay timing.
+
+### Manager Web semantics và Tailscale hostname audit (2026-08-04)
+
+- Đã thêm `name`, `autocomplete` và các thuộc tính spellcheck phù hợp cho
+  login, assistant/device/provider/role forms; schema-generated text inputs
+  cũng có field name và `autocomplete="off"`. Placeholder tiếng Việt dùng `…`
+  nhất quán. Đây là hardening UI, không đổi API/protocol/runtime behavior.
+- Verification sau thay đổi: typecheck pass, ESLint pass, Vitest **63/63**,
+  production build pass, Chromium E2E **9/9** (a11y serious/critical gate pass).
+- Read-only Tailscale status cho biết node là
+  `veetee-dev.tail52a635.ts.net`; `veetee.tail52a635.ts.net` không có DNS
+  record trong môi trường kiểm tra. Manager Web private mapping là
+  `https://veetee-dev.tail52a635.ts.net:18443` → `127.0.0.1:18181`; root
+  `https://veetee-dev.tail52a635.ts.net/` đi qua Funnel cũ tới `127.0.0.1:8081`
+  và trả `502`. Không tự rename node, đổi Serve/Funnel, DNS, route hay mạng.

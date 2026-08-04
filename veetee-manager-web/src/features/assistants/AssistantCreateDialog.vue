@@ -79,7 +79,9 @@ async function submit() {
             id="assistant-name"
             ref="nameInput"
             v-model="name"
-            placeholder="Nhập tên trợ lý"
+            name="assistant-name"
+            autocomplete="off"
+            placeholder="Nhập tên trợ lý…"
             :invalid="Boolean(nameError)"
             :aria-describedby="describedby"
           />

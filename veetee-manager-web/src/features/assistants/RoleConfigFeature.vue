@@ -367,6 +367,8 @@ onMounted(load)
           <VtTextArea
             id="role-prompt"
             v-model="draft.basePrompt"
+            name="base-prompt"
+            autocomplete="off"
             :rows="8"
             :invalid="draft.basePrompt.length > 2000"
             :aria-describedby="describedby"
@@ -432,11 +434,13 @@ onMounted(load)
           <VtInput
             id="role-max-active-turns"
             type="number"
+            autocomplete="off"
             min="1"
             max="8"
             step="1"
             inputmode="numeric"
             :model-value="String(draft.admission.maxActiveTurns)"
+            name="max-active-turns"
             :invalid="maxActiveTurnsInvalid"
             aria-label="Lượt hội thoại đồng thời"
             @update:model-value="draft.admission.maxActiveTurns = Number($event)"
@@ -451,11 +455,13 @@ onMounted(load)
           <VtInput
             id="role-retry-after-ms"
             type="number"
+            autocomplete="off"
             min="100"
             max="10000"
             step="50"
             inputmode="numeric"
             :model-value="String(draft.admission.retryAfterMs)"
+            name="retry-after-ms"
             :invalid="retryAfterInvalid"
             aria-label="Thời gian thử lại khi bận"
             @update:model-value="draft.admission.retryAfterMs = Number($event)"
@@ -484,11 +490,13 @@ onMounted(load)
           <VtInput
             id="role-no-speech-timeout"
             type="number"
+            autocomplete="off"
             min="1000"
             max="60000"
             step="100"
             inputmode="numeric"
             :model-value="String(draft.autoTurn.noSpeechTimeoutMs)"
+            name="no-speech-timeout-ms"
             :invalid="draft.autoTurn.enabled && noSpeechTimeoutInvalid"
             :disabled="!draft.autoTurn.enabled"
             aria-label="Chờ speech tối đa"
@@ -504,6 +512,8 @@ onMounted(load)
           <VtInput
             id="role-no-speech-message"
             :model-value="draft.autoTurn.noSpeechAlert.message"
+            name="no-speech-message"
+            autocomplete="off"
             :invalid="draft.autoTurn.enabled && noSpeechAlertInvalid"
             :disabled="!draft.autoTurn.enabled"
             aria-label="Thông báo khi chưa nghe thấy"
@@ -520,6 +530,8 @@ onMounted(load)
           <VtInput
             id="role-no-speech-status"
             v-model="draft.autoTurn.noSpeechAlert.status"
+            name="no-speech-status"
+            autocomplete="off"
             :disabled="!draft.autoTurn.enabled"
             aria-label="Alert status"
           />
@@ -532,6 +544,8 @@ onMounted(load)
           <VtInput
             id="role-no-speech-emotion"
             v-model="draft.autoTurn.noSpeechAlert.emotion"
+            name="no-speech-emotion"
+            autocomplete="off"
             :disabled="!draft.autoTurn.enabled"
             aria-label="Emotion"
           />

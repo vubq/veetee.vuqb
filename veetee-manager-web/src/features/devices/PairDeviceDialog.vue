@@ -97,8 +97,10 @@ async function submit() {
             id="pair-code"
             ref="codeInput"
             v-model="code"
-            placeholder="VT-0000"
+            name="pair-code"
+            placeholder="VT-0000…"
             autocomplete="one-time-code"
+            spellcheck="false"
             :invalid="Boolean(codeError)"
             :aria-describedby="describedby"
           />
@@ -114,7 +116,9 @@ async function submit() {
           <VtInput
             id="pair-name"
             v-model="displayName"
-            placeholder="Veetee phòng làm việc"
+            name="display-name"
+            autocomplete="off"
+            placeholder="Veetee phòng làm việc…"
             :aria-describedby="describedby"
           />
         </template>
