@@ -759,3 +759,16 @@
 - Regression Manager Web full unit **92/92**, typecheck/lint/build pass. API
   schema suite **42/42** vẫn xanh; không đổi protocol/provider fallback, không
   restart runtime, không đụng production DB/network và audio lock vẫn bật.
+
+### Host regression after provider-schema UI slices (2026-08-05, non-audio)
+
+- Voice Server scoped suite `veetee-server/tests`: **81 passed**; runtime tools
+  `tools/runtime/tests`: **20 passed**; firmware host CTest `protocol_state`:
+  **1/1 passed** (không flash/reset board).
+- Manager Web: unit **92/92**, Chromium E2E **11/11**, typecheck/lint/build pass;
+  Manager API PostgreSQL dedicated `veetee_vubq_test`: **42/42**, lint/build/
+  `openapi:check` pass. Readiness read-only: Voice `18100`, API `18101`, Web
+  `18181` đều HTTP 200.
+- Không restart các service đang chạy, không gọi Groq, không phát audio/mở
+  microphone/speaker/serial audio, không flash/reset/erase ESP32, không đổi
+  Wi-Fi/Tailscale và không mutate production DB `veetee_vubq`.
