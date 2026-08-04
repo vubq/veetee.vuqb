@@ -166,3 +166,13 @@
   hello (đúng là route đã tới WebSocket handler). TLS/HTML/WebSocket từ hostname
   mới cần xác nhận trên peer khác trong tailnet vì userspace Tailscale không
   self-route từ shell này.
+
+### Controlled provider benchmark (2026-08-04)
+
+- Test-only A/B cùng profile v3/ASR/VAD/TTS và 5 warm turns: Groq 70B
+  `1257/1325 ms` (p50/p95), Groq 8B `1273/1323 ms`; cả hai có đủ `tts.start`/
+  `tts.stop`, không protocol error. GPU peak **881 MiB**, dưới promotion limit
+  `3500 MiB`; không có OOM.
+- Benchmark 70B với long-response config trước đó có outlier TTFA tới `3720 ms`,
+  nên M1 TTFA/promotion chưa được đánh dấu đạt. Không đổi model production;
+  production Voice revision `87` đã được giữ nguyên sau khi dừng fixture.
