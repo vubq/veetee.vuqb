@@ -1,8 +1,9 @@
 # Veetee Firmware
 
 ESP-IDF/FreeRTOS firmware slice cho ESP32-S3. Mốc hiện tại có protocol framing
-v1/v2/v3, I2S PCM, Opus frame encode/decode, Wi-Fi station, direct WebSocket v3,
-PTT state flow và bounded queue/task. Board profile/pin map nằm trong
+v1/v2/v3, host-validated MQTT/UDP v3 clear header, I2S PCM, Opus frame
+encode/decode, Wi-Fi station, direct WebSocket v3, PTT state flow và bounded
+queue/task. Board profile/pin map nằm trong
 `config/boards/`; credentials chỉ là local `sdkconfig` bị ignore.
 
 ## Host protocol tests
@@ -16,8 +17,10 @@ ctest --test-dir host-tests/build --output-on-failure
 The C host test and `veetee-server` Python protocol test read the same
 language-neutral oracle at `tests/fixtures/ws_audio_golden.csv`; this prevents
 the two implementations from silently drifting while keeping reference repos
-read-only. It validates framing/round-trip bytes, not a full peer-server
-conformance run.
+read-only. The additional `mqtt_udp_wire` CTest validates the 16-byte UDP v3
+header and bounded 1.400-byte payload without opening a socket or doing AES; the
+Python crypto/session fixtures cover the encrypted host-side path. These tests
+validate framing/round-trip bytes, not a full peer-server conformance run.
 
 ## ESP-IDF compile gate
 

@@ -9,3 +9,8 @@ target_compile_definitions(veetee_firmware_host_tests PRIVATE VT_WIRE_GOLDEN_FIX
 target_compile_options(veetee_firmware_host_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
 enable_testing()
 add_test(NAME protocol_state COMMAND veetee_firmware_host_tests)
+
+add_executable(veetee_firmware_mqtt_udp_wire_tests test_mqtt_udp_wire.c ../main/veetee_mqtt_udp_wire.c)
+target_include_directories(veetee_firmware_mqtt_udp_wire_tests PRIVATE ../main)
+target_compile_options(veetee_firmware_mqtt_udp_wire_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
+add_test(NAME mqtt_udp_wire COMMAND veetee_firmware_mqtt_udp_wire_tests)

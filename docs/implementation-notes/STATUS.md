@@ -23,7 +23,7 @@
 | M1 — realtime conversation | Đang làm, **chưa đóng DoD** | Streaming/cancellation/tool loop, v1/v2/v3 fixture, WakeNet, noise suppression, multi-key fixture 10/10, AEC lifecycle/resource 10/10; stale `tts/stop` barrier đã sửa; normal wake 2 lượt, barge-in lifecycle physical, corpus smoke 1 negative/1 positive và host TTFA warm p95 `1481,4 ms` pass. | Acoustic echo-only, false accept/reject corpus đủ lớn, voice-onset barge-in/time-to-silence, 100 repetition, provider promotion và cross-peer physical conformance. Các lần timeout AEC/bypass trước guard vẫn là diagnostic history, không coi là acoustic verdict. Xem [`M1.md`](M1.md). |
 | Groq multi-key | Hoàn tất cho **test harness** | `VEETEE_TEST_GROQ_KEYS_FILE` chỉ với fixture; round-robin; chỉ retry `429` trước delta đầu; không replay partial stream; firmware không chứa key. | Không phải production fallback/key rotation; nhiều key vẫn có thể cùng dính quota account/org/model/IP. |
 | M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary, TTL freshness, privacy export, async conversation delete/tombstone và host regression. | Promotion provider/model/VRAM, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
-| M3 — transport/hardware/OTA | Đang mở ở host-only slice | UDP v3 framing/AES-CTR/bounded reorder, `tts/start`/`tts/stop` stream barrier và MQTT control config/codec/session gate đã có golden/unit evidence; chưa nối carrier vào runtime. | MQTT client/gateway/socket, firmware carrier, MCP phần cứng, assets/OTA, loss/soak và transport-promotion cần mở sau. |
+| M3 — transport/hardware/OTA | Đang mở ở host-only slice | MQTT control/bridge/session, firmware UDP header codec, UDP v3 AES/reorder/barrier và deterministic loss/soak đã có golden/unit evidence; chưa nối carrier vào runtime. | MQTT client/gateway/socket, firmware encrypted carrier, MCP phần cứng, assets/OTA, real-network comparison và transport-promotion cần mở sau. |
 | M4 — hardening/multilingual | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | Capacity, backup/restore, security, locale thứ hai và soak dài. |
 
 ## Nơi xem trực tiếp
@@ -951,3 +951,12 @@
 - Đây chưa phải live gateway: không MQTT library/broker, UDP socket, Opus decode,
   firmware transport hoặc network side effect. Audio/ESP32/network lock vẫn giữ;
   real-network comparison, MCP, assets/OTA và transport promotion còn mở.
+
+### M3 firmware UDP wire codec build evidence — host-only (2026-08-05)
+
+- `veetee-firmware` host CTest: **2/2 passed**; ESP-IDF 6.0.2 `idf.py build`
+  cho ESP32-S3 pass, app binary `0x1593e0`, partition còn 66%.
+- Chỉ build, không flash/reset/erase, không mở socket/audio và không đổi NVS,
+  Wi‑Fi hoặc Tailscale. Build log ghi nhận hai cảnh báo nền cần xử lý riêng khi
+  mở carrier: component `mqtt` trong IDF tree không có `CMakeLists.txt`, và một
+  số ESP-SR Kconfig default là `False` thay vì `n`.
