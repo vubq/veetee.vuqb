@@ -25,6 +25,7 @@ class WakeAudioHarnessTest(unittest.TestCase):
         root = Path(__file__).resolve().parent
         scenario = wake_audio_test.load_scenario(root / "wake-test.example.json")
         self.assertEqual(scenario.repetitions, 1)
+        self.assertAlmostEqual(scenario.inter_repetition_delay_seconds, 0.25)
 
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -34,10 +35,12 @@ class WakeAudioHarnessTest(unittest.TestCase):
                 "player": {"command": ["never-run", "{file}"]},
                 "clips": {"wake": str(base / "wake.wav"), "utterance": str(base / "utterance.wav")},
                 "repetitions": 4,
+                "interRepetitionDelaySeconds": 0.75,
                 "events": [{"name": "wake", "marker": "wake detected", "timeoutSeconds": 1}],
             }), encoding="utf-8")
             parsed = wake_audio_test.load_scenario(scenario_file)
             self.assertEqual(parsed.repetitions, 4)
+            self.assertAlmostEqual(parsed.inter_repetition_delay_seconds, 0.75)
 
             document = json.loads(scenario_file.read_text(encoding="utf-8"))
             document["repetitions"] = 101

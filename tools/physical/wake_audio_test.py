@@ -54,6 +54,7 @@ class Scenario:
     stages: tuple[Stage, ...]
     utterance_after: str
     startup_wait_seconds: float
+    inter_repetition_delay_seconds: float
     repetitions: int
     firmware_config: Path
     required_protocol_profile: int
@@ -151,6 +152,7 @@ def load_scenario(path: Path) -> Scenario:
         stages=tuple(stages),
         utterance_after=_string(document.get("utteranceAfter", stages[0].name), "utteranceAfter"),
         startup_wait_seconds=_number(monitor.get("startupWaitSeconds", 1), "monitor.startupWaitSeconds", minimum=0, maximum=30),
+        inter_repetition_delay_seconds=_number(document.get("interRepetitionDelaySeconds", 0.25), "interRepetitionDelaySeconds", minimum=0, maximum=10),
         repetitions=int(_number(document.get("repetitions", 1), "repetitions", minimum=1, maximum=100)),
         firmware_config=firmware_config,
         required_protocol_profile=required_protocol_profile,
@@ -420,6 +422,7 @@ def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) 
             "firmwareConfig": firmware_config or {"path": str(scenario.firmware_config), "exists": False},
             "events": [stage.__dict__ for stage in scenario.stages],
             "utteranceAfter": scenario.utterance_after,
+            "interRepetitionDelaySeconds": scenario.inter_repetition_delay_seconds,
             "repetitions": scenario.repetitions,
         }, ensure_ascii=False, indent=2))
         return []
@@ -467,6 +470,8 @@ def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) 
                 utterance_player = _start_player(scenario.player_command, scenario.utterance_clip, allow_audio=True)
                 _wait_player(utterance_player, scenario.utterance_clip)
                 utterance_player = None
+            if repetition < scenario.repetitions and scenario.inter_repetition_delay_seconds > 0:
+                time.sleep(scenario.inter_repetition_delay_seconds)
         return results
     except subprocess.TimeoutExpired as error:
         raise HarnessError(f"audio player did not finish: {error}") from error
