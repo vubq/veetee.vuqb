@@ -305,3 +305,19 @@
   descriptor không có backlight.
 - ESP-IDF 6.0.2 build pass, binary còn 66% app partition; firmware host CTest
   1/1 pass. Không flash, không phát audio, không đổi NVS/Wi-Fi/network.
+
+### Runtime database test-data audit (2026-08-05)
+
+- Read-only API audit trên database riêng `veetee_vubq` cho thấy dữ liệu device
+  mẫu từ các test lịch sử vẫn còn (nhiều record tên `Postgres robot`, cùng
+  assistant); đây là data pollution đã tồn tại trước lượt này, không phải
+  runtime tự nhân bản khi board reconnect. Device thật hiện vẫn được presence
+  gửi với `activeConnections=1`, nhưng chưa bind vào assistant nên
+  `onlineDeviceCount=0` là hợp lý.
+- Không xoá hoặc sửa trực tiếp các record vì đó là thao tác destructive và chưa
+  có chỉ định record nào cần giữ. Các PostgreSQL test hiện dùng riêng
+  `veetee_vubq_test`; backup dump runtime đang nằm ngoài Git để operator quyết
+  định cleanup/restore sau.
+- Đây là blocker dữ liệu của M2 dashboard, không đóng M2; cleanup tiếp theo phải
+  có allowlist record hoặc restore snapshot được operator duyệt, không được
+  dùng `DELETE` mù.
