@@ -409,8 +409,8 @@ loại bỏ hostname/mapping cũ:
 | `https://veetee.tail52a635.ts.net/openapi.json` | Vite proxy → `127.0.0.1:18101` | Manager API contract |
 | `wss://veetee.tail52a635.ts.net/veetee/v1/` | Vite WebSocket proxy → `127.0.0.1:18100` | Voice Server |
 
-Hostname hiện tại lấy từ `tailscale status`: `veetee.tail52a635.ts.net`; node
-đã đổi từ `veetee-dev`. Toàn bộ Serve/Funnel mapping cũ đã reset, không còn
+Hostname hiện tại lấy từ `tailscale status`: `veetee.tail52a635.ts.net`; hostname
+và Serve/Funnel mapping cũ đã được loại bỏ, không còn
 public Funnel. `/veetee/v1/` là route tương thích ổn định; profile wire mặc
 định vẫn là WebSocket v3 (`Protocol-Version: 3`) và server không silent
 downgrade. Probe từ chính host có userspace Tailscale không tự route được tới
