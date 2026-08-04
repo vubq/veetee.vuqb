@@ -349,3 +349,15 @@
 - Đây là blocker dữ liệu của M2 dashboard, không đóng M2; cleanup tiếp theo phải
   có allowlist record hoặc restore snapshot được operator duyệt, không được
   dùng `DELETE` mù.
+
+### Assistant summary read-state hardening (2026-08-04)
+
+- Manager Web giờ phân biệt `loading`, `error`, `offline`, `not-found` và
+  `ready` khi tải assistant theo route; lỗi gateway không còn rơi vào empty
+  state giả. Retry dùng component `AssistantSummaryState` chung và focus vào
+  heading để screen reader nhận biết thay đổi.
+- Bốn workspace view không render form/controls từ assistant stale khi API lỗi;
+  route param đổi sẽ hủy kết quả cũ bằng generation guard và tải assistant mới.
+- Verification không audio: Web typecheck/lint/build, **66/66 unit tests**;
+  Chromium E2E **9/9** (gồm core a11y serious/critical gate). Không đổi
+  API/database/firmware, Wi-Fi hoặc Tailscale.

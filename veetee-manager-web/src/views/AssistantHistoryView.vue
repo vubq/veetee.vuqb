@@ -3,10 +3,11 @@ import { computed } from 'vue'
 
 import ConversationHistoryFeature from '@/features/history/ConversationHistoryFeature.vue'
 import { useAssistantSummary } from '@/features/assistants/useAssistantSummary'
+import AssistantSummaryState from '@/features/assistants/AssistantSummaryState.vue'
 import AssistantWorkspaceShell from '@/layouts/AssistantWorkspaceShell.vue'
 import VtSkeleton from '@/ui/primitives/VtSkeleton.vue'
 
-const { assistant, loading } = useAssistantSummary()
+const { assistant, loading, loadState, loadError, reloadAssistant } = useAssistantSummary()
 const shellAssistant = computed(() => assistant.value ? { id: assistant.value.id, name: assistant.value.name, locale: assistant.value.locale, status: assistant.value.onlineDeviceCount > 0 ? 'online' : 'offline' } : undefined)
 </script>
 
@@ -21,7 +22,7 @@ const shellAssistant = computed(() => assistant.value ? { id: assistant.value.id
     </div>
   </main>
   <AssistantWorkspaceShell
-    v-else-if="shellAssistant && assistant"
+    v-else-if="loadState === 'ready' && shellAssistant && assistant"
     :assistant="shellAssistant"
     section-title="Lịch sử hội thoại"
     section-description="Transcript, latency và retention policy của trợ lý"
@@ -29,13 +30,12 @@ const shellAssistant = computed(() => assistant.value ? { id: assistant.value.id
   >
     <ConversationHistoryFeature :assistant="assistant" />
   </AssistantWorkspaceShell>
-  <main
+  <AssistantSummaryState
     v-else
-    id="main-content"
-    class="page-container"
-  >
-    <p>Không tìm thấy trợ lý.</p>
-  </main>
+    :state="loadState"
+    :error-message="loadError"
+    @retry="reloadAssistant"
+  />
 </template>
 
 <style scoped>.view-gap { margin-top: 14px; }</style>
