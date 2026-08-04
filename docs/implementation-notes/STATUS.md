@@ -594,3 +594,11 @@
 - Audio lock vẫn giữ nguyên: không `pw-play`, wake/audio harness,
   microphone/speaker/serial audio, flash/reset/erase firmware hoặc thay đổi
   Wi-Fi/Tailscale; không mutate production DB `veetee_vubq`.
+
+### Read-only readiness after host regression (2026-08-05, non-audio)
+
+- Không restart process: Voice `18100/health/ready`, Manager API
+  `18101/health/ready` và Manager Web `18181/` đều HTTP **200**.
+- Voice hiện báo `revision=87`, `activeConnections=1`, `activeTurns=0`,
+  `maxActiveTurns=1`; các counter/resource lịch sử không được diễn giải là
+  physical acceptance. Không gửi frame, không gọi Groq, không mở serial/audio.
