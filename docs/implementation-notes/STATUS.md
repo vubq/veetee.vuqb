@@ -820,6 +820,18 @@
   đổi API/wire/provider fallback, không restart runtime, không phát audio/mở
   microphone/speaker, không flash/reset ESP32, không đổi Wi-Fi/Tailscale.
 
+### Final host regression while audio testing paused (2026-08-05, non-audio)
+
+- Voice Server: **82/82** tests, `python3 -m compileall -q src` và Ruff pass;
+  Manager API dedicated PostgreSQL `veetee_vubq_test`: **43/43**, lint/build/
+  `openapi:check` pass.
+- Manager Web: unit **93/93**, Chromium E2E **11/11**, typecheck/lint/build pass;
+  runtime tools **20/20**; firmware host CTest `protocol_state` **1/1**.
+- Readiness read-only: Voice `18100`, Manager API `18101`, Web `18181` đều HTTP
+  200. Không restart service, không gọi Groq, không phát audio/wake harness,
+  không mở microphone/speaker/serial audio, không flash/reset/erase ESP32,
+  không đổi Wi-Fi/Tailscale và không mutate production `veetee_vubq`.
+
 ### Provider catalog schema-version gate (2026-08-05, host-only)
 
 - `parseCatalog()` yêu cầu `schemaVersion === 1` trước khi validate
