@@ -960,3 +960,18 @@
   Wi‑Fi hoặc Tailscale. Build log ghi nhận hai cảnh báo nền cần xử lý riêng khi
   mở carrier: component `mqtt` trong IDF tree không có `CMakeLists.txt`, và một
   số ESP-SR Kconfig default là `False` thay vì `n`.
+
+### M3 managed MQTT dependency resolution — build-only (2026-08-05)
+
+- Firmware khai báo `espressif/mqtt` trong `main/idf_component.yml` và
+  `main/CMakeLists.txt`; `idf.py reconfigure` resolve registry version **1.1.0**
+  và cập nhật `dependencies.lock`. Managed component output vẫn bị ignore, không
+  vendor vào repository.
+- `idf.py build` ESP32-S3 pass **1259/1259**, binary `0x1593e0`, app partition
+  còn **66%**. Đây chỉ là dependency/build evidence; MQTT client, broker,
+  UDP socket, encrypted carrier và runtime promotion chưa triển khai. Direct
+  WebSocket v3 vẫn là default.
+- Warning placeholder MQTT của IDF root và ESP-SR Kconfig `False`/`y-n` vẫn là
+  warning nền, được ghi nhận để xử lý khi mở carrier; không sửa IDF trong lát cắt
+  này. Audio/physical lock tiếp tục: không phát/thu audio, không serial audio,
+  không flash/reset/erase, không đổi Wi‑Fi/Tailscale, không dùng production DB.
