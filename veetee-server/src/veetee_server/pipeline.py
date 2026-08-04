@@ -280,6 +280,7 @@ class TurnPipeline:
                 if not next_delta.done():
                     next_delta.cancel()
                 await asyncio.gather(*(task for task in (timer, next_delta) if task is not None), return_exceptions=True)
+                await self._close_stream(stream)
             if tool_name and self._execute_tool is not None:
                 if self._cancelled():
                     return " ".join(answer_parts).strip()
@@ -327,6 +328,23 @@ class TurnPipeline:
             await self._flush_packetizer()
             await self._emit_tts_stop("complete")
         return " ".join(answer_parts).strip()
+
+    @staticmethod
+    async def _close_stream(stream: Any) -> None:
+        """Close an async provider stream after its reader task has joined."""
+
+        close = getattr(stream, "aclose", None)
+        if close is None:
+            return
+        for _ in range(8):
+            try:
+                await close()
+                return
+            except RuntimeError as exc:
+                if "already running" not in str(exc):
+                    raise
+                await asyncio.sleep(0)
+        raise ProviderError("LLM_STREAM_CLOSE_FAILED", "LLM stream did not close after cancellation")
 
     async def _emit_tts_stop(self, reason: str) -> None:
         """Close the speaking phase once, including terminal provider errors."""

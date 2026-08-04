@@ -144,6 +144,44 @@ async def test_cancelled_turn_drops_queued_audio_packet():
 
 
 @pytest.mark.asyncio
+async def test_cancelled_turn_closes_async_llm_stream_after_reader_join():
+    snapshot = load_snapshot(Path(__file__).parents[1] / "config/fixtures/m0.json")
+    registry = ProviderRegistry(snapshot)
+    llm_started = asyncio.Event()
+    llm_closed = asyncio.Event()
+
+    class SlowLLM:
+        async def stream(self, *, prompt, locale, tools):
+            del prompt, locale, tools
+            try:
+                llm_started.set()
+                await asyncio.sleep(30)
+                yield LLMDelta(text="không được phát")
+            finally:
+                llm_closed.set()
+
+    registry.llm = SlowLLM()
+    turn = Turn(turn_id="cancel-stream", generation=1, mode="manual", cancelled=asyncio.Event())
+    pipeline = TurnPipeline(
+        snapshot=snapshot,
+        registry=registry,
+        codec=OpusCodec(16_000, 24_000),
+        profile="ws-v3",
+        session_id="cancel-stream-session",
+        turn=turn,
+        send_text=lambda value: _append([], value),
+        send_binary=lambda value: _append([], value),
+        metrics={},
+    )
+    task = asyncio.create_task(pipeline.finish())
+    await asyncio.wait_for(llm_started.wait(), timeout=2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert llm_closed.is_set()
+
+
+@pytest.mark.asyncio
 async def test_tool_call_round_trip_streams_answer_after_device_result(tmp_path):
     source = json.loads((Path(__file__).parents[1] / "config/fixtures/m0.json").read_text(encoding="utf-8"))
     source["tools"] = [{"name": "device.led.set", "description": "Set RGB LED", "inputSchema": {"type": "object"}}]
