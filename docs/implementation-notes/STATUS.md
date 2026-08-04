@@ -282,6 +282,20 @@
   cấp quyền mới; thời gian còn lại chỉ được làm host/serial-read-only/docs/runtime
   checks không phát âm thanh.
 
+### MCP wire serializer host/build slice (2026-08-05)
+
+- Hoàn tất serializer response JSON-RPC bounded trong firmware với outer
+  `session_id/type/payload` envelope, `initialize`, `tools/list`, generic
+  `result` và sibling `error`; fixed literal lengths không còn hand-counted.
+- `tools/list` dùng opaque `nextCursor` là tên tool kế tiếp để tương thích peer
+  tham chiếu; serializer không nhúng tên tool/GPIO/provider vào code.
+- Host CTest firmware: **4/4 passed**; ESP-IDF 6.0.2 build-only pass, binary
+  `0x1593e0`, app partition còn **66%**.
+- Đây chỉ là serializer; inbound cJSON parser, main transport callback,
+  BoardHal/MCP hardware tools và physical conformance vẫn mở. Không flash/reset,
+  không phát audio, không truy cập mic/loa/serial audio, không đổi Wi‑Fi/Tailscale
+  và không mutate production database `veetee_vubq`.
+
 ### PostgreSQL test isolation and acoustic-test pause (2026-08-04)
 
 - Test harness Manager API nay fail-closed nếu `VEETEE_TEST_DATABASE_URL_FILE`
