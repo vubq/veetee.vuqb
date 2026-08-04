@@ -94,7 +94,14 @@ class RuntimeConfigManager:
 
     async def start(self) -> None:
         source = await self._read_source()
-        await self._activate(source)
+        activated = await self._activate(source)
+        if not activated:
+            # Startup must fail at the provider boundary. Starting the poller
+            # without a view would make the service fail later with a generic
+            # "runtime configuration is not ready" error and hide the actual
+            # dependency/model/configuration failure from the operator.
+            error_type = self.last_activation_error_type or "unknown"
+            raise RuntimeError(f"runtime configuration activation failed: {error_type}")
         self._task = asyncio.create_task(self._poll_loop(), name="runtime-config-poll")
 
     async def stop(self) -> None:

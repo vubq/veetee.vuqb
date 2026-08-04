@@ -87,6 +87,24 @@ async def test_initial_resource_plan_is_recorded_without_dual_residency(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_initial_activation_failure_is_reported_before_poller_start(monkeypatch):
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(FIXTURE))
+    monkeypatch.setattr("veetee_server.runtime.ProviderRegistry", TrackingRegistry)
+    TrackingRegistry.instances.clear()
+    TrackingRegistry.fail_revisions.clear()
+    TrackingRegistry.fail_revisions.add(1)
+
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    with pytest.raises(RuntimeError, match="runtime configuration activation failed: ProviderError"):
+        await runtime.start()
+    assert runtime.last_activation_error_type == "ProviderError"
+    assert len(TrackingRegistry.instances) == 1
+    assert TrackingRegistry.instances[0].close_calls == 1
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_over_budget_candidate_is_rejected_before_registry_instantiation(monkeypatch, tmp_path):
     candidate_file = tmp_path / "candidate.json"
     candidate = budgeted_snapshot(FIXTURE, candidate_file, candidatePeakDeltaMiB=2200, candidateWarmPeakMiB=3200)

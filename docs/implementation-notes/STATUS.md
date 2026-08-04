@@ -1111,3 +1111,12 @@
 - Voice Server regression **139 passed**, Ruff/compileall pass. Đây chỉ là
   host/runtime evidence; M0/M1 physical gates vẫn mở. Theo operator lock từ
   đây không phát audio hoặc mở serial audio cho tới khi được cấp quyền mới.
+
+### Startup activation error boundary (2026-08-05)
+
+- Voice runtime giờ fail-fast ngay khi activation đầu tiên không thành công,
+  giữ nguyên last-known-good/cleanup semantics và báo type lỗi rõ ràng thay vì
+  rơi xuống `runtime configuration is not ready` sau đó.
+- Regression runtime **14 passed**, full Voice Server **140 passed**, Ruff và
+  compileall pass. Source change chưa được physical/audio acceptance; khóa
+  không phát audio và không mở serial audio vẫn giữ nguyên.
