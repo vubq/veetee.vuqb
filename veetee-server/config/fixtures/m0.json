@@ -21,6 +21,10 @@
     "acknowledgementId": "processing",
     "deadlineMs": 900
   },
+  "admission": {
+    "maxActiveTurns": 1,
+    "retryAfterMs": 250
+  },
   "providers": {
     "vad": {
       "providerId": "veetee.vad.energy",

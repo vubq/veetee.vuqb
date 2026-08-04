@@ -11,6 +11,7 @@ import VtButton from '@/ui/primitives/VtButton.vue'
 import VtCard from '@/ui/primitives/VtCard.vue'
 import VtFormField from '@/ui/primitives/VtFormField.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
+import VtInput from '@/ui/primitives/VtInput.vue'
 import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
 import VtSkeleton from '@/ui/primitives/VtSkeleton.vue'
 import VtSwitch from '@/ui/primitives/VtSwitch.vue'
@@ -46,6 +47,10 @@ function toDraft(config: RoleConfig): RoleConfigDraft {
     personalityId: config.personalityId,
     personalityName: config.personalityName,
     speech: { ...config.speech },
+    admission: {
+      maxActiveTurns: config.admission?.maxActiveTurns ?? 1,
+      retryAfterMs: config.admission?.retryAfterMs ?? 250,
+    },
   }
 }
 
@@ -58,6 +63,16 @@ const dirty = computed(() => {
   const original = toDraft(resource.value.value)
   return JSON.stringify(original) !== JSON.stringify(draft.value)
 })
+
+const maxActiveTurnsInvalid = computed(() => {
+  const value = draft.value?.admission.maxActiveTurns
+  return value === undefined || !Number.isInteger(value) || value < 1 || value > 8
+})
+const retryAfterInvalid = computed(() => {
+  const value = draft.value?.admission.retryAfterMs
+  return value === undefined || !Number.isInteger(value) || value < 100 || value > 10000
+})
+const admissionError = computed(() => maxActiveTurnsInvalid.value || retryAfterInvalid.value)
 
 const voiceOptions = computed<VtSelectOption[]>(() => voices.value.map((voice) => ({ value: voice.id, label: voice.name, description: `${voice.providerName} · ${voice.description}`, disabled: !voice.available })))
 const localeOptions: VtSelectOption[] = [{ value: 'vi-VN', label: 'Tiếng Việt', description: 'Ưu tiên hiện tại' }, { value: 'en-US', label: 'English (US)', description: 'Kiến trúc đã sẵn sàng mở rộng' }]
@@ -127,7 +142,15 @@ async function save() {
   actionError.value = ''
   saving.value = true
   try {
-    const result = await gateway.saveRoleConfig(props.assistantId, { ...draft.value, speech: { ...draft.value.speech } }, resource.value.etag)
+    const result = await gateway.saveRoleConfig(
+      props.assistantId,
+      {
+        ...draft.value,
+        speech: { ...draft.value.speech },
+        admission: { ...draft.value.admission },
+      },
+      resource.value.etag,
+    )
     if (result.ok) {
       resource.value = result.data
       draft.value = toDraft(result.data.value)
@@ -376,6 +399,52 @@ onMounted(load)
       </div>
     </FormSection>
 
+    <FormSection
+      title="Giới hạn tài nguyên"
+      description="Admission policy bảo vệ VRAM và giữ phiên còn lại ổn định."
+    >
+      <div class="two-columns">
+        <VtFormField
+          label="Lượt hội thoại đồng thời"
+          for-id="role-max-active-turns"
+          :error="maxActiveTurnsInvalid ? 'Chọn từ 1 đến 8 lượt.' : undefined"
+          hint="Mặc định 1 trên máy local hiện tại."
+        >
+          <VtInput
+            id="role-max-active-turns"
+            type="number"
+            min="1"
+            max="8"
+            step="1"
+            inputmode="numeric"
+            :model-value="String(draft.admission.maxActiveTurns)"
+            :invalid="maxActiveTurnsInvalid"
+            aria-label="Lượt hội thoại đồng thời"
+            @update:model-value="draft.admission.maxActiveTurns = Number($event)"
+          />
+        </VtFormField>
+        <VtFormField
+          label="Thời gian thử lại khi bận"
+          for-id="role-retry-after-ms"
+          :error="retryAfterInvalid ? 'Chọn từ 100 đến 10.000 ms.' : undefined"
+          hint="Khoảng chờ gửi trong alert SERVER_BUSY."
+        >
+          <VtInput
+            id="role-retry-after-ms"
+            type="number"
+            min="100"
+            max="10000"
+            step="50"
+            inputmode="numeric"
+            :model-value="String(draft.admission.retryAfterMs)"
+            :invalid="retryAfterInvalid"
+            aria-label="Thời gian thử lại khi bận"
+            @update:model-value="draft.admission.retryAfterMs = Number($event)"
+          />
+        </VtFormField>
+      </div>
+    </FormSection>
+
     <footer class="form-actions">
       <p
         v-if="actionError"
@@ -400,7 +469,7 @@ onMounted(load)
       <VtButton
         type="submit"
         variant="primary"
-        :disabled="!dirty || draft.basePrompt.length > 2000"
+        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError)"
         :loading="saving"
       >
         <template #leading>

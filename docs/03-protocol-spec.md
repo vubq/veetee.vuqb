@@ -725,7 +725,7 @@ cancel hardware side effect
 | `mcp` | `session_id`, object `payload` | — | dispatch device JSON-RPC server |
 | `iot` | array `commands` | — | legacy-only hardware command |
 | `system` | `command` | — | hiện chỉ compatibility `reboot` |
-| `alert` | `status`, `message`, `emotion` | — | thông báo local |
+| `alert` | `status`, `message`, `emotion` | `code`, `retry_after_ms`, `session_id` | thông báo local; `SERVER_BUSY` giữ session idle để retry |
 | `custom` | object `payload` | — | compile-time optional; không dùng core flow |
 | `pong` | `type` | `timestamp` | optional heartbeat response |
 | `goodbye` | `session_id` | — | MQTT/UDP only |
@@ -825,6 +825,12 @@ Firmware MUST schedule reboot lên state owner và chỉ nhận đúng command �
 validation của firmware tham chiếu
 (`references/xiaozhi-esp32/main/application.cc:613-646`). Veetee server không dùng
 `system`/`custom` cho normal ASR → LLM → TTS flow.
+
+Khi resource admission không còn slot, server MUST không tạo turn hoặc gọi
+provider. Nó gửi additive `alert` với `code:"SERVER_BUSY"` và optional
+`retry_after_ms`; firmware xử lý alert như abort/re-arm và giữ WebSocket để có
+thể thử lại. `retry_after_ms` là hint, không phải queue guarantee. Capacity lấy
+từ snapshot `admission.maxActiveTurns`; default tương thích an toàn là `1`.
 
 `tts/sentence_end` không thuộc contract bắt buộc vì snapshot chỉ có browser client
 nhận type đó mà không có producer tương ứng trong sender

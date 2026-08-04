@@ -97,6 +97,7 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
       basePrompt: draft.basePrompt,
       personality: { id: draft.personalityId, name: draft.personalityName },
       speech: { ...draft.speech },
+      admission: { ...draft.admission },
     }
     const result = await this.execute(() => this.client.PATCH('/api/v1/assistants/{id}/role-config', {
       params: { path: { id: assistantId } },
@@ -276,6 +277,10 @@ function roleConfig(assistantId: string, value: Record<string, unknown>): RoleCo
       rate: typeof speech.rate === 'number' ? speech.rate : 1,
       pitch: typeof speech.pitch === 'number' ? speech.pitch : 0,
       style: speech.style === 'concise' || speech.style === 'detailed' ? speech.style : 'natural',
+    },
+    admission: {
+      maxActiveTurns: isRecord(value.admission) && typeof value.admission.maxActiveTurns === 'number' ? value.admission.maxActiveTurns : 1,
+      retryAfterMs: isRecord(value.admission) && typeof value.admission.retryAfterMs === 'number' ? value.admission.retryAfterMs : 250,
     },
   }
 }

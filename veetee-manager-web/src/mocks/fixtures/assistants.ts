@@ -74,6 +74,10 @@ export function createRoleConfigFixtures(): Record<
           pitch: 0,
           style: 'natural',
         },
+        admission: {
+          maxActiveTurns: 1,
+          retryAfterMs: 250,
+        },
       },
       revision: 7,
       etag: '"role-may-rev-7"',
@@ -91,6 +95,10 @@ export function createRoleConfigFixtures(): Record<
           rate: 1.05,
           pitch: -1,
           style: 'concise',
+        },
+        admission: {
+          maxActiveTurns: 1,
+          retryAfterMs: 250,
         },
       },
       revision: 2,

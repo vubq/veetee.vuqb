@@ -171,7 +171,7 @@ async def test_auto_endpoint_ingests_last_frame_and_ignores_late_audio(monkeypat
                 if event.get("type") == "tts" and event.get("state") == "stop":
                     break
         await ws.send_bytes(frame)
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.05)
 
         assert events.index("asr_accept") < events.index("asr_finish")
         assert events.count("asr_accept") == 1
@@ -363,6 +363,74 @@ async def test_duplicate_device_hello_handover_closes_old_session(monkeypatch):
             await old.close()
         if replacement is not None:
             await replacement.close()
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_turn_admission_rejects_second_device_then_releases_after_abort(monkeypatch):
+    """A second device stays connected but cannot allocate a model turn."""
+
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+
+    async def open_session(device_id: str):
+        websocket = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": device_id, "Client-Id": f"client-{device_id}", "Protocol-Version": "3"},
+        )
+        await websocket.send_json(
+            {
+                "type": "hello",
+                "version": 3,
+                "transport": "websocket",
+                "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+            }
+        )
+        return websocket, await websocket.receive_json()
+
+    first = None
+    second = None
+    try:
+        assert service.turn_capacity() == (1, 250)
+        first, first_hello = await open_session("turn-owner")
+        second, second_hello = await open_session("turn-waiter")
+        await first.send_json({"type": "listen", "state": "start", "mode": "manual", "session_id": first_hello["session_id"]})
+        await second.send_json({"type": "listen", "state": "start", "mode": "manual", "session_id": second_hello["session_id"]})
+
+        busy = await second.receive_json(timeout=2)
+        assert busy["type"] == "alert"
+        assert busy["code"] == "SERVER_BUSY"
+        assert busy["retry_after_ms"] == 250
+        assert service.metrics["active_turns"] == 1
+        assert service.metrics["turn_rejections"] == 1
+
+        await first.send_json({"type": "abort", "reason": "test", "session_id": first_hello["session_id"]})
+        stop = await first.receive_json(timeout=2)
+        assert stop["type"] == "tts"
+        assert stop["state"] == "stop"
+        assert service.metrics["active_turns"] == 0
+
+        await second.send_json({"type": "listen", "state": "start", "mode": "manual", "session_id": second_hello["session_id"]})
+        await asyncio.sleep(0.05)
+        assert service.metrics["active_turns"] == 1
+        await second.send_json({"type": "abort", "reason": "test", "session_id": second_hello["session_id"]})
+        await second.receive_json(timeout=2)
+        assert service.metrics["active_turns"] == 0
+        assert service.metrics["turn_releases"] >= 2
+    finally:
+        if first is not None:
+            await first.close()
+        if second is not None:
+            await second.close()
         await client.close()
         await runtime.stop()
 

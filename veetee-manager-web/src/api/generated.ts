@@ -3140,6 +3140,10 @@ export interface operations {
                     segmentation?: Record<string, never>;
                     bargeIn?: Record<string, never>;
                     toolPolicy?: Record<string, never>;
+                    admission?: {
+                        maxActiveTurns?: number;
+                        retryAfterMs?: number;
+                    };
                     tools?: {
                         [key: string]: unknown;
                     }[];
@@ -5671,6 +5675,20 @@ export interface operations {
             };
             /** @description State conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Conversation event too large */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -43,6 +43,7 @@ test('manager API publishes config through immutable ETag flow', async () => {
       segmentation: { minimumCharacters: 2, maximumCharacters: 120 },
       bargeIn: { minSpeechFrames: 2 },
       toolPolicy: { maxRounds: 2, timeoutMs: 5000 },
+      admission: { maxActiveTurns: 1, retryAfterMs: 250 },
       tools: [{ name: 'device.led.set', description: 'Set the RGB LED.' }],
     }
     const update = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/role-config`, headers: { 'if-match': role.headers.etag }, payload: nextRole })
@@ -57,6 +58,8 @@ test('manager API publishes config through immutable ETag flow', async () => {
     assert.equal(runtime.json().segmentation.maximumCharacters, 120)
     assert.equal(runtime.json().bargeIn.minSpeechFrames, 2)
     assert.equal(runtime.json().toolPolicy.maxRounds, 2)
+    assert.equal(runtime.json().admission.maxActiveTurns, 1)
+    assert.equal(runtime.json().admission.retryAfterMs, 250)
     assert.equal(runtime.json().tools[0].name, 'device.led.set')
 
     const notModified = await app.inject({ method: 'GET', url: '/internal/v1/runtime-config', headers: { 'if-none-match': runtime.headers.etag } })

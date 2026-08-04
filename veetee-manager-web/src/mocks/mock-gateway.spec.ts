@@ -34,6 +34,7 @@ function toRoleDraft(role: RoleConfig): RoleConfigDraft {
     personalityId: role.personalityId,
     personalityName: role.personalityName,
     speech: structuredClone(role.speech),
+    admission: structuredClone(role.admission),
   }
 }
 

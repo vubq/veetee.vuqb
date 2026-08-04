@@ -262,6 +262,7 @@ Snapshot là contract immutable mà Voice Server tiêu thụ. Hình dạng tối
   "personality": { "id": "uuid", "revision": 3 },
   "speech": { "voiceId": "uuid", "rate": 1, "pitch": 0, "style": "natural" },
   "progress": { "enabled": true, "acknowledgementId": "processing", "deadlineMs": 900 },
+  "admission": { "maxActiveTurns": 1, "retryAfterMs": 250 },
   "segmentation": { "minimumCharacters": 1, "maximumCharacters": 180 },
   "bargeIn": { "minSpeechFrames": 2 },
   "toolPolicy": { "maxRounds": 3, "timeoutMs": 30000 },
@@ -287,6 +288,12 @@ qua draft/publish để Voice Server áp dụng atomically; peer/phiên bản c�
 hiểu field thì bỏ qua. Progress acknowledgement cho tác vụ lâu là configuration
 theo locale/personality, ví dụ policy chứa threshold và translation/prompt key.
 Không hardcode câu “đợi chút” vào pipeline hoặc UI.
+
+`admission` cũng là policy additive của snapshot. `maxActiveTurns` bị giới hạn
+trong khoảng 1–8; `retryAfterMs` chỉ là hint cho client khi server trả
+`alert.code="SERVER_BUSY"`. Baseline local chọn một active turn để giữ VRAM/RAM
+an toàn; server không tự queue hoặc đổi provider. Mở rộng concurrency chỉ sau
+benchmark resource có revision/ADR riêng.
 
 ### 4.4 Provider invariant: một lựa chọn, không fallback
 

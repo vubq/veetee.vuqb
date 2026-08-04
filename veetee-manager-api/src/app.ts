@@ -28,6 +28,13 @@ const roleBodySchema = {
     segmentation: { type: 'object', maxProperties: 32 },
     bargeIn: { type: 'object', maxProperties: 32 },
     toolPolicy: { type: 'object', maxProperties: 32 },
+    admission: {
+      type: 'object', additionalProperties: false, maxProperties: 4,
+      properties: {
+        maxActiveTurns: { type: 'integer', minimum: 1, maximum: 8 },
+        retryAfterMs: { type: 'integer', minimum: 100, maximum: 10000 },
+      },
+    },
     tools: { type: 'array', maxItems: 128, items: { type: 'object', additionalProperties: true } },
     memoryEnabled: { type: 'boolean' },
   },

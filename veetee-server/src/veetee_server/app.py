@@ -46,6 +46,10 @@ class VoiceApplication:
             "session_releases": 0,
             "session_handovers": 0,
             "session_handover_cleanup_errors": 0,
+            "active_turns": 0,
+            "turn_admissions": 0,
+            "turn_rejections": 0,
+            "turn_releases": 0,
             "protocol_errors": 0,
             "audio_frames_in": 0,
             "audio_frames_out": 0,
@@ -54,6 +58,8 @@ class VoiceApplication:
         self._sessions: set[VoiceSession] = set()
         self._session_admission_lock = asyncio.Lock()
         self._session_leases: dict[str, VoiceSession] = {}
+        self._turn_admission_lock = asyncio.Lock()
+        self._turn_leases: dict[str, VoiceSession] = {}
 
     def make_app(self) -> web.Application:
         app = web.Application(client_max_size=self.config.max_ws_message_bytes)
@@ -79,6 +85,8 @@ class VoiceApplication:
                 "revision": view.snapshot.revision,
                 "configChecksum": view.snapshot.checksum,
                 "activeConnections": self.metrics["active_connections"],
+                "activeTurns": self.metrics["active_turns"],
+                "maxActiveTurns": self.turn_capacity()[0],
                 "activationFailures": self.runtime.activation_failures,
                 "lastActivationErrorType": self.runtime.last_activation_error_type,
             }
@@ -140,6 +148,45 @@ class VoiceApplication:
                 del self._session_leases[session.device_id]
             self.metrics["session_releases"] += 1
 
+    def turn_capacity(self) -> tuple[int, int]:
+        """Read bounded turn admission policy from the active snapshot."""
+
+        try:
+            raw = self.runtime.view.snapshot.raw.get("admission") or {}
+        except RuntimeError:
+            raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
+        max_active = raw.get("maxActiveTurns", 1)
+        retry_after = raw.get("retryAfterMs", 1000)
+        if isinstance(max_active, bool) or not isinstance(max_active, int):
+            self.metrics["admission_invalid_policy"] = self.metrics.get("admission_invalid_policy", 0) + 1
+            max_active = 1
+        if isinstance(retry_after, bool) or not isinstance(retry_after, int):
+            self.metrics["admission_invalid_policy"] = self.metrics.get("admission_invalid_policy", 0) + 1
+            retry_after = 1000
+        return max(1, min(max_active, 8)), max(100, min(retry_after, 10_000))
+
+    async def acquire_turn(self, session: "VoiceSession", turn_id: str) -> tuple[bool, int]:
+        """Try to reserve a model turn without waiting behind live audio."""
+
+        capacity, retry_after = self.turn_capacity()
+        async with self._turn_admission_lock:
+            if len(self._turn_leases) >= capacity:
+                self.metrics["turn_rejections"] += 1
+                return False, retry_after
+            self._turn_leases[turn_id] = session
+            self.metrics["turn_admissions"] += 1
+            self.metrics["active_turns"] = len(self._turn_leases)
+            return True, retry_after
+
+    async def release_turn(self, session: "VoiceSession", turn_id: str) -> None:
+        async with self._turn_admission_lock:
+            if self._turn_leases.get(turn_id) is session:
+                del self._turn_leases[turn_id]
+                self.metrics["turn_releases"] += 1
+                self.metrics["active_turns"] = len(self._turn_leases)
+
 
 class VoiceSession:
     def __init__(self, app: VoiceApplication, ws: web.WebSocketResponse, *, device_id: str, client_id: str, profile: str) -> None:
@@ -164,6 +211,7 @@ class VoiceSession:
         self._closed = False
         self._admitted = False
         self._finished = asyncio.Event()
+        self._turn_lease_id: str | None = None
         self._lock = asyncio.Lock()
         self.conversation_id = str(uuid4())
         self.conversation_started_at: str | None = None
@@ -361,36 +409,64 @@ class VoiceSession:
         if self.conversation_started_at is None:
             self.conversation_started_at = now
         self.turn_sequence += 1
-        self.turn = Turn(
-            turn_id=secrets.token_urlsafe(10),
-            generation=self.generation,
-            mode=mode,
-            cancelled=asyncio.Event(),
-            sequence=self.turn_sequence,
-            started_at=now,
-            conversation_started_at=self.conversation_started_at,
-            started_monotonic=time.perf_counter(),
-        )
-        self.phase = "listening"
-        self._speech_frames = 0
-        view = self._session_view()
-        assert self.codec is not None
-        self.pipeline = TurnPipeline(
-            snapshot=view.snapshot,
-            registry=view.registry,
-            codec=self.codec,
-            profile=self.profile,
-            session_id=self.session_id,
-            turn=self.turn,
-            send_text=self.send_text,
-            send_binary=lambda value, turn_id=self.turn.turn_id: self.send_binary(value, turn_id=turn_id),
-            execute_tool=self._execute_tool,
-            memory=self.memory,
-            on_intent=self._handle_intent,
-            metrics=self.app.metrics,
-        )
-        view.registry.vad.reset()
-        view.registry.asr.reset()
+        turn_id = secrets.token_urlsafe(10)
+        acquired, retry_after = await self.app.acquire_turn(self, turn_id)
+        if not acquired:
+            await self.send_text(
+                control_message(
+                    "alert",
+                    session_id=self.session_id,
+                    status="warning",
+                    code="SERVER_BUSY",
+                    message="server_busy",
+                    emotion="neutral",
+                    retry_after_ms=retry_after,
+                )
+            )
+            return
+        self._turn_lease_id = turn_id
+        try:
+            self.turn = Turn(
+                turn_id=turn_id,
+                generation=self.generation,
+                mode=mode,
+                cancelled=asyncio.Event(),
+                sequence=self.turn_sequence,
+                started_at=now,
+                conversation_started_at=self.conversation_started_at,
+                started_monotonic=time.perf_counter(),
+            )
+            self.phase = "listening"
+            self._speech_frames = 0
+            view = self._session_view()
+            assert self.codec is not None
+            self.pipeline = TurnPipeline(
+                snapshot=view.snapshot,
+                registry=view.registry,
+                codec=self.codec,
+                profile=self.profile,
+                session_id=self.session_id,
+                turn=self.turn,
+                send_text=self.send_text,
+                send_binary=lambda value, turn_id=self.turn.turn_id: self.send_binary(value, turn_id=turn_id),
+                execute_tool=self._execute_tool,
+                memory=self.memory,
+                on_intent=self._handle_intent,
+                metrics=self.app.metrics,
+            )
+            view.registry.vad.reset()
+            view.registry.asr.reset()
+        except BaseException:
+            turn = self.turn
+            self.pipeline = None
+            self.turn = None
+            self.phase = "ready_idle"
+            if turn is not None:
+                await self._release_turn(turn)
+            else:
+                await self.app.release_turn(self, turn_id)
+                self._turn_lease_id = None
+            raise
 
     async def _finish_turn(self, turn: Turn, pipeline: TurnPipeline) -> None:
         cancelled = False
@@ -402,6 +478,7 @@ class VoiceSession:
         finally:
             if not cancelled:
                 await self._report_turn(turn)
+            await self._release_turn(turn)
 
     async def _audio(self, raw: bytes) -> None:
         if not self.ready or self.pipeline is None or self.turn is None or self.codec is None:
@@ -455,6 +532,8 @@ class VoiceSession:
                 self.mcp.cancel_generation(turn.generation)
         # The callback runs inside the turn task, so do not cancel or await that
         # task here. Clearing ownership is enough to reject any later stale audio.
+        if turn is not None:
+            await self._release_turn(turn)
         self.pipeline = None
         self.turn = None
         self.phase = "ready_idle"
@@ -482,8 +561,15 @@ class VoiceSession:
             turn.conversation_status = "aborted" if reason == "disconnect" else "active"
             turn.ended_at = turn.ended_at or _utc_now()
             await self._report_turn(turn)
+            await self._release_turn(turn)
         if send_stop and self.ready and not self._closed:
             await self.send_text(control_message("tts", session_id=self.session_id, state="stop", reason=reason))
+
+    async def _release_turn(self, turn: Turn) -> None:
+        if self._turn_lease_id != turn.turn_id:
+            return
+        await self.app.release_turn(self, turn.turn_id)
+        self._turn_lease_id = None
 
     async def _report_turn(self, turn: Turn) -> None:
         reporter = self.app.history_reporter

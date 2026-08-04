@@ -1,7 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { GatewayFailure, GatewaySuccess } from '@/domain'
+import type { GatewayFailure, GatewaySuccess, RoleConfigDraft } from '@/domain'
 import { managerGatewayKey, type ManagerGateway } from '@/gateways'
 import { createRoleConfigFixtures, createVoiceFixtures, ASSISTANT_IDS } from '@/mocks/fixtures/assistants'
 
@@ -97,6 +97,25 @@ describe('RoleConfigFeature read states', () => {
 })
 
 describe('RoleConfigFeature mutations', () => {
+  it('exposes resource admission settings and preserves them on save', async () => {
+    const saveRoleConfig = vi.fn(async (...args: [string, RoleConfigDraft]) => {
+      void args
+      return success(resource)
+    })
+    const view = renderFeature(gateway({ saveRoleConfig }))
+
+    const maxTurns = await view.findByRole('spinbutton', { name: 'Lượt hội thoại đồng thời' })
+    const retryAfter = view.getByRole('spinbutton', { name: 'Thời gian thử lại khi bận' })
+    expect((maxTurns as HTMLInputElement).value).toBe('1')
+    expect((retryAfter as HTMLInputElement).value).toBe('250')
+
+    await fireEvent.update(maxTurns, '2')
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
+
+    await waitFor(() => expect(saveRoleConfig).toHaveBeenCalledTimes(1))
+    expect(saveRoleConfig.mock.calls[0]?.[1].admission).toEqual({ maxActiveTurns: 2, retryAfterMs: 250 })
+  })
+
   it('keeps the draft and exposes an offline save error', async () => {
     const view = renderFeature(gateway({ saveRoleConfig: vi.fn(async () => failure(true)) }))
     const prompt = await view.findByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })

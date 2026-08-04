@@ -48,6 +48,11 @@ export interface SpeechSettings {
   style: ResponseStyle
 }
 
+export interface AdmissionSettings {
+  maxActiveTurns: number
+  retryAfterMs: number
+}
+
 export interface RoleConfig {
   assistantId: string
   locale: string
@@ -55,6 +60,7 @@ export interface RoleConfig {
   personalityId: string
   personalityName: string
   speech: SpeechSettings
+  admission: AdmissionSettings
 }
 
 export type RoleConfigDraft = Omit<RoleConfig, 'assistantId'>

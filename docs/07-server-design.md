@@ -388,6 +388,11 @@ Sink có local spool bounded nếu Manager API unavailable. Khi full, ưu tiên 
 - TTS/Opus stream không materialize full WAV.
 - Metrics/log writer rotate; tool result và prompt có size limit trước LLM call.
 - Session có admission lease; khi host thiếu resource, connection mới nhận `server_busy`, không làm OOM session đang chạy.
+- Turn admission đọc `snapshot.admission.maxActiveTurns` (baseline `1`) và
+  `retryAfterMs`; session vẫn được giữ alive nhưng `listen/start` vượt capacity
+  nhận typed `alert.code="SERVER_BUSY"`, không queue vô hạn và không provider
+  fallback. Lease được release sau cancellation, error, intent exit hoặc normal
+  `tts.stop`.
 - Disconnect luôn cancel task tree và join cleanup; soak test theo dõi live task count, file descriptor, RSS và VRAM.
 - Baseline long-answer soak dùng deterministic long-text fixture có checksum để
   drive segmenter → VieNeu → Opus → paced egress trong ≥ 30 phút audio. Nó không
