@@ -7,7 +7,7 @@
 ## Snapshot
 
 - Branch: `master`
-- Commit source gần nhất: `948cacc` (`test(physical): gate barge-in scenarios on duplex wake`)
+- Commit source gần nhất: `f7329eb` (`test(firmware): isolate AEC transform in wake diagnostics`)
 - Working tree: sau mốc harness/note hiện sạch đối với file được track; secret,
   build output, raw audio và report `/tmp` vẫn bị ignore.
 - Runtime checkout này: Voice Server `18100`, Manager API `18101`; không dùng
