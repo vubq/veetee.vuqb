@@ -22,18 +22,19 @@ và các service port `18xxx`).
 - Snapshot tiến độ dễ xem nhất nằm ở
   [`docs/implementation-notes/STATUS.md`](docs/implementation-notes/STATUS.md);
   file này chỉ tổng hợp evidence/gate, không thay DoD trong roadmap.
-- `veetee-manager-web/` giữ visual foundation đã duyệt, đồng thời có HTTP gateway
-  và provider registry schema-driven khi chạy cùng Manager API.
-- Preview đã có code Vue/Vite/Tailwind, Reka-backed `Vt*` primitives, mock gateway
-  và năm surface; nó không gọi API/database/Voice Server/firmware, không có auth
-  hoặc secret production và **không** được tính là hoàn thành M2/full product.
+- `veetee-manager-web/` giữ visual foundation đã duyệt, có cả mock preview và
+  API mode dùng HTTP gateway/OpenAPI client khi chạy cùng Manager API.
+- Preview dùng mock gateway, không gọi API/database/Voice Server/firmware, không
+  có auth hoặc secret production. API mode đã có auth/session, provider registry,
+  assistant/device/history/config flows và được kiểm tra riêng; cả hai mode vẫn
+  không tự chứng minh physical firmware hoặc hoàn tất mọi M2 promotion gate.
 - Visual approval không thay cho full primitive-state inventory, keyboard-only
   core flows, demo/catalog cleanup hoặc snapshot matrix mọi surface/viewport;
   các gate này vẫn cần evidence riêng trước production promotion.
-- Evidence hiện tại của riêng preview: `npm test` pass typecheck, lint, 15 unit
-  tests và production build; 8 Chromium E2E pass, gồm history keyboard,
-  responsive overflow check
-  và axe scan không có violation `serious`/`critical` trên năm surface.
+- Evidence hiện tại của Web: typecheck/lint/production build pass, **66 unit
+  tests** và **9 Chromium E2E** pass; gồm history keyboard, responsive overflow,
+  provider schema flow và axe scan không có violation `serious`/`critical` trên
+  critical surfaces. Preview/API mode vẫn phải tách rõ khi đọc report.
 - Hai thư mục dưới `references/` là snapshot bằng chứng **read-only**. Chỉ đọc
   để kiểm tra protocol/behavior và trích dẫn `path/to/file:line-line`; không fork,
   extend, vendor, copy nguyên khối hoặc sửa chúng. Commit pin, remote và quy trình
@@ -49,7 +50,7 @@ và các service port `18xxx`).
 | `veetee-firmware/` | ESP32-S3 N16R8, audio I/O, AFE/AEC/noise suppression, wake, Opus, state machine, hardware MCP | ESP-IDF + FreeRTOS, device-side real-time tasks |
 | `veetee-server/` | WebSocket session, VAD → ASR → Groq LLM/tools → VieNeu TTS, streaming và TTFA | Python realtime data plane, host CUDA/ONNX khi provider cần |
 | `veetee-manager-api/` | Assistant/device/provider/config/history/auth/assets control plane | Node.js + TypeScript + Fastify, PostgreSQL |
-| `veetee-manager-web/` | Dashboard cấu hình và vận hành; hiện chỉ có mock UI preview được duyệt | Vue 3 + Vite + Tailwind CSS; typed OpenAPI client vẫn thuộc implementation M2 sau này |
+| `veetee-manager-web/` | Dashboard cấu hình/vận hành với mock preview và API mode; component boundary dùng chung | Vue 3 + Vite + Tailwind CSS; typed OpenAPI client và HTTP gateway đã có |
 
 Local baseline chạy **host-native trên Ubuntu 24.04**, không Docker, Compose,
 Podman hay workflow bắt buộc container. Reverse proxy, PostgreSQL, Python,
@@ -144,12 +145,13 @@ Quy trình tối thiểu:
 6. Handoff nêu outcome, file/contract, lệnh và kết quả kiểm tra, giới hạn,
    physical checks cần chủ dự án thực hiện và rollback an toàn.
 
-Manager Web mock preview và API mode đã có command contract host-native trong
+Manager Web mock preview và API mode có command contract host-native trong
 `veetee-manager-web/README.md` và `package.json`. Voice Server, Manager API và
 firmware hiện có README/command/test contract tương ứng; riêng PostgreSQL control
 plane dùng manifest `tools/runtime/manifests/host-native-postgres-dev.json`,
-database `veetee_vubq` trên instance loopback riêng. Không coi preview hoặc
-fixture memory là bằng chứng cho physical firmware hay M2 production gate.
+database `veetee_vubq` trên instance loopback riêng. Không coi preview, fixture
+memory hoặc API unit test là bằng chứng cho physical firmware hay các M2
+provider/VRAM/presence promotion gate.
 
 ## 7. Skill routing
 
