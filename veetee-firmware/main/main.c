@@ -188,6 +188,7 @@ typedef struct {
     bool wake_auto_capture;
     volatile vt_interaction_mode_t interaction_mode;
     vt_interaction_mode_t pending_tts_stop_mode;
+    char tts_turn_id[64];
     char device_id[32];
     char client_id[96];
 } vt_app_t;
@@ -197,6 +198,7 @@ typedef struct {
 #define VT_PTT_POLL_MS 10
 #define VT_PTT_DEBOUNCE_SAMPLES 3
 #define VT_PTT_RETRY_DELAY_MS 250
+#define VT_TTS_TURN_ID_MAX (sizeof(((vt_app_t *)0)->tts_turn_id))
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static int wifi_start(vt_app_t *app);
@@ -250,6 +252,7 @@ static void clear_pending_tts_stop(vt_app_t *app) {
     }
     app->tts_stop_pending = false;
     app->wake_rearm_pending = false;
+    app->tts_turn_id[0] = '\0';
     xSemaphoreGive(app->state_lock);
 }
 
@@ -420,6 +423,11 @@ static void websocket_text_callback(const cJSON *message, void *context) {
         if (!cJSON_IsString(tts_state) || tts_state->valuestring == NULL) return;
         if (strcmp(tts_state->valuestring, "start") == 0) {
             clear_pending_tts_stop(app);
+            cJSON *turn_id = cJSON_GetObjectItemCaseSensitive(message, "turn_id");
+            if (cJSON_IsString(turn_id) && turn_id->valuestring != NULL &&
+                turn_id->valuestring[0] != '\0' && strlen(turn_id->valuestring) < VT_TTS_TURN_ID_MAX) {
+                snprintf(app->tts_turn_id, sizeof(app->tts_turn_id), "%s", turn_id->valuestring);
+            }
             (void)xQueueReset(app->playback_queue);
             vt_audio_reset_acoustic_reference(&app->audio);
             /* Stop capture before resetting the decoder. The decoder mutex
@@ -451,9 +459,16 @@ static void websocket_text_callback(const cJSON *message, void *context) {
 #endif
         } else if (strcmp(tts_state->valuestring, "stop") == 0) {
             const vt_interaction_mode_t mode = app->interaction_mode;
-            app->capture_active = false;
-            app->wake_auto_capture = false;
+            cJSON *turn_id = cJSON_GetObjectItemCaseSensitive(message, "turn_id");
+            if (cJSON_IsString(turn_id) && turn_id->valuestring != NULL &&
+                app->tts_turn_id[0] != '\0' && strcmp(turn_id->valuestring, app->tts_turn_id) != 0) {
+                ESP_LOGW(TAG, "ignoring stale tts stop turn_id mismatch");
+                return;
+            }
             if (schedule_graceful_tts_stop(app, mode)) {
+                app->capture_active = false;
+                app->wake_auto_capture = false;
+                app->tts_turn_id[0] = '\0';
                 ESP_LOGI(TAG, "graceful tts stop scheduled mode=%s",
                          mode == VT_INTERACTION_AUTO ? "auto" : "manual");
             } else {
