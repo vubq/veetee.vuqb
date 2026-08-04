@@ -77,21 +77,32 @@ Composition API + `<script setup lang="ts">`, typed API client, route/feature bo
 
 ### Q-004 — Exact hardware BOM và pin map là gì?
 
-**Trạng thái: Open, blocking firmware implementation.**
+**Trạng thái: Partially resolved — pin map/runtime board đã được xác nhận; BOM
+và các peripheral chưa dùng vẫn mở.**
 
-`ESP32-S3 N16R8` chưa đủ để viết board layer. Cần:
+Board profile đang chạy trên thiết bị thật là `bread-compact-wifi-lcd`,
+ESP32-S3 N16R8, flash 16 MB, PSRAM 8 MB. Pin/rate đã được flash và serial
+verify ở `veetee-firmware/sdkconfig.defaults:17-58`:
+
+- PTT GPIO0, active-low.
+- Mic I2S: BCLK GPIO5, WS GPIO4, DIN GPIO6, mono 16 kHz.
+- Speaker I2S: BCLK GPIO15, WS GPIO16, DOUT GPIO7, mono 24 kHz.
+- ST7789 SPI2: MOSI GPIO47, SCLK GPIO21, DC GPIO40, RESET GPIO45, CS GPIO41,
+  backlight GPIO42 active-high, 240×280, offset `(0,20)`.
+- Audio frame 60 ms, Opus uplink/downlink theo negotiated profile.
+
+Các phần vẫn cần schematic/BOM exact trước khi bật production hardware MCP:
 
 - Module/dev board exact name/revision và schematic.
-- Audio codec, mic type/count, speaker amp, I2S pins/rates/channels.
-- PTT/interrupt button pins, active level, debounce/long-press policy.
-- Display controller, bus, width/height/rotation.
 - RGB LED type/pin/count.
 - IR TX/RX hardware, mmWave model/bus/pins và power constraints.
 - Flash partition/OTA/assets size expectation.
 
 Phương án A: cung cấp schematic/BOM hiện có.  
 Phương án B: kiến trúc đề xuất một reference board/BOM riêng và chờ duyệt trước firmware code.  
-**Default nếu chưa trả lời:** chỉ viết host protocol/tests; không bịa GPIO hoặc flash board.
+**Default hiện tại:** giữ board profile/pin map đã verify cho audio/LCD/PTT; không
+quảng bá peripheral chưa có manifest và không bật MCP/OTA production khi BOM
+chưa chốt.
 
 ### Q-005 — Groq model nào được free account hiện thấy?
 
