@@ -741,6 +741,10 @@ export class InMemoryStore implements Store {
     if (!existing) this.conversations.set(value.conversationId, record)
     record.summary = summary
     record.turns.push(turn)
+    if (value.deviceKey && isDeviceIdentityHash(value.deviceKey)) {
+      const device = [...this.devices.values()].find((item) => item.ownerId === assistant.ownerId && item.assistantId === value.assistantId && item.identityHash === value.deviceKey)
+      if (device && (!device.lastConversationAt || Date.parse(value.endedAt) > Date.parse(device.lastConversationAt))) device.lastConversationAt = value.endedAt
+    }
     return this.conversationDetail(record, policy)
   }
 
@@ -828,6 +832,10 @@ export function problem(code: string, message: string, statusCode: number): Erro
 export function validateProviderSelectionShape(value: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string }): void {
   if (value.mode === 'selected' && (!value.providerConfigId || value.providerConfigId.trim().length === 0)) throw problem('CONFIG_INVALID', 'Selected provider requires providerConfigId', 422)
   if (value.mode === 'disabled' && value.providerConfigId !== undefined) throw problem('CONFIG_INVALID', 'Disabled provider selection must not include providerConfigId', 422)
+}
+
+export function isDeviceIdentityHash(value: string): boolean {
+  return /^[0-9a-f]{64}$/i.test(value)
 }
 
 export function hashPairingCode(value: string): string {

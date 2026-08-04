@@ -46,6 +46,7 @@ import {
   type RuntimeSnapshot,
   type SecretReference,
   type Store,
+  isDeviceIdentityHash,
   roleExtras,
   roleFromSnapshot,
   validateProviderSelectionShape,
@@ -559,6 +560,15 @@ export class PostgresStore implements Store {
         aggregateTimings,
         retentionUntil: laterDate(current.retentionUntil, retentionUntil),
       }).where(eq(conversationTable.id, value.conversationId))
+      if (value.deviceKey && isDeviceIdentityHash(value.deviceKey)) {
+        const [device] = await tx.select({ id: deviceTable.id, lastConversationAt: deviceTable.lastConversationAt }).from(deviceTable)
+          .where(and(eq(deviceTable.identityHash, value.deviceKey), eq(deviceTable.ownerId, assistant.ownerId), eq(deviceTable.assistantId, value.assistantId)))
+          .for('update').limit(1)
+        const endedAt = new Date(value.endedAt)
+        if (device && (!device.lastConversationAt || endedAt > device.lastConversationAt)) {
+          await tx.update(deviceTable).set({ lastConversationAt: endedAt, updatedAt: new Date() }).where(eq(deviceTable.id, device.id))
+        }
+      }
     })
     const detail = await this.getConversation(assistant.ownerId, value.conversationId)
     if (!detail) throw new Error('conversation ingest returned no row')

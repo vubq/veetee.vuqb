@@ -426,3 +426,15 @@
 - Operator audio pause vẫn có hiệu lực: không phát audio, không chạy wake/PTT
   acoustic harness, không mở microphone/speaker; physical acceptance chờ cấp
   quyền lại.
+
+### Device last-conversation binding (2026-08-05, host-only)
+
+- History ingest cập nhật `Device.lastConversationAt` chỉ khi `deviceKey` là
+  SHA-256 identity hash khớp device đang bind đúng owner/assistant. Duplicate
+  turn và event cũ không làm lùi timestamp; raw MAC/device ID không được dùng
+  làm join key.
+- InMemory/PostgreSQL regression pass, gồm restart/unlink history; dedicated
+  `veetee_vubq_test` vẫn tách production. Không migration vì cột đã có sẵn,
+  OpenAPI không đổi.
+- Không mutate `veetee_vubq`, không restart runtime, không flash board, không
+  đổi Wi-Fi/Tailscale và không phát audio; acoustic acceptance vẫn pause.

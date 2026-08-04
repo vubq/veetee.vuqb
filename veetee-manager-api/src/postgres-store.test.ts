@@ -248,6 +248,15 @@ test('PostgreSQL unlinks a device binding atomically and keeps identity for re-p
     const persisted = listed.json().items.find((item: { id: string }) => item.id === deviceId) as { etag: string } | undefined
     assert.ok(persisted)
     assert.equal(persisted?.etag, deviceEtag)
+    const history = await restarted.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: {
+      conversationId: '77777777-7777-4777-8777-777777777777', assistantId, deviceKey: identityHash, locale: 'vi-VN', configRevision: 1,
+      conversationStartedAt: '2026-08-04T01:00:00.000Z', conversationEndedAt: '2026-08-04T01:00:03.000Z', conversationStatus: 'completed',
+      turnId: 'unlink-history-pg', sequence: 1, state: 'completed', startedAt: '2026-08-04T01:00:01.000Z', endedAt: '2026-08-04T01:00:03.000Z', finishReason: 'complete', timings: {}, transcript: [], toolCalls: [],
+    } })
+    assert.equal(history.statusCode, 202)
+    const withConversation = await restarted.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/devices` })
+    assert.equal(withConversation.statusCode, 200)
+    assert.equal(withConversation.json().items.find((item: { id: string }) => item.id === deviceId)?.lastConversationAt, '2026-08-04T01:00:03.000Z')
     const stale = await restarted.inject({ method: 'DELETE', url: `/api/v1/devices/${deviceId}/binding`, headers: { 'if-match': '"stale-device-etag"' } })
     assert.equal(stale.statusCode, 409)
     const removed = await restarted.inject({ method: 'DELETE', url: `/api/v1/devices/${deviceId}/binding`, headers: { 'if-match': deviceEtag } })

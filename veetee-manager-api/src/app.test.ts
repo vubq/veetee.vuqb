@@ -362,11 +362,14 @@ test('device binding unlink is ETag guarded, idempotent and preserves identity/h
 
     const conversationId = '44444444-4444-4444-8444-444444444444'
     const history = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: {
-      conversationId, assistantId, deviceKey: device.id, locale: 'vi-VN', configRevision: 1,
+      conversationId, assistantId, deviceKey: identityHash, locale: 'vi-VN', configRevision: 1,
       conversationStartedAt: '2026-08-04T01:00:00.000Z', conversationEndedAt: '2026-08-04T01:00:03.000Z', conversationStatus: 'completed',
       turnId: 'unlink-history-turn', sequence: 1, state: 'completed', startedAt: '2026-08-04T01:00:01.000Z', endedAt: '2026-08-04T01:00:03.000Z', finishReason: 'complete', timings: {}, transcript: [], toolCalls: [],
     } })
     assert.equal(history.statusCode, 202)
+    const beforeUnlink = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/devices` })
+    assert.equal(beforeUnlink.statusCode, 200)
+    assert.equal(beforeUnlink.json().items[0].lastConversationAt, '2026-08-04T01:00:03.000Z')
 
     const removed = await app.inject({ method: 'DELETE', url: `/api/v1/devices/${device.id}/binding`, headers: { 'if-match': device.etag } })
     assert.equal(removed.statusCode, 204)
@@ -378,7 +381,7 @@ test('device binding unlink is ETag guarded, idempotent and preserves identity/h
     assert.equal(listed.json().items.some((item: { id: string }) => item.id === device.id), false)
     const retainedHistory = await app.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}` })
     assert.equal(retainedHistory.statusCode, 200)
-    assert.equal(retainedHistory.json().summary.deviceKey, device.id)
+    assert.equal(retainedHistory.json().summary.deviceKey, identityHash)
 
     const presence = await app.inject({ method: 'POST', url: '/internal/v1/devices/presence', payload: {
       identityHash, clientIdHash, maskedMac: 'EE:FF:00:••:••:01', board: 'ESP32-S3 N16R8', firmwareVersion: 'unlink-test', onlineState: 'online',
