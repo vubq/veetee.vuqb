@@ -100,3 +100,106 @@ async def test_mcp_send_failure_removes_pending_request():
     with pytest.raises(ProviderError, match="device tool request could not be sent"):
         await bridge.call("device.led.set", {}, generation=4)
     assert bridge._pending == {}
+
+
+@pytest.mark.asyncio
+async def test_mcp_validates_arguments_before_allocating_or_sending():
+    sent = []
+
+    async def send(value):
+        sent.append(value)
+
+    bridge = DeviceMcpBridge(
+        session_id="session",
+        send=send,
+        descriptors=[
+            {
+                "name": "device.led.set",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "red": {"type": "integer", "minimum": 0, "maximum": 255},
+                        "enabled": {"type": "boolean"},
+                    },
+                    "required": ["red"],
+                    "additionalProperties": False,
+                },
+            }
+        ],
+        timeout_ms=1000,
+    )
+
+    with pytest.raises(ProviderError, match="required property"):
+        await bridge.call("device.led.set", {"enabled": True}, generation=1)
+    with pytest.raises(ProviderError, match="above minimum|above maximum"):
+        await bridge.call("device.led.set", {"red": 256}, generation=1)
+    with pytest.raises(ProviderError, match="unknown property"):
+        await bridge.call("device.led.set", {"red": 1, "blue": 2}, generation=1)
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_mcp_schema_valid_arguments_are_sent_and_resolved():
+    sent = []
+
+    async def send(value):
+        sent.append(value)
+
+    bridge = DeviceMcpBridge(
+        session_id="session",
+        send=send,
+        descriptors=[
+            {
+                "name": "device.display.show_text",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 32}},
+                    "required": ["text"],
+                    "additionalProperties": False,
+                },
+            }
+        ],
+        timeout_ms=1000,
+    )
+    task = asyncio.create_task(bridge.call("device.display.show_text", {"text": "Xin chào"}, generation=2))
+    await asyncio.sleep(0)
+    request = sent[-1]["payload"]
+    assert request["params"]["arguments"] == {"text": "Xin chào"}
+    assert bridge.resolve({"jsonrpc": "2.0", "id": request["id"], "result": {"isError": False}})
+    assert await task == {"isError": False}
+
+
+@pytest.mark.asyncio
+async def test_mcp_rejects_argument_type_without_device_request():
+    sent = []
+
+    async def send(value):
+        sent.append(value)
+
+    bridge = DeviceMcpBridge(
+        session_id="session",
+        send=send,
+        descriptors=[{"name": "device.ir.send", "inputSchema": {"type": "string"}}],
+        timeout_ms=1000,
+    )
+    with pytest.raises(ProviderError, match="expected string"):
+        await bridge.call("device.ir.send", {}, generation=1)
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_mcp_fails_closed_on_unsupported_schema_without_device_request():
+    sent = []
+
+    async def send(value):
+        sent.append(value)
+
+    bridge = DeviceMcpBridge(
+        session_id="session",
+        send=send,
+        descriptors=[{"name": "device.ir.send", "inputSchema": {"type": "null"}}],
+        timeout_ms=1000,
+    )
+    with pytest.raises(ProviderError, match="unsupported schema type"):
+        await bridge.call("device.ir.send", {}, generation=1)
+    assert sent == []

@@ -976,6 +976,24 @@
   này. Audio/physical lock tiếp tục: không phát/thu audio, không serial audio,
   không flash/reset/erase, không đổi Wi‑Fi/Tailscale, không dùng production DB.
 
+### MCP argument schema gate — host-only (2026-08-05)
+
+- `DeviceMcpBridge.call()` validate `inputSchema` generic trước khi cấp request
+  ID/send `tools/call`; required/type/range/unknown property và schema
+  unsupported fail-closed bằng `TOOL_ARGUMENTS_INVALID`.
+- Targeted MCP **9 passed**, full Voice Server **138 passed**, Ruff/compileall
+  pass. Không đổi wire envelope, generation cancellation hay firmware-side
+  authority; chưa có physical MCP acceptance.
+- Audio/physical/network lock tiếp tục: không phát/thu audio, không serial audio,
+  không flash/reset/erase ESP32, không đổi Wi‑Fi/Tailscale, không dùng production DB.
+
+### Firmware build revalidation after host MCP slice (2026-08-05)
+
+- ESP-IDF 6.0.2 incremental build pass **9/9**, binary `0x1593e0`, app partition
+  còn **66%**; managed `espressif/mqtt 1.1.0` vẫn nằm trong component graph.
+- Chỉ build, không flash/reset/erase, không mở carrier/socket/audio và không đổi
+  Wi‑Fi/Tailscale. Kconfig warnings nền vẫn được giữ nguyên để xử lý riêng.
+
 ### M3 UDP sequence guard parity — host-only (2026-08-05)
 
 - `UdpCryptoSession.decrypt()` từ chối sequence `0` ngay sau structural length
