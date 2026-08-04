@@ -423,6 +423,12 @@ test('PostgreSQL keeps secret references that occur in immutable provider histor
     const created = await app.inject({ method: 'POST', url: '/api/v1/secret-references', payload: { name: `Postgres bound ${Date.now()}`, store: 'encrypted-local', secretValue: 'postgres-canary' } })
     assert.equal(created.statusCode, 201)
     const secret = created.json() as { id: string; etag: string }
+    const rotated = await app.inject({ method: 'PATCH', url: `/api/v1/secret-references/${secret.id}`, headers: { 'if-match': secret.etag }, payload: { secretValue: 'postgres-rotated' } })
+    assert.equal(rotated.statusCode, 200)
+    assert.equal(rotated.json().version, 2)
+    assert.doesNotMatch(rotated.body, /postgres-rotated/)
+    assert.equal(await secretStore.verify(secret.id), true)
+    secret.etag = rotated.headers.etag as string
     const provider = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
       installationId: 'groq.chat', name: `Postgres secret binding ${Date.now()}`, config: { endpoint: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant', maxTokens: 64 }, secretRefs: [secret.id],
     } })

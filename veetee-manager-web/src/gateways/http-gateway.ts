@@ -16,10 +16,12 @@ import type {
   ProviderConfigRecord,
   ProviderInstallationView,
   RetentionPolicy,
+  OfflineProblem,
   RevisionConflictProblem,
   RoleConfig,
   RoleConfigDraft,
   RolePolicyObject,
+  SecretReference,
   UpdateProviderSelectionInput,
   ValidationProblem,
   Versioned,
@@ -27,7 +29,7 @@ import type {
   VoiceProfile,
 } from '@/domain'
 import type { paths } from '@/api/generated'
-import type { GatewayDependencies, ManagerGateway, PreviewControlGateway } from './manager-gateway'
+import type { GatewayDependencies, ManagerGateway, PreviewControlGateway, SecretMutationProblem } from './manager-gateway'
 import type {
   CreateAssistantRequest,
   MemoryEnabledRequest,
@@ -49,6 +51,7 @@ type DeviceResource = paths['/api/v1/assistants/{id}/devices']['get']['responses
 type RetentionResource = paths['/api/v1/retention-policy']['get']['responses'][200]['content']['application/json']
 type ConversationSummaryResource = paths['/api/v1/assistants/{id}/conversations']['get']['responses'][200]['content']['application/json']['items'][number]
 type ConversationDetailResource = paths['/api/v1/conversations/{id}']['get']['responses'][200]['content']['application/json']
+type SecretReferenceResource = paths['/api/v1/secret-references']['get']['responses'][200]['content']['application/json']['items'][number]
 
 export function createHttpGatewayDependencies(baseUrl: string): GatewayDependencies {
   const gateway = new HttpManagerGateway(baseUrl)
@@ -156,6 +159,39 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
     return this.success(providerConfig(result.data))
+  }
+
+  async listSecretReferences(): Promise<GatewayResult<SecretReference[], never>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/secret-references'))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(result.data.items.map(secretReference))
+  }
+
+  async createSecretReference(input: { name: string; secretValue: string; locator?: string }): Promise<GatewayResult<SecretReference, ValidationProblem | OfflineProblem>> {
+    const result = await this.execute(() => this.client.POST('/api/v1/secret-references', {
+      body: { name: input.name, store: 'encrypted-local', secretValue: input.secretValue, ...(input.locator ? { locator: input.locator } : {}) },
+    }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(secretReference(result.data))
+  }
+
+  async updateSecretReference(id: string, input: { name?: string; locator?: string; secretValue?: string }, expectedEtag: string): Promise<GatewayResult<SecretReference, SecretMutationProblem>> {
+    const result = await this.execute(() => this.client.PATCH('/api/v1/secret-references/{id}', {
+      params: { path: { id } },
+      headers: { 'If-Match': expectedEtag },
+      body: input,
+    }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(secretReference(result.data))
+  }
+
+  async deleteSecretReference(id: string, expectedEtag: string): Promise<GatewayResult<void, SecretMutationProblem>> {
+    const result = await this.execute(() => this.client.DELETE('/api/v1/secret-references/{id}', {
+      params: { path: { id } },
+      headers: { 'If-Match': expectedEtag },
+    }))
+    if (!result.response.ok) return this.failure(result)
+    return this.success(undefined)
   }
 
   async listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>> {
@@ -339,6 +375,21 @@ function providerInstallation(value: ProviderInstallationResource): ProviderInst
 
 function providerConfig(value: ProviderConfigResource): ProviderConfigRecord {
   return { id: value.id, installationId: value.installationId, name: value.name, revision: value.revision, config: value.config, secretRefs: value.secretRefs, etag: value.etag }
+}
+
+function secretReference(value: SecretReferenceResource): SecretReference {
+  return {
+    id: value.id,
+    name: value.name,
+    store: value.store,
+    locatorMasked: value.locatorMasked,
+    version: value.version,
+    metadataRevision: value.metadataRevision,
+    status: value.status,
+    lastRotatedAt: value.lastRotatedAt,
+    etag: value.etag,
+    updatedAt: value.updatedAt,
+  }
 }
 
 function voiceProfile(value: VoiceResource): VoiceProfile {

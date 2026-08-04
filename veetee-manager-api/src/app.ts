@@ -304,6 +304,20 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   if (machineAuthRequired && !machineToken) throw new Error('VEETEE_MACHINE_TOKEN_FILE is required for machine endpoints')
   const allowedOrigins = env.VEETEE_ALLOWED_ORIGINS.split(',').map((item) => item.trim()).filter(Boolean)
   let retentionTask: Promise<{ purgedConversations: number; executedAt: string }> | null = null
+  const secretMutationTails = new Map<string, Promise<void>>()
+  async function withSecretMutationLock<T>(referenceId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = secretMutationTails.get(referenceId) ?? Promise.resolve()
+    let release!: () => void
+    const current = new Promise<void>((resolve) => { release = resolve })
+    secretMutationTails.set(referenceId, current)
+    await previous
+    try {
+      return await operation()
+    } finally {
+      release()
+      if (secretMutationTails.get(referenceId) === current) secretMutationTails.delete(referenceId)
+    }
+  }
   const runRetention = (): Promise<{ purgedConversations: number; executedAt: string }> => {
     if (retentionTask) return retentionTask
     retentionTask = (async () => {
@@ -493,22 +507,41 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
       return sendProblem(reply, error)
     }
   })
-  app.patch<{ Params: { id: string }; Body: { name?: string; locator?: string } }>('/api/v1/secret-references/:id', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, locator: { type: 'string', maxLength: 256 } } }, response: { 200: secretReferenceResponseSchema } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; locator?: string; secretValue?: string } }>('/api/v1/secret-references/:id', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, locator: { type: 'string', maxLength: 256 }, secretValue: { type: 'string', minLength: 1, maxLength: 16384 } } }, response: { 200: secretReferenceResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
-    try {
-      const value = await store.updateSecretReference(owner(request), request.params.id, { name: request.body.name, locatorMasked: request.body.locator === undefined ? undefined : 'encrypted-local' }, ifMatch)
-      return reply.header('ETag', value.etag).send(value)
-    } catch (error) { return sendProblem(reply, error) }
+    return withSecretMutationLock(request.params.id, async () => {
+      let rotation: { version: number; lastRotatedAt: string } | undefined
+      if (request.body.secretValue !== undefined) {
+        if (!secretStore) return sendProblemCode(reply, 503, 'SECRET_STORE_UNAVAILABLE', 'Secret store is unavailable')
+        const current = (await store.listSecretReferences(owner(request))).find((item) => item.id === request.params.id)
+        if (!current) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Secret reference not found')
+        if (current.etag !== ifMatch) return sendProblemCode(reply, 409, 'REVISION_CONFLICT', 'Secret reference changed')
+        try {
+          const stored = await secretStore.put(request.params.id, request.body.secretValue)
+          rotation = { version: stored.version, lastRotatedAt: new Date().toISOString() }
+        } catch (error) { return sendProblem(reply, error) }
+      }
+      try {
+        const value = await store.updateSecretReference(owner(request), request.params.id, {
+          name: request.body.name,
+          locatorMasked: request.body.locator === undefined ? undefined : 'encrypted-local',
+          ...(rotation ? { version: rotation.version, status: 'available' as const, lastRotatedAt: rotation.lastRotatedAt } : {}),
+        }, ifMatch)
+        return reply.header('ETag', value.etag).send(value)
+      } catch (error) { return sendProblem(reply, error) }
+    })
   })
   app.delete<{ Params: { id: string } }>('/api/v1/secret-references/:id', { schema: { params: resourceIdParamsSchema, response: { 204: { type: 'null' } } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
-    try {
-      await store.deleteSecretReference(owner(request), request.params.id, ifMatch)
-      await secretStore?.delete(request.params.id)
-      return reply.code(204).send()
-    } catch (error) { return sendProblem(reply, error) }
+    return withSecretMutationLock(request.params.id, async () => {
+      try {
+        await store.deleteSecretReference(owner(request), request.params.id, ifMatch)
+        await secretStore?.delete(request.params.id)
+        return reply.code(204).send()
+      } catch (error) { return sendProblem(reply, error) }
+    })
   })
 
   app.get('/api/v1/provider-installations', { schema: { response: { 200: listResponse(providerInstallationResponseSchema) } } }, async () => ({ items: await store.listInstallations() }))

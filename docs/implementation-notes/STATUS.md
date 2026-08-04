@@ -546,3 +546,21 @@
   Vì vậy chưa publish `resourceBudget` và chưa coi provider/VRAM promotion gate
   đạt. Không phát audio, không gọi Groq, không load generation thứ hai và không
   mutate runtime/database/network.
+
+### Write-only secret management (2026-08-05, non-audio)
+
+- Manager Web Provider Registry đã có panel tạo/rotate/xóa secret reference.
+  Web chỉ giữ metadata (`name`, masked locator, version, status, ETag); plaintext
+  chỉ đi trong request write-only tới Manager API và không xuất hiện trong
+  response, mock state hoặc domain entity.
+- Secret rotation dùng pre-check owner + ETag, ghi encrypted-local value rồi
+  cập nhật metadata version/status/lastRotatedAt. Nếu bước metadata thất bại,
+  encrypted store có thể đã có version mới nhưng runtime vẫn fail-closed; cần
+  retry/reconcile thay vì tự suy đoán trạng thái.
+- Provider config giữ unknown secret IDs khi load và dùng `VtCheckbox` custom
+  thay cho native checkbox, đồng bộ hover/focus/disabled tokens của Manager Web.
+- Host regression sau slice: Manager API dedicated `veetee_vubq_test` **37/37**,
+  lint/build/OpenAPI check pass; Manager Web typecheck/lint/build, full unit
+  **73/73**, Chromium E2E **9/9**. Không gọi Groq, không phát audio, không mở
+  microphone/speaker, không flash/reset ESP32, không đổi Wi-Fi/Tailscale hoặc
+  mutate production DB `veetee_vubq`.

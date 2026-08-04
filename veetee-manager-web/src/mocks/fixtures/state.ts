@@ -5,6 +5,7 @@ import type {
   ProviderConfigRecord,
   ProviderInstallationView,
   RoleConfig,
+  SecretReference,
   Versioned,
   VoiceProfile,
 } from '@/domain'
@@ -24,6 +25,7 @@ export interface MockState {
   modelMemory: Record<string, Versioned<ModelMemoryWorkspace>>
   providerInstallations: ProviderInstallationView[]
   providerConfigs: ProviderConfigRecord[]
+  secretReferences: SecretReference[]
   devices: DeviceCard[]
   nextAssistantSequence: number
   nextDeviceSequence: number
@@ -38,6 +40,18 @@ export function createInitialMockState(): MockState {
     modelMemory: createModelMemoryFixtures(),
     providerInstallations: providerRegistry.installations,
     providerConfigs: providerRegistry.configs,
+    secretReferences: [{
+      id: 'secret-preview-groq',
+      name: 'Groq test key',
+      store: 'encrypted-local',
+      locatorMasked: 'encrypted-local',
+      version: 1,
+      metadataRevision: 1,
+      status: 'available',
+      lastRotatedAt: '2026-08-03T08:00:00.000Z',
+      etag: '"secret-preview-groq-rev-1"',
+      updatedAt: '2026-08-03T08:00:00.000Z',
+    }],
     devices: createDeviceFixtures(),
     nextAssistantSequence: 1,
     nextDeviceSequence: 1,

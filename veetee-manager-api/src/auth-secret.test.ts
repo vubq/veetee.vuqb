@@ -7,7 +7,7 @@ import argon2 from 'argon2'
 import { buildApp } from './app.js'
 import type { Environment } from './config.js'
 import { configurePostgresTestIsolation } from './postgres-test-isolation.js'
-import { EncryptedFileSecretStore } from './secret-store.js'
+import { EncryptedFileSecretStore, type SecretValueStore } from './secret-store.js'
 
 const root = resolve(import.meta.dirname, '..')
 const passwordHash = await argon2.hash('unit-password')
@@ -97,6 +97,12 @@ test('secret reference API returns metadata only and supports ETag mutation', as
     assert.equal(value.status, 'available')
     const updated = await app.inject({ method: 'PATCH', url: `/api/v1/secret-references/${value.id}`, headers: { 'if-match': value.etag }, payload: { name: 'Groq renamed' } })
     assert.equal(updated.statusCode, 200)
+    const rotated = await app.inject({ method: 'PATCH', url: `/api/v1/secret-references/${value.id}`, headers: { 'if-match': updated.headers.etag }, payload: { secretValue: 'rotated-secret-value' } })
+    assert.equal(rotated.statusCode, 200)
+    assert.equal(rotated.json().version, 2)
+    assert.equal(rotated.json().status, 'available')
+    assert.doesNotMatch(rotated.body, /rotated-secret-value/)
+    assert.equal(await secretStore.verify(value.id), true)
     const stale = await app.inject({ method: 'PATCH', url: `/api/v1/secret-references/${value.id}`, headers: { 'if-match': value.etag }, payload: { name: 'stale' } })
     assert.equal(stale.statusCode, 409)
     const listed = await app.inject({ method: 'GET', url: '/api/v1/secret-references' })
@@ -118,19 +124,59 @@ test('secret reference API returns metadata only and supports ETag mutation', as
     const published = await app.inject({ method: 'POST', url: `/api/v1/assistants/${assistant.id}/publish`, headers: { 'if-match': selected.headers.etag } })
     assert.equal(published.statusCode, 200)
     assert.deepEqual(published.json().snapshot.providers.llm.secretRefs, [value.id])
-    const blocked = await app.inject({ method: 'DELETE', url: `/api/v1/secret-references/${value.id}`, headers: { 'if-match': updated.headers.etag } })
+    const blocked = await app.inject({ method: 'DELETE', url: `/api/v1/secret-references/${value.id}`, headers: { 'if-match': rotated.headers.etag } })
     assert.equal(blocked.statusCode, 409)
     const unbound = await app.inject({ method: 'PATCH', url: `/api/v1/provider-configs/${provider.json().id}`, headers: { 'if-match': provider.headers.etag }, payload: { secretRefs: [] } })
     assert.equal(unbound.statusCode, 200)
     const rejectedPublish = await app.inject({ method: 'POST', url: `/api/v1/assistants/${assistant.id}/publish` })
     assert.equal(rejectedPublish.statusCode, 422)
-    const blockedByHistory = await app.inject({ method: 'DELETE', url: `/api/v1/secret-references/${value.id}`, headers: { 'if-match': updated.headers.etag } })
+    const blockedByHistory = await app.inject({ method: 'DELETE', url: `/api/v1/secret-references/${value.id}`, headers: { 'if-match': rotated.headers.etag } })
     assert.equal(blockedByHistory.statusCode, 409)
     const orphan = await app.inject({ method: 'POST', url: '/api/v1/secret-references', payload: { name: 'Orphan', store: 'encrypted-local', secretValue: 'orphan-secret' } })
     assert.equal(orphan.statusCode, 201)
     const deleted = await app.inject({ method: 'DELETE', url: `/api/v1/secret-references/${orphan.json().id}`, headers: { 'if-match': orphan.headers.etag } })
     assert.equal(deleted.statusCode, 204)
   } finally { await app.close(); await rm(directory, { recursive: true, force: true }) }
+})
+
+test('secret rotation serializes same-ETag requests before writing encrypted value', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'veetee-secret-race-test-'))
+  const backing = new EncryptedFileSecretStore(resolve(directory, 'secrets.json'), 'unit-master-material')
+  let delayRotation = false
+  let rotationStarted!: () => void
+  const rotationEntered = new Promise<void>((resolve) => { rotationStarted = resolve })
+  let releaseRotation!: () => void
+  const rotationGate = new Promise<void>((resolve) => { releaseRotation = resolve })
+  const secretStore: SecretValueStore = {
+    put: async (referenceId, value) => {
+      if (delayRotation) {
+        delayRotation = false
+        rotationStarted()
+        await rotationGate
+      }
+      return backing.put(referenceId, value)
+    },
+    delete: (referenceId) => backing.delete(referenceId),
+  }
+  const app = await buildApp({ env: { ...baseEnv, VEETEE_AUTH_MODE: 'disabled' }, secretStore })
+  await app.ready()
+  try {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/secret-references', payload: { name: 'Race', store: 'encrypted-local', secretValue: 'initial' } })
+    const reference = created.json() as { id: string; etag: string }
+    delayRotation = true
+    const first = app.inject({ method: 'PATCH', url: `/api/v1/secret-references/${reference.id}`, headers: { 'if-match': reference.etag }, payload: { secretValue: 'rotation-one' } })
+    await rotationEntered
+    const second = app.inject({ method: 'PATCH', url: `/api/v1/secret-references/${reference.id}`, headers: { 'if-match': reference.etag }, payload: { secretValue: 'rotation-two' } })
+    releaseRotation()
+    const [firstResult, secondResult] = await Promise.all([first, second])
+    assert.deepEqual([firstResult.statusCode, secondResult.statusCode].sort(), [200, 409])
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/secret-references' })
+    assert.equal(listed.json().items[0].version, 2)
+    assert.equal(await backing.verify(reference.id), true)
+  } finally {
+    await app.close()
+    await rm(directory, { recursive: true, force: true })
+  }
 })
 
 test('PostgreSQL-backed session survives Manager API restart', { skip: !databaseUrlFile }, async () => {

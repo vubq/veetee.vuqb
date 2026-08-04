@@ -21,6 +21,7 @@ import type {
   RoleConfig,
   RoleConfigDraft,
   RoleSaveProblem,
+  SecretReference,
   UpdateProviderSelectionInput,
   ValidationProblem,
   Versioned,
@@ -51,6 +52,12 @@ export type ProviderMutationProblem =
       ModelMemoryWorkspace,
       UpdateProviderSelectionInput | { enabled: boolean }
     >
+
+export type SecretMutationProblem =
+  | ValidationProblem
+  | OfflineProblem
+  | NotFoundProblem
+  | RevisionConflictProblem<SecretReference, unknown>
 
 export interface AssistantGateway {
   listAssistants(
@@ -116,6 +123,13 @@ export interface ProviderGateway {
   >
 }
 
+export interface SecretGateway {
+  listSecretReferences(): Promise<GatewayResult<SecretReference[], never>>
+  createSecretReference(input: { name: string; secretValue: string; locator?: string }): Promise<GatewayResult<SecretReference, ValidationProblem | OfflineProblem>>
+  updateSecretReference(id: string, input: { name?: string; locator?: string; secretValue?: string }, expectedEtag: string): Promise<GatewayResult<SecretReference, SecretMutationProblem>>
+  deleteSecretReference(id: string, expectedEtag: string): Promise<GatewayResult<void, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<unknown, unknown>>>
+}
+
 export interface DeviceGateway {
   listDevices(
     assistantId: string,
@@ -140,6 +154,7 @@ export interface HistoryGateway {
 export interface ManagerGateway
   extends AssistantGateway,
     ProviderGateway,
+    SecretGateway,
     DeviceGateway,
     HistoryGateway {}
 

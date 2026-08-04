@@ -27,6 +27,7 @@ import type {
   RevisionConflictProblem,
   RoleConfig,
   RoleConfigDraft,
+  SecretReference,
   RoleSaveProblem,
   UpdateProviderSelectionInput,
   ValidationProblem,
@@ -45,6 +46,7 @@ import type {
   PairDeviceProblem,
   PreviewControlGateway,
   ProviderMutationProblem,
+  SecretMutationProblem,
 } from '@/gateways'
 
 import {
@@ -351,6 +353,53 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
   async listProviderConfigs(): Promise<GatewayResult<ProviderConfigRecord[], never>> {
     const request = await this.begin('read')
     return this.success(clone(this.state.providerConfigs), request)
+  }
+
+  async listSecretReferences(): Promise<GatewayResult<SecretReference[], never>> {
+    const request = await this.begin('read')
+    return this.success(clone(this.state.secretReferences), request)
+  }
+
+  async createSecretReference(input: { name: string; secretValue: string; locator?: string }): Promise<GatewayResult<SecretReference, ValidationProblem | OfflineProblem>> {
+    const request = await this.begin('mutation')
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    if (!input.name.trim() || !input.secretValue) {
+      return this.failure({ type: 'validation', code: 'VALIDATION_ERROR', messageKey: 'problem.validation', requestId: request.requestId, retryable: false, fieldProblems: [{ field: 'name', code: 'REQUIRED', messageKey: 'validation.required' }] }, request)
+    }
+    const sequence = this.state.secretReferences.length + 1
+    const now = this.now()
+    const secret: SecretReference = { id: `secret-preview-${sequence}`, name: input.name.trim(), store: 'encrypted-local', locatorMasked: 'encrypted-local', version: 1, metadataRevision: 1, status: 'available', lastRotatedAt: now, etag: etag(`secret-${sequence}`, 1), updatedAt: now }
+    this.state.secretReferences.push(secret)
+    return this.success(clone(secret), request)
+  }
+
+  async updateSecretReference(id: string, input: { name?: string; locator?: string; secretValue?: string }, expectedEtag: string): Promise<GatewayResult<SecretReference, SecretMutationProblem>> {
+    const request = await this.begin('mutation')
+    const current = this.state.secretReferences.find((item) => item.id === id)
+    if (!current) return this.failure(this.notFound('secret', id, request.requestId), request)
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    if (current.etag !== expectedEtag) return this.failure({ type: 'revision-conflict', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict', requestId: request.requestId, retryable: false, currentRevision: current.metadataRevision, currentEtag: current.etag, current: clone(current), localDraft: input }, request)
+    const rotated = input.secretValue !== undefined
+    const nextRevision = current.metadataRevision + 1
+    const nextVersion = rotated ? current.version + 1 : current.version
+    const now = this.now()
+    const next: SecretReference = { ...current, ...(input.name === undefined ? {} : { name: input.name.trim() }), ...(input.locator === undefined ? {} : { locatorMasked: 'encrypted-local' }), version: nextVersion, metadataRevision: nextRevision, ...(rotated ? { status: 'available' as const, lastRotatedAt: now } : {}), etag: etag(`secret-${id}`, nextRevision), updatedAt: now }
+    this.state.secretReferences = this.state.secretReferences.map((item) => item.id === id ? next : item)
+    return this.success(clone(next), request)
+  }
+
+  async deleteSecretReference(id: string, expectedEtag: string): Promise<GatewayResult<void, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<unknown, unknown>>> {
+    const request = await this.begin('mutation')
+    const current = this.state.secretReferences.find((item) => item.id === id)
+    if (!current) return this.failure(this.notFound('secret', id, request.requestId), request)
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    if (current.etag !== expectedEtag) return this.failure({ type: 'revision-conflict', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict', requestId: request.requestId, retryable: false, currentRevision: current.metadataRevision, currentEtag: current.etag, current: clone(current), localDraft: undefined }, request)
+    if (this.state.providerConfigs.some((item) => item.secretRefs.includes(id))) return this.failure({ type: 'validation', code: 'VALIDATION_ERROR', messageKey: 'problem.secret.inUse', requestId: request.requestId, retryable: false, fieldProblems: [{ field: 'id', code: 'RESOURCE_IN_USE', messageKey: 'problem.secret.inUse' }] }, request)
+    this.state.secretReferences = this.state.secretReferences.filter((item) => item.id !== id)
+    return this.success(undefined, request)
   }
 
   async createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {

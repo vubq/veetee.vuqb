@@ -45,6 +45,7 @@ import {
   type RuntimePublication,
   type RuntimeSnapshot,
   type SecretReference,
+  type SecretReferenceUpdate,
   type Store,
   isDeviceIdentityHash,
   roleExtras,
@@ -374,15 +375,22 @@ export class PostgresStore implements Store {
     return this.mapSecretReference(row)
   }
 
-  async updateSecretReference(ownerId: string, id: string, value: { name?: string; locatorMasked?: string }, ifMatch: string): Promise<SecretReference> {
+  async updateSecretReference(ownerId: string, id: string, value: SecretReferenceUpdate, ifMatch: string): Promise<SecretReference> {
     const [current] = await this.handle.db.select().from(secretReferenceTable).where(and(eq(secretReferenceTable.ownerId, ownerId), eq(secretReferenceTable.id, id))).limit(1)
     if (!current) throw problem('NOT_FOUND', 'Secret reference not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Secret reference changed', 409)
     const metadataRevision = current.metadataRevision + 1
     const name = value.name ?? current.name
     const locatorMasked = value.locatorMasked ?? current.locatorMasked
-    const nextEtag = etag({ name, locatorMasked, metadataRevision })
-    const [updated] = await this.handle.db.update(secretReferenceTable).set({ name, locatorMasked, metadataRevision, etag: nextEtag, updatedAt: new Date() }).where(and(eq(secretReferenceTable.id, id), eq(secretReferenceTable.ownerId, ownerId), eq(secretReferenceTable.etag, ifMatch))).returning()
+    const version = value.version ?? current.version
+    const status = value.status ?? (current.status === 'available' || current.status === 'revoked' ? current.status : 'unavailable')
+    const lastRotatedAt = value.lastRotatedAt === undefined
+      ? current.lastRotatedAt
+      : value.lastRotatedAt === null
+        ? null
+        : new Date(value.lastRotatedAt)
+    const nextEtag = etag({ name, locatorMasked, version, status, lastRotatedAt: lastRotatedAt?.toISOString() ?? null, metadataRevision })
+    const [updated] = await this.handle.db.update(secretReferenceTable).set({ name, locatorMasked, version, status, lastRotatedAt, metadataRevision, etag: nextEtag, updatedAt: new Date() }).where(and(eq(secretReferenceTable.id, id), eq(secretReferenceTable.ownerId, ownerId), eq(secretReferenceTable.etag, ifMatch))).returning()
     if (!updated) throw problem('REVISION_CONFLICT', 'Secret reference changed', 409)
     return this.mapSecretReference(updated)
   }

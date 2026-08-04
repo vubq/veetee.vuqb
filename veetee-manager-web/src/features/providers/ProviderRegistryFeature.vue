@@ -2,12 +2,13 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
-import type { ProviderConfigRecord, ProviderInstallationView } from '@/domain'
+import type { ProviderConfigRecord, ProviderInstallationView, SecretReference } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import FormSection from '@/ui/patterns/FormSection.vue'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
 import VtButton from '@/ui/primitives/VtButton.vue'
 import VtCard from '@/ui/primitives/VtCard.vue'
+import VtCheckbox from '@/ui/primitives/VtCheckbox.vue'
 import VtFormField from '@/ui/primitives/VtFormField.vue'
 import VtInput from '@/ui/primitives/VtInput.vue'
 import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
@@ -15,17 +16,19 @@ import VtStatus from '@/ui/primitives/VtStatus.vue'
 import { notify } from '@/ui/primitives/notifications'
 
 import SchemaConfigForm from './SchemaConfigForm.vue'
+import SecretReferencePanel from './SecretReferencePanel.vue'
 import { cloneConfig } from './schema-config'
 
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
 const installations = ref<ProviderInstallationView[]>([])
 const configs = ref<ProviderConfigRecord[]>([])
+const secretReferences = ref<SecretReference[]>([])
+const selectedSecretRefs = ref<string[]>([])
 const selectedId = ref('')
 const selectedConfigId = ref('')
 const name = ref('')
 const configDraft = ref<Record<string, unknown>>({})
 const configValid = ref(true)
-const secretRefs = ref('')
 const loading = ref(true)
 const saving = ref(false)
 const loadState = ref<'loading' | 'ready' | 'empty' | 'error' | 'offline'>('loading')
@@ -46,7 +49,7 @@ function chooseInstallation(value: string) {
   name.value = item?.name ?? ''
   configDraft.value = cloneConfig(item?.config ?? {})
   configValid.value = true
-  secretRefs.value = item?.secretRefs.join(', ') ?? ''
+  selectedSecretRefs.value = [...(item?.secretRefs ?? [])]
 }
 
 async function load() {
@@ -55,31 +58,42 @@ async function load() {
   loadState.value = 'loading'
   loadError.value = ''
   try {
-    const [catalog, configured] = await Promise.all([
+    const [catalog, configured, secrets] = await Promise.all([
       gateway.listProviderInstallations(),
       gateway.listProviderConfigs(),
+      gateway.listSecretReferences(),
     ])
     if (generation !== loadGeneration) return
 
     const failures = [
       !catalog.ok ? 'catalog' : null,
       !configured.ok ? 'config' : null,
+      !secrets.ok ? 'secret' : null,
     ].filter((value): value is string => value !== null)
     if (failures.length > 0) {
-      const offline = catalog.meta.offline || configured.meta.offline
+      const offline = catalog.meta.offline || configured.meta.offline || secrets.meta.offline
       loadState.value = offline ? 'offline' : 'error'
-      loadError.value = failures.length === 2
-        ? 'Không tải được catalog và các config provider.'
-        : failures[0] === 'catalog'
-          ? 'Không tải được catalog provider từ Manager API.'
-          : 'Không tải được các config provider từ Manager API.'
+      loadError.value = failures.includes('catalog') && failures.includes('config') && failures.includes('secret')
+        ? 'Không tải được catalog, config provider và secret references.'
+        : failures.includes('catalog') && failures.includes('config')
+          ? 'Không tải được catalog và các config provider.'
+          : failures.includes('catalog') && failures.includes('secret')
+            ? 'Không tải được catalog provider và secret references.'
+            : failures.includes('config') && failures.includes('secret')
+              ? 'Không tải được config provider và secret references.'
+              : failures[0] === 'catalog'
+                ? 'Không tải được catalog provider từ Manager API.'
+                : failures[0] === 'config'
+                  ? 'Không tải được các config provider từ Manager API.'
+                  : 'Không tải được secret references từ Manager API.'
       await focusStateHeading()
       return
     }
 
-    if (!catalog.ok || !configured.ok) return
+    if (!catalog.ok || !configured.ok || !secrets.ok) return
     configs.value = configured.data
     installations.value = catalog.data
+    secretReferences.value = secrets.data
     if (!catalog.data.some((item) => item.id === selectedId.value)) {
       selectedId.value = ''
       selectedConfigId.value = ''
@@ -110,7 +124,7 @@ async function save() {
   if (!selected.value || !name.value.trim() || !configValid.value) return
   saveError.value = ''
   saving.value = true
-  const payload = { name: name.value.trim(), config: cloneConfig(configDraft.value), secretRefs: secretRefs.value.split(',').map((item) => item.trim()).filter(Boolean) }
+  const payload = { name: name.value.trim(), config: cloneConfig(configDraft.value), secretRefs: [...selectedSecretRefs.value] }
   try {
     const result = selectedConfigId.value
       ? await gateway.updateProviderConfig(selectedConfigId.value, payload, configs.value.find((item) => item.id === selectedConfigId.value)?.etag ?? '"missing"')
@@ -136,6 +150,15 @@ async function save() {
 }
 
 onMounted(load)
+
+const unknownSecretRefs = computed(() => selectedSecretRefs.value.filter((id) => !secretReferences.value.some((item) => item.id === id)))
+
+function toggleSecretReference(id: string, checked: boolean) {
+  const next = new Set(selectedSecretRefs.value)
+  if (checked) next.add(id)
+  else next.delete(id)
+  selectedSecretRefs.value = [...next]
+}
 </script>
 
 <template>
@@ -237,16 +260,38 @@ onMounted(load)
         <VtFormField
           label="Secret references"
           for-id="provider-secrets"
-          hint="Phân tách bằng dấu phẩy; giá trị secret được giữ ngoài API response."
+          hint="Chọn metadata secret; plaintext không đi vào browser."
         >
-          <VtInput
+          <div
             id="provider-secrets"
-            v-model="secretRefs"
-            name="provider-secret-references"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="secretRef.groq…"
-          />
+            class="secret-selection"
+          >
+            <div
+              v-for="item in secretReferences"
+              :key="item.id"
+              class="secret-option"
+            >
+              <VtCheckbox
+                :model-value="selectedSecretRefs.includes(item.id)"
+                :label="`${item.name} · v${item.version}`"
+                :disabled="saving"
+                @update:model-value="toggleSecretReference(item.id, $event)"
+              />
+              <span class="secret-option-meta"><small>{{ item.status }}</small></span>
+            </div>
+            <p
+              v-if="unknownSecretRefs.length"
+              class="unknown-secret"
+            >
+              Secret reference chưa có metadata trong danh sách vẫn được giữ nguyên: {{ unknownSecretRefs.join(', ') }}
+            </p>
+            <p
+              v-if="!secretReferences.length && !unknownSecretRefs.length"
+              class="unknown-secret"
+            >
+              Chưa có secret. Tạo secret ở panel bên dưới rồi chọn lại.
+            </p>
+          </div>
         </VtFormField>
         <div class="actions">
           <p
@@ -268,6 +313,13 @@ onMounted(load)
           </VtButton>
         </div>
       </VtCard>
+      <SecretReferencePanel
+        :gateway="gateway"
+        :items="secretReferences"
+        :selected-ids="selectedSecretRefs"
+        @update:selected-ids="selectedSecretRefs = $event"
+        @changed="load"
+      />
     </div>
     <VtCard
       v-else
@@ -294,6 +346,13 @@ onMounted(load)
 <style scoped>
 .provider-page { display: grid; gap: 16px; }
 .provider-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.secret-selection { display: grid; gap: 7px; min-height: 38px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); padding: 9px 10px; }
+.secret-option { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--vt-text-soft); font-size: 11px; }
+.secret-option :deep(.vt-checkbox-label) { min-width: 0; flex: 1; cursor: pointer; }
+.secret-option :deep(.vt-checkbox-label > span) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.secret-option-meta { flex: none; color: var(--vt-text-muted); font-size: 9px; }
+.secret-option small, .unknown-secret { color: var(--vt-text-muted); font-size: 9px; }
+.unknown-secret { margin: 0; line-height: 1.45; }
 .eyebrow { margin: 0 0 4px; color: var(--vt-primary); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 h1, h2 { margin: 0; color: var(--vt-text); }
 h1 { font-size: 22px; letter-spacing: -.02em; }

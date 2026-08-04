@@ -268,6 +268,19 @@ export interface SecretReference {
   updatedAt: string
 }
 
+/**
+ * Metadata mutation for a secret reference. The plaintext value never crosses
+ * the Store boundary; the API writes it to SecretValueStore first and passes
+ * only the resulting version/status metadata here.
+ */
+export interface SecretReferenceUpdate {
+  name?: string
+  locatorMasked?: string
+  version?: number
+  status?: SecretReference['status']
+  lastRotatedAt?: string | null
+}
+
 export interface ModelMemoryView {
   assistantId: string
   selections: Array<{ kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string }>
@@ -297,7 +310,7 @@ export interface Store {
   revokeSession(tokenHash: string): Promise<void>
   listSecretReferences(ownerId: string): Promise<SecretReference[]>
   createSecretReference(ownerId: string, value: { id: string; name: string; locatorMasked: string; version: number; status: SecretReference['status'] }): Promise<SecretReference>
-  updateSecretReference(ownerId: string, id: string, value: { name?: string; locatorMasked?: string }, ifMatch: string): Promise<SecretReference>
+  updateSecretReference(ownerId: string, id: string, value: SecretReferenceUpdate, ifMatch: string): Promise<SecretReference>
   deleteSecretReference(ownerId: string, id: string, ifMatch: string): Promise<void>
   listDevices(ownerId: string, assistantId: string): Promise<Device[]>
   reportDevicePresence(value: DevicePresenceInput): Promise<DevicePresenceResult>
@@ -542,7 +555,7 @@ export class InMemoryStore implements Store {
     return structuredClone(item)
   }
 
-  async updateSecretReference(ownerId: string, id: string, value: { name?: string; locatorMasked?: string }, ifMatch: string): Promise<SecretReference> {
+  async updateSecretReference(ownerId: string, id: string, value: SecretReferenceUpdate, ifMatch: string): Promise<SecretReference> {
     const current = this.secretReferences.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Secret reference not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Secret reference changed', 409)
@@ -551,8 +564,18 @@ export class InMemoryStore implements Store {
       ...current,
       ...(value.name === undefined ? {} : { name: value.name }),
       ...(value.locatorMasked === undefined ? {} : { locatorMasked: value.locatorMasked }),
+      ...(value.version === undefined ? {} : { version: value.version }),
+      ...(value.status === undefined ? {} : { status: value.status }),
+      ...(value.lastRotatedAt === undefined ? {} : { lastRotatedAt: value.lastRotatedAt }),
       metadataRevision,
-      etag: etag({ name: value.name ?? current.name, locatorMasked: value.locatorMasked ?? current.locatorMasked, metadataRevision }),
+      etag: etag({
+        name: value.name ?? current.name,
+        locatorMasked: value.locatorMasked ?? current.locatorMasked,
+        version: value.version ?? current.version,
+        status: value.status ?? current.status,
+        lastRotatedAt: value.lastRotatedAt ?? current.lastRotatedAt,
+        metadataRevision,
+      }),
       updatedAt: new Date().toISOString(),
     }
     this.secretReferences.set(id, next)

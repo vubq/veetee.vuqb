@@ -140,6 +140,22 @@ export interface ProviderConfigRecord {
   etag: string
 }
 
+export type SecretReferenceStatus = 'available' | 'unavailable' | 'revoked'
+
+/** Metadata only; the secret value is deliberately not part of this entity. */
+export interface SecretReference {
+  id: string
+  name: string
+  store: 'encrypted-local'
+  locatorMasked: string
+  version: number
+  metadataRevision: number
+  status: SecretReferenceStatus
+  lastRotatedAt: IsoDateTime | null
+  etag: ETag
+  updatedAt: IsoDateTime
+}
+
 export type ProviderSelection =
   | {
       kind: ProviderKind

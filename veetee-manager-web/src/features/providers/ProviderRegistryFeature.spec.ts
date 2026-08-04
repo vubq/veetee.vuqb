@@ -6,6 +6,7 @@ import type {
   GatewaySuccess,
   ProviderConfigRecord,
   ProviderInstallationView,
+  SecretReference,
 } from '@/domain'
 import { managerGatewayKey, type ManagerGateway } from '@/gateways'
 
@@ -28,6 +29,19 @@ const config: ProviderConfigRecord = {
   config: { voice: 'minh-duc' },
   secretRefs: [],
   etag: '"config-1"',
+}
+
+const secret: SecretReference = {
+  id: 'secret-groq',
+  name: 'Groq test key',
+  store: 'encrypted-local',
+  locatorMasked: 'encrypted-local',
+  version: 1,
+  metadataRevision: 1,
+  status: 'available',
+  lastRotatedAt: '2026-08-03T08:00:00.000Z',
+  etag: '"secret-1"',
+  updatedAt: '2026-08-03T08:00:00.000Z',
 }
 
 function meta(offline = false) {
@@ -63,8 +77,12 @@ function gateway(overrides: Partial<ManagerGateway> = {}): ManagerGateway {
   return {
     listProviderInstallations: vi.fn(async () => success([installation])),
     listProviderConfigs: vi.fn(async () => success([])),
+    listSecretReferences: vi.fn(async () => success([secret])),
     createProviderConfig: vi.fn(async () => success(config)),
     updateProviderConfig: vi.fn(async () => success(config)),
+    createSecretReference: vi.fn(async () => success(secret)),
+    updateSecretReference: vi.fn(async () => success(secret)),
+    deleteSecretReference: vi.fn(async () => success(undefined)),
     ...overrides,
   } as unknown as ManagerGateway
 }

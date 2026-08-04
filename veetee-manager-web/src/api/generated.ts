@@ -1510,6 +1510,7 @@ export interface operations {
                 "application/json": {
                     name?: string;
                     locator?: string;
+                    secretValue?: string;
                 };
             };
         };

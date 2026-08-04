@@ -132,4 +132,49 @@ describe('HTTP gateway read failure metadata', () => {
     expect(body.toolPolicy).toEqual(role.toolPolicy)
     expect(body.tools).toEqual(role.tools)
   })
+
+  it('sends write-only secret create and maps metadata without exposing a value', async () => {
+    const calls: Request[] = []
+    const metadata = {
+      id: 'secret-groq', ownerId: 'owner', name: 'Groq key', store: 'encrypted-local', locatorMasked: 'encrypted-local',
+      version: 1, metadataRevision: 1, status: 'available', lastRotatedAt: '2026-08-05T00:00:00.000Z', etag: '"secret-1"', updatedAt: '2026-08-05T00:00:00.000Z',
+    }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init)
+      calls.push(request)
+      if (request.url.endsWith('/api/v1/auth/me')) return new Response(JSON.stringify({ user: { id: 'owner' }, csrfToken: 'csrf-test' }), { status: 200 })
+      return new Response(JSON.stringify(metadata), { status: 201, headers: { 'Content-Type': 'application/json', ETag: metadata.etag } })
+    }))
+
+    const result = await createHttpGatewayDependencies('https://manager.test').managerGateway.createSecretReference({ name: 'Groq key', secretValue: 'never-returned' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.data).toMatchObject({ id: metadata.id, version: 1, status: 'available' })
+    expect(result.data).not.toHaveProperty('secretValue')
+    const request = calls.find((item) => item.url.endsWith('/api/v1/secret-references'))
+    expect(request?.method).toBe('POST')
+    expect(JSON.parse(await request!.clone().text())).toMatchObject({ name: 'Groq key', store: 'encrypted-local', secretValue: 'never-returned' })
+  })
+
+  it('sends ETag on secret rotation and never persists the plaintext in gateway state', async () => {
+    const calls: Request[] = []
+    const metadata = {
+      id: 'secret-groq', ownerId: 'owner', name: 'Groq key', store: 'encrypted-local', locatorMasked: 'encrypted-local',
+      version: 2, metadataRevision: 2, status: 'available', lastRotatedAt: '2026-08-05T00:00:00.000Z', etag: '"secret-2"', updatedAt: '2026-08-05T00:00:00.000Z',
+    }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init)
+      calls.push(request)
+      if (request.url.endsWith('/api/v1/auth/me')) return new Response(JSON.stringify({ user: { id: 'owner' }, csrfToken: 'csrf-test' }), { status: 200 })
+      return new Response(JSON.stringify(metadata), { status: 200, headers: { 'Content-Type': 'application/json', ETag: metadata.etag } })
+    }))
+
+    const result = await createHttpGatewayDependencies('https://manager.test').managerGateway.updateSecretReference('secret-groq', { secretValue: 'rotate-only-once' }, '"secret-1"')
+    expect(result.ok).toBe(true)
+    const request = calls.find((item) => item.url.endsWith('/api/v1/secret-references/secret-groq'))
+    expect(request?.method).toBe('PATCH')
+    expect(request?.headers.get('If-Match')).toBe('"secret-1"')
+    expect(request?.headers.get('X-Veetee-CSRF')).toBe('csrf-test')
+    expect(JSON.parse(await request!.clone().text())).toEqual({ secretValue: 'rotate-only-once' })
+  })
 })

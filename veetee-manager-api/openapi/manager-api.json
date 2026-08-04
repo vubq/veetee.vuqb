@@ -2155,6 +2155,11 @@
                   "locator": {
                     "type": "string",
                     "maxLength": 256
+                  },
+                  "secretValue": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384
                   }
                 }
               }
