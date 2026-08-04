@@ -634,3 +634,15 @@
   **87/87**, Chromium E2E **11/11** (a11y serious/critical gate). Không gọi Groq,
   không phát audio, không mở microphone/speaker,
   không flash/reset ESP32, không đổi Wi-Fi/Tailscale hoặc mutate production DB.
+
+### Runtime readiness after conversation delete slice (2026-08-05, non-audio)
+
+- Read-only probe trên runtime hiện tại: Manager API `18101/health/ready`, Voice
+  `18100/health/ready` và Web `18181/` đều HTTP **200**; API OpenAPI đã expose
+  `/api/v1/conversations/{id}` DELETE, `/api/v1/retention-delete-jobs/{id}` GET
+  và response `410` cho conversation detail.
+- Không restart Voice, không load provider generation mới và không tạo/xóa data
+  trên production `veetee_vubq`; endpoint chỉ được xác nhận qua OpenAPI.
+- Audio lock vẫn giữ nguyên: không `pw-play`, wake/audio harness,
+  microphone/speaker/serial audio, flash/reset/erase firmware hoặc đổi
+  Wi-Fi/Tailscale.
