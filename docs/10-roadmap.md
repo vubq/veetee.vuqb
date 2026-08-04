@@ -15,8 +15,8 @@
 
 | Milestone | Đã chứng minh | Còn mở trước khi đánh dấu đạt |
 |---|---|---|
-| M0 | Host protocol/provider path, firmware build/serial và runtime turn đã chạy; database/provider config có revision; unattended wake đã đưa được audio qua pipeline; physical harness đã ghi đủ 30/30 repetition (120 event), không còn lỗi capture encode sau khi tách lock | Người dùng xác nhận nghe loa/nhìn LCD/bấm PTT và acceptance audio path không rơi frame |
-| M1 | WS v1/v2/v3 compatibility fixtures, streaming/cancellation/admission, WakeNet init, wake→TTS exact image, split encoder/decoder lock, 30-turn unattended wake lifecycle và host warm TTFA p95 `1377,5 ms` đã pass | AFE/AEC/noise, barge-in, false accept/reject corpus, 60-minute physical soak, provider artifact/resource promotion và cross-peer physical conformance |
+| M0 | Host protocol/provider path, firmware build/serial và runtime turn đã chạy; database/provider config có revision; unattended wake đã đưa được audio qua pipeline; physical harness đã ghi ít nhất 30/30 repetition (một lượt mới đạt 94 repetition hoàn chỉnh), không còn lỗi capture encode sau khi tách lock | Người dùng xác nhận nghe loa/nhìn LCD/bấm PTT và acceptance audio path không rơi frame |
+| M1 | WS v1/v2/v3 compatibility fixtures, streaming/cancellation/admission, WakeNet init, wake→TTS exact image, split encoder/decoder lock, 30-turn unattended wake lifecycle, host warm TTFA p95 `1377,5 ms`, và fixture physical soak hơn 60 phút đã pass; soak mới vượt qua failure point ở repetition 64 sau cancellation-safe cleanup | AFE/AEC/noise, barge-in, false accept/reject corpus, 100-repetition completion, provider artifact/resource promotion và cross-peer physical conformance |
 | M2 | API/Web/PostgreSQL/ETag/OpenAPI, provider registry schema-driven, auth/retention/presence, E2E/a11y | Provider artifact promotion/VRAM evidence và các physical acceptance không được suy ra từ host test |
 | M3 | Chưa đưa vào critical path; hardware MCP/transport/assets/OTA vẫn deferred theo input | BOM/descriptor/safety policy và golden transport fixtures |
 | M4 | Chưa bắt đầu promotion | Locale thứ hai, capacity/backup/security/soak gates |
