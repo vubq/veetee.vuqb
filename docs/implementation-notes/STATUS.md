@@ -471,3 +471,13 @@
 - Đây hoàn toàn là host-only. Không phát audio, không mở microphone/speaker,
   không flash/reset firmware, không restart runtime production, không đổi
   Wi-Fi/Tailscale, không mutate `veetee_vubq`.
+
+### Voice runtime source sync after resource gate (2026-08-05, non-audio)
+
+- Sau khi push `86e2041`, chỉ Voice service `veetee-voice-18100.service` được
+  restart để nạp source mới; Manager API/Web, PostgreSQL, Redis và Tailscale
+  không restart. ESP32 tự reconnect sau restart, không cần flash/reset.
+- Readiness sau reconnect: Voice/API/Web lần lượt `200`, Voice revision `87`,
+  `activeConnections=1`, `activeTurns=0`, `activationFailures=0`,
+  `protocol_errors=0`, `audio_frames_in=0`, `audio_frames_out=0`. Không chạy
+  `pw-play`, wake harness hoặc bất kỳ test phát audio nào.
