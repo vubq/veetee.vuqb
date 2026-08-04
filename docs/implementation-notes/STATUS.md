@@ -301,6 +301,15 @@
   acoustic/wake/PTT acceptance còn lại chỉ được chạy sau khi operator cấp quyền
   lại. Host unit, protocol, DB, UI và serial read-only có thể tiếp tục.
 
+### Auto-turn watchdog race regression (2026-08-04)
+
+- Host-only Voice Server test xác nhận khi `mode=auto` bị thay bằng turn mới
+  trước `noSpeechTimeoutMs`, watchdog generation cũ bị hủy và không abort turn
+  mới. Nhóm no-speech **3 passed**; toàn bộ suite Voice Server **63 passed**.
+- Không phát audio ra ESP32, không mở serial, không đổi firmware/config/runtime
+  production. Acoustic wake, barge-in và false-reject gates vẫn giữ nguyên trạng
+  thái mở.
+
 ### URL metadata hardening and non-audio regression (2026-08-04)
 
 - `VEETEE_PUBLIC_BASE_URL` đã được thêm vào Manager API environment schema;

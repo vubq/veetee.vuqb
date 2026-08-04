@@ -409,6 +409,58 @@ async def test_auto_no_speech_watchdog_cancels_after_confirmed_speech(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_auto_no_speech_watchdog_cannot_abort_replacement_turn(monkeypatch, tmp_path):
+    """Replacing an auto turn cancels its timer before the next turn owns state."""
+
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    snapshot = json.loads(fixture.read_text(encoding="utf-8"))
+    snapshot["autoTurn"] = {
+        "enabled": True,
+        "noSpeechTimeoutMs": 1000,
+        "noSpeechAlert": {"status": "warning", "message": "Chưa nghe thấy lời nói.", "emotion": "neutral"},
+    }
+    configured = tmp_path / "no-speech-replacement.json"
+    configured.write_text(json.dumps(snapshot), encoding="utf-8")
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(configured))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    ws = None
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "no-speech-replacement", "Client-Id": "client-replacement", "Protocol-Version": "3"},
+        )
+        await ws.send_json({
+            "type": "hello", "version": 3, "transport": "websocket",
+            "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+        })
+        hello = await ws.receive_json()
+        session_id = hello["session_id"]
+        await ws.send_json({"type": "listen", "state": "start", "mode": "auto", "session_id": session_id})
+        await asyncio.sleep(0.05)
+        await ws.send_json({"type": "listen", "state": "start", "mode": "manual", "session_id": session_id})
+        await asyncio.sleep(1.2)
+
+        assert service.metrics["auto_no_speech_timeouts"] == 0
+        assert service.metrics["active_turns"] == 1
+        await ws.send_json({"type": "abort", "reason": "test", "session_id": session_id})
+        stop = await ws.receive_json(timeout=2)
+        assert stop["type"] == "tts"
+        assert service.metrics["active_turns"] == 0
+    finally:
+        if ws is not None:
+            await ws.close()
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_realtime_barge_in_cancels_old_turn_before_new_audio(monkeypatch):
     fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
     monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
