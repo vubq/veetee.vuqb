@@ -391,3 +391,12 @@
 - Không phát audio, không chạy wake harness, không flash/đổi firmware, không
   restart runtime production, không đổi Wi-Fi/network và không mutate
   `veetee_vubq`.
+
+### History identity redaction (2026-08-05, host-only)
+
+- History event không còn ghi raw wire `Device-Id`; `deviceKey` dùng SHA-256
+  identity hash giống presence, nên MAC/device identity không đi vào Manager
+  history payload. Wire message và API field name vẫn tương thích.
+- Regression history kiểm tra hash đúng và raw identity vắng mặt. Không phát
+  audio, không restart runtime, không flash firmware và không mutate production
+  database.

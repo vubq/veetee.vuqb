@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -84,6 +85,8 @@ async def test_completed_turn_is_reported_outside_websocket_send_path(tmp_path: 
         assert len(reporter.events) == 1
         event = reporter.events[0]
         assert event["assistantId"] == snapshot["assistantId"]
+        assert event["deviceKey"] == hashlib.sha256(b"history-device").hexdigest()
+        assert event["deviceKey"] != "history-device"
         assert event["state"] == "completed"
         assert event["sequence"] == 1
         assert event["timings"]["turn_duration_ms"] >= 0

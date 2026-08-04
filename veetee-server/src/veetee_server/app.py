@@ -693,7 +693,10 @@ class VoiceSession:
         event = {
             "conversationId": self.conversation_id,
             "assistantId": view.snapshot.assistant_id,
-            "deviceKey": self.device_id,
+            # Keep history aligned with presence identity semantics. The wire
+            # Device-Id may be a MAC; only the stable one-way identity hash is
+            # allowed into control-plane storage/events.
+            "deviceKey": hashlib.sha256(self.device_id.encode("utf-8")).hexdigest(),
             "locale": view.snapshot.locale,
             "configRevision": view.snapshot.revision,
             "conversationStartedAt": turn.conversation_started_at or turn.started_at,
