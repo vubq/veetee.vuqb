@@ -37,6 +37,7 @@ import type {
   ProviderConfigRecord,
   ProviderInstallationView,
   RetentionPolicy,
+  RetentionPolicyInput,
 } from '@/domain'
 import { PROVIDER_KINDS } from '@/domain'
 import type {
@@ -46,6 +47,7 @@ import type {
   PairDeviceProblem,
   PreviewControlGateway,
   ProviderMutationProblem,
+  RetentionMutationProblem,
   SecretMutationProblem,
 } from '@/gateways'
 
@@ -115,6 +117,7 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
   private readonly now: () => string
   private readonly delayOverride: number | undefined
   private readonly longActionDelayOverride: number | undefined
+  private retentionPolicy: RetentionPolicy
 
   constructor(options: MockGatewayOptions = {}) {
     this.state = createInitialMockState()
@@ -123,6 +126,7 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     this.now = options.now ?? (() => FIXED_NOW)
     this.delayOverride = options.delayMs
     this.longActionDelayOverride = options.longActionDelayMs
+    this.retentionPolicy = this.defaultRetentionPolicy()
   }
 
   getScenario(): PreviewScenarioId {
@@ -140,6 +144,7 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
   async resetDemo(): Promise<GatewayResult<DemoResetSummary, never>> {
     const request = await this.begin('mutation')
     this.state = createInitialMockState()
+    this.retentionPolicy = this.defaultRetentionPolicy()
     this.scenario = 'happy'
     this.unlinkedDevices.clear()
 
@@ -745,7 +750,47 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
 
   async getRetentionPolicy(): Promise<GatewayResult<RetentionPolicy, never>> {
     const request = await this.begin('read')
-    return this.success({ ownerId: 'local-owner', captureTranscript: true, transcriptDays: 30, captureAudio: false, audioDays: null, effectiveAt: '1970-01-01T00:00:00.000Z', revision: 1, etag: '"baseline-transcript-30d-audio-off"' }, request)
+    return this.success(clone(this.retentionPolicy), request)
+  }
+
+  async updateRetentionPolicy(input: RetentionPolicyInput, expectedEtag: string): Promise<GatewayResult<RetentionPolicy, RetentionMutationProblem>> {
+    const request = await this.begin('mutation')
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    if (this.retentionPolicy.etag !== expectedEtag) {
+      const conflict: RevisionConflictProblem<RetentionPolicy, RetentionPolicyInput> = {
+        type: 'revision-conflict',
+        code: 'REVISION_CONFLICT',
+        messageKey: 'problem.revision.conflict',
+        requestId: request.requestId,
+        retryable: false,
+        currentRevision: this.retentionPolicy.revision,
+        currentEtag: this.retentionPolicy.etag,
+        current: clone(this.retentionPolicy),
+        localDraft: clone(input),
+      }
+      return this.failure(conflict, request)
+    }
+    if (input.captureAudio || input.audioDays !== null || (input.captureTranscript && (!Number.isInteger(input.transcriptDays) || (input.transcriptDays ?? 0) < 1 || (input.transcriptDays ?? 0) > 3650)) || (!input.captureTranscript && input.transcriptDays !== null)) {
+      const problem: ValidationProblem = {
+        type: 'validation',
+        code: 'VALIDATION_ERROR',
+        messageKey: 'problem.retention.invalid',
+        requestId: request.requestId,
+        retryable: false,
+        fieldProblems: [{ field: input.captureAudio ? 'captureAudio' : 'transcriptDays', code: 'UNSUPPORTED', messageKey: 'problem.retention.invalid' }],
+      }
+      return this.failure(problem, request)
+    }
+    const revision = this.retentionPolicy.revision + 1
+    this.retentionPolicy = {
+      ...this.retentionPolicy,
+      ...clone(input),
+      revision,
+      effectiveAt: this.now(),
+      etag: etag('retention', revision),
+    }
+    return this.success(clone(this.retentionPolicy), request)
   }
 
   async listConversations(assistantId: string, limit = 20): Promise<GatewayResult<Page<ConversationSummary>, NotFoundProblem>> {
@@ -791,6 +836,10 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
       freshness: offline ? 'stale' : 'fresh',
       offline,
     }
+  }
+
+  private defaultRetentionPolicy(): RetentionPolicy {
+    return { ownerId: 'local-owner', captureTranscript: true, transcriptDays: 30, captureAudio: false, audioDays: null, effectiveAt: '1970-01-01T00:00:00.000Z', revision: 1, etag: '"baseline-transcript-30d-audio-off"' }
   }
 
   private success<T>(data: T, request: RequestContext): GatewaySuccess<T> {

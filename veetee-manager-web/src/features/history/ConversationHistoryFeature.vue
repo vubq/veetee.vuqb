@@ -3,7 +3,7 @@ import { History, RefreshCcw } from '@lucide/vue'
 import { nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
-import type { AssistantCard, ConversationDetail, ConversationSummary, RetentionPolicy } from '@/domain'
+import type { AssistantCard, ConversationDetail, ConversationSummary, RetentionPolicy, RetentionPolicyInput } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import PreviewScenarioToolbar from '@/ui/patterns/PreviewScenarioToolbar.vue'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
@@ -12,12 +12,16 @@ import VtCard from '@/ui/primitives/VtCard.vue'
 import VtEmptyState from '@/ui/primitives/VtEmptyState.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
 import VtSkeleton from '@/ui/primitives/VtSkeleton.vue'
-import VtStatus from '@/ui/primitives/VtStatus.vue'
+import { notify } from '@/ui/primitives/notifications'
+
+import RetentionPolicyPanel from './RetentionPolicyPanel.vue'
 
 const props = defineProps<{ assistant: AssistantCard }>()
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
 const conversations = ref<ConversationSummary[]>([])
 const retention = ref<RetentionPolicy>()
+const retentionSaving = ref(false)
+const retentionSaveError = ref('')
 const selected = ref<ConversationDetail>()
 const selectedItem = ref<ConversationSummary>()
 const loading = ref(true)
@@ -110,6 +114,32 @@ async function openConversation(item: ConversationSummary) {
   }
 }
 
+async function saveRetentionPolicy(input: RetentionPolicyInput) {
+  const current = retention.value
+  if (!current) return
+  retentionSaving.value = true
+  retentionSaveError.value = ''
+  try {
+    const result = await gateway.updateRetentionPolicy(input, current.etag)
+    if (result.ok) {
+      retention.value = result.data
+      notify('Đã lưu retention policy', { tone: 'success', message: `Revision ${result.data.revision} đã được áp dụng cho các lượt mới.` })
+      return
+    }
+    retentionSaveError.value = result.meta.offline
+      ? 'Đang ngoại tuyến; retention policy chưa được thay đổi.'
+      : result.problem.type === 'revision-conflict'
+        ? 'Retention policy đã thay đổi ở nơi khác; hãy tải lại trước khi lưu.'
+        : 'Không thể lưu retention policy; kiểm tra lại dữ liệu và thử lại.'
+    notify('Không thể lưu retention policy', { tone: 'error', message: retentionSaveError.value, assertive: true })
+  } catch {
+    retentionSaveError.value = 'Không kết nối được Manager API; retention policy vẫn giữ nguyên.'
+    notify('Không thể lưu retention policy', { tone: 'error', message: retentionSaveError.value, assertive: true })
+  } finally {
+    retentionSaving.value = false
+  }
+}
+
 async function focusListState() {
   await nextTick()
   listStateHeading.value?.focus()
@@ -147,18 +177,13 @@ onMounted(load)
       </VtButton>
     </div>
 
-    <VtCard
+    <RetentionPolicyPanel
       v-if="retention && (loadState === 'ready' || loadState === 'empty')"
-      class="retention-card"
-    >
-      <div>
-        <VtStatus
-          tone="online"
-          label="Retention đang áp dụng"
-        /><strong>{{ retention.captureTranscript ? `${retention.transcriptDays} ngày transcript` : 'Không lưu transcript' }}</strong>
-      </div>
-      <span>Audio: {{ retention.captureAudio ? 'đang bật' : 'tắt mặc định' }}</span>
-    </VtCard>
+      :policy="retention"
+      :saving="retentionSaving"
+      :error="retentionSaveError"
+      @save="saveRetentionPolicy"
+    />
 
     <div
       v-if="loadState === 'loading'"
@@ -278,8 +303,7 @@ onMounted(load)
 <style scoped>
 .history-feature { display: grid; gap: 12px; }
 .history-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-section); background: var(--vt-surface); padding: 10px 12px; }
-.history-toolbar strong { display: block; font-size: 12px; }.history-toolbar span, .retention-card > span { color: var(--vt-text-muted); font-size: 9px; }
-.retention-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 11px 13px; }.retention-card > div { display: flex; align-items: center; gap: 9px; }.retention-card strong { font-size: 10px; }
+.history-toolbar strong { display: block; font-size: 12px; }.history-toolbar span { color: var(--vt-text-muted); font-size: 9px; }
 .history-layout { display: grid; grid-template-columns: minmax(220px, .75fr) minmax(0, 1.25fr); gap: 12px; }.history-list { display: grid; gap: 8px; }.history-item { cursor: pointer; padding: 12px; }.history-item.selected { border-color: var(--vt-primary); box-shadow: 0 0 0 3px var(--vt-focus); }.history-item header, .history-detail header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }.history-item header div, .history-detail header div { display: grid; gap: 3px; }.history-item strong, .history-detail strong { font-size: 11px; }.history-item span, .history-detail span { color: var(--vt-text-muted); font-size: 9px; }.history-item p { margin: 9px 0 0; color: var(--vt-text-soft); font-size: 9px; }.history-detail { min-height: 270px; padding: 14px; }.transcript { display: grid; gap: 9px; margin: 16px 0 0; padding: 0; list-style: none; }.transcript li { border: 1px solid var(--vt-border); border-radius: 7px; background: var(--vt-surface-subtle); padding: 9px 10px; }.transcript li.user { background: #f1f6fb; }.transcript span { font-size: 9px; font-weight: 700; }.transcript p { margin: 4px 0 0; color: var(--vt-text-soft); font-size: 10px; line-height: 1.5; }.history-skeleton { display: grid; gap: 8px; padding: 13px; }.detail-loading { margin-top: 16px; }
 .history-state { display: grid; justify-items: center; gap: 4px; color: var(--vt-text-muted); padding: 24px; text-align: center; }
 .history-state h2 { margin: 0; color: var(--vt-text); font-size: 14px; }
@@ -287,5 +311,5 @@ onMounted(load)
 .history-state h2:focus-visible, .history-detail strong:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--vt-focus); border-radius: 3px; }
 .detail-state { display: grid; justify-items: start; gap: 6px; margin-top: 16px; color: var(--vt-danger); font-size: 11px; line-height: 1.5; }
 .detail-state p { margin: 0; }
-@media (max-width: 700px) { .history-layout { grid-template-columns: 1fr; }.retention-card, .history-toolbar { align-items: flex-start; flex-direction: column; }.history-toolbar .vt-button { width: 100%; } }
+@media (max-width: 700px) { .history-layout { grid-template-columns: 1fr; }.history-toolbar { align-items: flex-start; flex-direction: column; }.history-toolbar .vt-button { width: 100%; } }
 </style>

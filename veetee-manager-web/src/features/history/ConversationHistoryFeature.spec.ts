@@ -62,6 +62,7 @@ function gateway(overrides: Partial<ManagerGateway> = {}): ManagerGateway {
   return {
     listConversations: vi.fn(async () => success({ items: [detail.summary], total: 1 })),
     getRetentionPolicy: vi.fn(async () => success(retention)),
+    updateRetentionPolicy: vi.fn(async () => success(retention)),
     getConversation: vi.fn(async () => success(detail)),
     ...overrides,
   } as unknown as ManagerGateway
@@ -161,5 +162,28 @@ describe('ConversationHistoryFeature detail states', () => {
 
     expect(await view.findByText('Hôm nay thời tiết thế nào?')).toBeTruthy()
     expect(getConversation).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('ConversationHistoryFeature retention mutation', () => {
+  it('saves retention policy with the current ETag', async () => {
+    const updateRetentionPolicy = vi.fn(async () => success({ ...retention, revision: 3, etag: '"retention-3"' }))
+    const view = renderFeature(gateway({ updateRetentionPolicy }))
+
+    await view.findByRole('button', { name: 'Lưu retention policy' })
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu retention policy' }))
+
+    expect(updateRetentionPolicy).toHaveBeenCalledWith({ captureTranscript: true, transcriptDays: 30, captureAudio: false, audioDays: null }, retention.etag)
+  })
+
+  it('keeps the policy editor and reports an offline save failure', async () => {
+    const updateRetentionPolicy = vi.fn(async () => failure(true))
+    const view = renderFeature(gateway({ updateRetentionPolicy }))
+
+    await view.findByRole('button', { name: 'Lưu retention policy' })
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu retention policy' }))
+
+    expect((await view.findByRole('alert')).textContent).toContain('Đang ngoại tuyến; retention policy chưa được thay đổi.')
+    expect(view.getByRole('heading', { name: 'Lưu trữ hội thoại' })).toBeTruthy()
   })
 })

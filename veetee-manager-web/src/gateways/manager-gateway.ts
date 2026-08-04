@@ -30,6 +30,7 @@ import type {
   ProviderConfigRecord,
   ProviderInstallationView,
   RetentionPolicy,
+  RetentionPolicyInput,
 } from '@/domain'
 
 export type CreateAssistantProblem =
@@ -58,6 +59,11 @@ export type SecretMutationProblem =
   | OfflineProblem
   | NotFoundProblem
   | RevisionConflictProblem<SecretReference, unknown>
+
+export type RetentionMutationProblem =
+  | ValidationProblem
+  | OfflineProblem
+  | RevisionConflictProblem<RetentionPolicy, RetentionPolicyInput>
 
 export interface AssistantGateway {
   listAssistants(
@@ -147,6 +153,10 @@ export interface DeviceGateway {
 
 export interface HistoryGateway {
   getRetentionPolicy(): Promise<GatewayResult<RetentionPolicy, never>>
+  updateRetentionPolicy(
+    input: RetentionPolicyInput,
+    expectedEtag: string,
+  ): Promise<GatewayResult<RetentionPolicy, RetentionMutationProblem>>
   listConversations(assistantId: string, limit?: number): Promise<GatewayResult<Page<ConversationSummary>, NotFoundProblem>>
   getConversation(id: string): Promise<GatewayResult<ConversationDetail, NotFoundProblem>>
 }

@@ -226,6 +226,11 @@ export interface RetentionPolicy {
   etag: ETag
 }
 
+export type RetentionPolicyInput = Pick<
+  RetentionPolicy,
+  'captureTranscript' | 'transcriptDays' | 'captureAudio' | 'audioDays'
+>
+
 export interface TranscriptSegment {
   speaker: 'user' | 'assistant' | 'system'
   text: string

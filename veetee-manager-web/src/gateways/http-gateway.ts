@@ -16,6 +16,7 @@ import type {
   ProviderConfigRecord,
   ProviderInstallationView,
   RetentionPolicy,
+  RetentionPolicyInput,
   OfflineProblem,
   RevisionConflictProblem,
   RoleConfig,
@@ -29,7 +30,7 @@ import type {
   VoiceProfile,
 } from '@/domain'
 import type { paths } from '@/api/generated'
-import type { GatewayDependencies, ManagerGateway, PreviewControlGateway, SecretMutationProblem } from './manager-gateway'
+import type { GatewayDependencies, ManagerGateway, PreviewControlGateway, RetentionMutationProblem, SecretMutationProblem } from './manager-gateway'
 import type {
   CreateAssistantRequest,
   MemoryEnabledRequest,
@@ -37,6 +38,7 @@ import type {
   ProviderConfigPatchRequest,
   ProviderConfigRequest,
   ProviderSelectionRequest,
+  RetentionPolicyRequest,
   RoleConfigRequest,
 } from '@/api/contract'
 import { createManagerApiClient, type ManagerApiClient } from '@/api/manager-client'
@@ -256,6 +258,16 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
 
   async getRetentionPolicy(): Promise<GatewayResult<RetentionPolicy, never>> {
     const result = await this.execute(() => this.client.GET('/api/v1/retention-policy'))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(retentionPolicy(result.data))
+  }
+
+  async updateRetentionPolicy(input: RetentionPolicyInput, expectedEtag: string): Promise<GatewayResult<RetentionPolicy, RetentionMutationProblem>> {
+    const body: RetentionPolicyRequest = input
+    const result = await this.execute(() => this.client.PATCH('/api/v1/retention-policy', {
+      headers: { 'If-Match': expectedEtag },
+      body,
+    }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
     return this.success(retentionPolicy(result.data))
   }

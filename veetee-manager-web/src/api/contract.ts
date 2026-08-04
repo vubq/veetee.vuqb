@@ -10,6 +10,7 @@ export type ProviderSelectionRequest = JsonBody<'patchApiV1AssistantsByIdModelMe
 export type MemoryEnabledRequest = JsonBody<'patchApiV1AssistantsByIdModelMemoryMemory'>
 export type PairDeviceRequest = JsonBody<'postApiV1DevicesPair'>
 export type DevicePairingChallengeRequest = JsonBody<'postInternalV1DevicesPairingChallenges'>
+export type RetentionPolicyRequest = JsonBody<'patchApiV1RetentionPolicy'>
 
 /** Public type boundary: feature code consumes generated OpenAPI request shapes. */
 export type ManagerApiOperations = operations

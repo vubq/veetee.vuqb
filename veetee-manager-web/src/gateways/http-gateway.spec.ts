@@ -133,6 +133,28 @@ describe('HTTP gateway read failure metadata', () => {
     expect(body.tools).toEqual(role.tools)
   })
 
+  it('sends the retention ETag and keeps audio disabled in the typed payload', async () => {
+    const calls: Request[] = []
+    const policy = {
+      ownerId: 'owner', captureTranscript: true, transcriptDays: 90, captureAudio: false, audioDays: null,
+      effectiveAt: '2026-08-05T00:00:00.000Z', revision: 2, etag: '"retention-2"',
+    }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init)
+      calls.push(request)
+      if (request.url.endsWith('/api/v1/auth/me')) return new Response(JSON.stringify({ user: { id: 'owner' }, csrfToken: 'csrf-test' }), { status: 200 })
+      return new Response(JSON.stringify(policy), { status: 200, headers: { 'Content-Type': 'application/json', ETag: policy.etag } })
+    }))
+
+    const result = await createHttpGatewayDependencies('https://manager.test').managerGateway.updateRetentionPolicy({ captureTranscript: true, transcriptDays: 90, captureAudio: false, audioDays: null }, '"retention-1"')
+    expect(result.ok).toBe(true)
+    const request = calls.find((item) => item.url.endsWith('/api/v1/retention-policy'))
+    expect(request?.method).toBe('PATCH')
+    expect(request?.headers.get('If-Match')).toBe('"retention-1"')
+    expect(request?.headers.get('X-Veetee-CSRF')).toBe('csrf-test')
+    expect(JSON.parse(await request!.clone().text())).toEqual({ captureTranscript: true, transcriptDays: 90, captureAudio: false, audioDays: null })
+  })
+
   it('sends write-only secret create and maps metadata without exposing a value', async () => {
     const calls: Request[] = []
     const metadata = {

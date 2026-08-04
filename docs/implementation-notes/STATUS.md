@@ -564,3 +564,17 @@
   **73/73**, Chromium E2E **9/9**. Không gọi Groq, không phát audio, không mở
   microphone/speaker, không flash/reset ESP32, không đổi Wi-Fi/Tailscale hoặc
   mutate production DB `veetee_vubq`.
+
+### Retention policy editor (2026-08-05, non-audio)
+
+- History workspace đã có `RetentionPolicyPanel` component để chỉnh transcript
+  retention bằng typed ETag mutation. Tắt transcript tự gửi `transcriptDays=null`;
+  audio recording luôn disabled và payload bị khóa ở `captureAudio=false`,
+  `audioDays=null` cho tới khi artifact audio được hỗ trợ/promote.
+- Offline, stale revision và validation không làm mất draft; lỗi được focus,
+  announce bằng `role=alert` và toast. Preview `MockGateway` lưu policy/revision
+  riêng, không chạm API/database thật.
+- Web verification: typecheck, lint, production build, unit **79/79** và
+  Chromium E2E **9/9**; axe serious/critical gate pass. Không gọi Groq, không
+  phát audio, không mở microphone/speaker, không flash/reset firmware, không đổi
+  Wi-Fi/Tailscale hoặc mutate `veetee_vubq`.
