@@ -101,4 +101,14 @@ describe('SchemaConfigForm', () => {
     expect(await view.findByText(/advanced\.rules có type không hợp lệ/)).toBeTruthy()
     expect(onUpdate.mock.calls.length).toBe(before)
   })
+
+  it('validates URI primitive fields before emitting a draft', async () => {
+    const { view, onUpdate } = renderForm()
+    const before = onUpdate.mock.calls.length
+
+    await fireEvent.update(view.getByRole('textbox', { name: 'Endpoint' }), 'not-a-uri')
+
+    expect(await view.findByText('Cần một URI hợp lệ.')).toBeTruthy()
+    expect(onUpdate.mock.calls.length).toBe(before)
+  })
 })

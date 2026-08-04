@@ -750,3 +750,12 @@
 - Verification: Manager Web typecheck/lint/build, unit **91/91**; Manager API
   schema tests **42/42** vẫn pass. Không đổi wire/provider fallback, không
   restart service, không mutate production DB và audio lock vẫn bật.
+
+### Manager Web URI field validation (2026-08-05, host-only)
+
+- Primitive schema field có `format: "uri"` giờ được kiểm tra thật bằng URL
+  parser trước khi emit provider draft; `type=url` chỉ là UX hint, không còn là
+  validation duy nhất. Input sai giữ draft và báo lỗi inline.
+- Regression Manager Web full unit **92/92**, typecheck/lint/build pass. API
+  schema suite **42/42** vẫn xanh; không đổi protocol/provider fallback, không
+  restart runtime, không đụng production DB/network và audio lock vẫn bật.

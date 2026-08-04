@@ -138,6 +138,14 @@ export function validatePrimitiveValue(field: PrimitiveSchemaField, value: unkno
     if (field.required && effective.trim().length === 0) return 'Trường này bắt buộc.'
     if (field.minLength !== undefined && effective.length < field.minLength) return `Cần ít nhất ${field.minLength} ký tự.`
     if (field.maxLength !== undefined && effective.length > field.maxLength) return `Không được quá ${field.maxLength} ký tự.`
+    if (field.format === 'uri') {
+      try {
+        const parsed = new URL(effective)
+        if (!parsed.protocol || !parsed.hostname) return 'Cần một URI hợp lệ.'
+      } catch {
+        return 'Cần một URI hợp lệ.'
+      }
+    }
   } else if (field.type === 'number' || field.type === 'integer') {
     if (typeof effective !== 'number' || !Number.isFinite(effective)) return 'Giá trị phải là số hợp lệ.'
     if (field.type === 'integer' && !Number.isInteger(effective)) return 'Giá trị phải là số nguyên.'
