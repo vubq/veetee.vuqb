@@ -88,6 +88,36 @@ class WakeAudioHarnessTest(unittest.TestCase):
             with self.assertRaisesRegex(wake_audio_test.HarnessError, "repetitions"):
                 wake_audio_test.load_scenario(scenario_file)
 
+    def test_barge_in_phase_is_optional_and_must_follow_final_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            scenario_file = base / "scenario.json"
+            document = {
+                "monitor": {"command": ["never-run"], "projectDir": str(base), "serialPort": "/dev/null", "baud": 115200},
+                "player": {"command": ["never-run", "{file}"]},
+                "clips": {"wake": str(base / "wake.wav"), "utterance": str(base / "utterance.wav")},
+                "events": [
+                    {"name": "wake", "marker": "wake detected", "timeoutSeconds": 1},
+                    {"name": "speaking", "marker": "state=speaking", "timeoutSeconds": 1},
+                ],
+                "bargeIn": {
+                    "clip": str(base / "interrupt.wav"),
+                    "afterStage": "speaking",
+                    "events": [{"name": "aborted", "marker": "wake interrupt", "timeoutSeconds": 1}],
+                },
+            }
+            scenario_file.write_text(json.dumps(document), encoding="utf-8")
+            parsed = wake_audio_test.load_scenario(scenario_file)
+            self.assertIsNotNone(parsed.barge_in)
+            assert parsed.barge_in is not None
+            self.assertEqual(parsed.barge_in.after_stage, "speaking")
+            self.assertEqual(parsed.barge_in.stages[0].marker, "wake interrupt")
+
+            document["bargeIn"]["afterStage"] = "wake"
+            scenario_file.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(wake_audio_test.HarnessError, "final events stage"):
+                wake_audio_test.load_scenario(scenario_file)
+
     def test_forbidden_serial_markers_are_configured_and_fail_fast(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

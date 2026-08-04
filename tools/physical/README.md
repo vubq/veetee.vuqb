@@ -100,6 +100,26 @@ snapshot with `VEETEE_TEST_GROQ_KEYS_FILE=...` (see
 `veetee-server/README.md`). The physical harness itself never reads or prints
 keys; Manager-source production runtime remains single-secret/no-rotation.
 
+## Physical wake barge-in lifecycle
+
+`wake_audio_test.py` also accepts an optional `bargeIn` block. It starts the
+configured interrupt clip after the final normal stage (usually
+`state=speaking`) and waits for configured serial markers such as `wake
+detected`, `state=listening`, `wake interrupt` and a new `wake start`:
+
+```bash
+python3 tools/physical/wake_audio_test.py \
+  --scenario tools/physical/wake-barge-in.example.json \
+  --allow-audio \
+  --report /tmp/veetee-wake-barge-in.json
+```
+
+The phase is opt-in and configuration-driven. It records control/lifecycle
+timings only; it does **not** claim that the physical speaker reached silence
+within the M1 time-to-silence target. That requires a separate acoustic capture
+measurement. The harness still uses `idf.py monitor --no-reset`, never flashes,
+does not toggle RTS/DTR, and never stores raw audio, transcript or credentials.
+
 ## Repeated physical soak
 
 Set the ignored local scenario field `"repetitions": 30` to reuse one monitor

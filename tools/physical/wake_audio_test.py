@@ -5,7 +5,9 @@ The harness deliberately does not open a microphone, flash the board, toggle
 RTS/DTR, or send serial commands.  It starts an IDF monitor with --no-reset,
 plays a configured wake clip, waits for configured serial markers, and only
 then plays the utterance clip.  A separate explicit --allow-audio flag is
-required before any player process is started.
+required before any player process is started. An optional ``bargeIn`` phase
+plays a second configured clip after the final normal stage and records only
+serial lifecycle markers; it does not claim speaker time-to-silence.
 """
 
 from __future__ import annotations
@@ -50,6 +52,15 @@ class PlayerResult:
 
 
 @dataclass(frozen=True)
+class BargeInConfig:
+    """Optional second audio phase used to exercise device-side interruption."""
+
+    clip: Path
+    after_stage: str
+    stages: tuple[Stage, ...]
+
+
+@dataclass(frozen=True)
 class Scenario:
     source: Path
     monitor_command: tuple[str, ...]
@@ -69,6 +80,7 @@ class Scenario:
     firmware_config: Path
     required_protocol_profile: int
     require_wake_enabled: bool
+    barge_in: BargeInConfig | None
 
 
 def _string(value: Any, field: str) -> str:
@@ -121,6 +133,29 @@ def _path(value: Any, *, base: Path, field: str) -> Path:
     return (path if path.is_absolute() else base / path).resolve()
 
 
+def _stages(value: Any, field: str) -> tuple[Stage, ...]:
+    if not isinstance(value, list) or not value:
+        raise HarnessError(f"{field} must be a non-empty event array")
+    stages: list[Stage] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise HarnessError(f"{field}[{index}] must be an object")
+        stages.append(Stage(
+            name=_string(item.get("name"), f"{field}[{index}].name"),
+            marker=_string(item.get("marker"), f"{field}[{index}].marker"),
+            timeout_seconds=_number(
+                item.get("timeoutSeconds", 30),
+                f"{field}[{index}].timeoutSeconds",
+                minimum=0.1,
+                maximum=3600,
+            ),
+        ))
+    names = [stage.name for stage in stages]
+    if len(set(names)) != len(names):
+        raise HarnessError(f"{field} names must be unique")
+    return tuple(stages)
+
+
 def load_scenario(path: Path) -> Scenario:
     source = path.expanduser().resolve()
     try:
@@ -140,20 +175,7 @@ def load_scenario(path: Path) -> Scenario:
     if not isinstance(monitor, dict) or not isinstance(player, dict) or not isinstance(clips, dict) or not isinstance(events, list) or not isinstance(firmware, dict):
         raise HarnessError("scenario requires monitor, player, clips and events")
 
-    stages: list[Stage] = []
-    for index, item in enumerate(events):
-        if not isinstance(item, dict):
-            raise HarnessError(f"events[{index}] must be an object")
-        stages.append(Stage(
-            name=_string(item.get("name"), f"events[{index}].name"),
-            marker=_string(item.get("marker"), f"events[{index}].marker"),
-            timeout_seconds=_number(item.get("timeoutSeconds", 30), f"events[{index}].timeoutSeconds", minimum=0.1, maximum=3600),
-        ))
-    if not stages:
-        raise HarnessError("events must contain at least one stage")
-    names = [stage.name for stage in stages]
-    if len(set(names)) != len(names):
-        raise HarnessError("events names must be unique")
+    stages = _stages(events, "events")
 
     base = source.parent
     project_dir = _path(monitor.get("projectDir", "../../veetee-firmware"), base=base, field="monitor.projectDir")
@@ -164,6 +186,21 @@ def load_scenario(path: Path) -> Scenario:
         minimum=1,
         maximum=3,
     ))
+    barge_in: BargeInConfig | None = None
+    raw_barge_in = document.get("bargeIn")
+    if raw_barge_in is not None:
+        if not isinstance(raw_barge_in, dict):
+            raise HarnessError("bargeIn must be an object")
+        after_stage = _string(raw_barge_in.get("afterStage"), "bargeIn.afterStage")
+        if after_stage not in {stage.name for stage in stages}:
+            raise HarnessError("bargeIn.afterStage must name an events stage")
+        if after_stage != stages[-1].name:
+            raise HarnessError("bargeIn.afterStage must be the final events stage")
+        barge_in = BargeInConfig(
+            clip=_path(raw_barge_in.get("clip"), base=base, field="bargeIn.clip"),
+            after_stage=after_stage,
+            stages=_stages(raw_barge_in.get("events"), "bargeIn.events"),
+        )
     return Scenario(
         source=source,
         monitor_command=_command(monitor.get("command", ["idf.py"]), "monitor.command"),
@@ -183,6 +220,7 @@ def load_scenario(path: Path) -> Scenario:
         firmware_config=firmware_config,
         required_protocol_profile=required_protocol_profile,
         require_wake_enabled=_boolean(firmware.get("requireWakeEnabled"), "firmware.requireWakeEnabled", default=True),
+        barge_in=barge_in,
     )
 
 
@@ -502,6 +540,8 @@ def run(
     missing = [message for message in (
         _check_clip(scenario.wake_clip, "clips.wake", required=not dry_run),
         _check_clip(scenario.utterance_clip, "clips.utterance", required=not dry_run),
+        _check_clip(scenario.barge_in.clip, "bargeIn.clip", required=not dry_run)
+        if scenario.barge_in is not None else None,
     ) if message]
     monitor_command = [
         *scenario.monitor_command,
@@ -536,6 +576,14 @@ def run(
             "utteranceAfter": scenario.utterance_after,
             "interRepetitionDelaySeconds": scenario.inter_repetition_delay_seconds,
             "repetitions": scenario.repetitions,
+            "bargeIn": (
+                {
+                    "clip": str(scenario.barge_in.clip),
+                    "afterStage": scenario.barge_in.after_stage,
+                    "events": [stage.__dict__ for stage in scenario.barge_in.stages],
+                }
+                if scenario.barge_in is not None else None
+            ),
         }, ensure_ascii=False, indent=2))
         return []
 
@@ -544,6 +592,8 @@ def run(
         raise HarnessError(f"monitor project directory does not exist: {scenario.project_dir}")
     if scenario.utterance_after not in {stage.name for stage in scenario.stages}:
         raise HarnessError(f"utteranceAfter does not name an events stage: {scenario.utterance_after}")
+    if scenario.barge_in is not None and scenario.barge_in.after_stage != scenario.stages[-1].name:
+        raise HarnessError("bargeIn.afterStage must be the final events stage")
     if scenario.health_url:
         health = _health(scenario.health_url)
         print(json.dumps({"event": "health_ready", "health": health}, ensure_ascii=False), flush=True)
@@ -553,6 +603,7 @@ def run(
     results = result_sink if result_sink is not None else []
     wake_player: subprocess.Popen[bytes] | None = None
     utterance_player: subprocess.Popen[bytes] | None = None
+    interrupt_player: subprocess.Popen[bytes] | None = None
     try:
         monitor.start()
         if scenario.startup_wait_seconds:
@@ -616,6 +667,43 @@ def run(
                     )
                     utterance_player = None
                     utterance_played = True
+                if scenario.barge_in is not None and stage.name == scenario.barge_in.after_stage:
+                    interrupt_boundary = time.monotonic()
+                    interrupt_player = _start_player(
+                        scenario.player_command,
+                        scenario.barge_in.clip,
+                        allow_audio=True,
+                    )
+                    for interrupt_stage in scenario.barge_in.stages:
+                        try:
+                            interrupt_timestamp, interrupt_line = monitor.wait_for(
+                                interrupt_stage.marker,
+                                interrupt_stage.timeout_seconds,
+                                not_before=interrupt_boundary,
+                            )
+                        except HarnessError as error:
+                            raise HarnessError(
+                                f"repetition {repetition} barge-in stage {interrupt_stage.name}: {error}"
+                            ) from error
+                        interrupt_event = _event(
+                            interrupt_stage.name,
+                            started,
+                            repetition=repetition,
+                            phase="barge_in",
+                            marker=interrupt_stage.marker,
+                            serialElapsedMs=round((interrupt_timestamp - started) * 1000, 1),
+                        )
+                        results.append(interrupt_event)
+                        print(json.dumps(interrupt_event, ensure_ascii=False), flush=True)
+                        interrupt_boundary = interrupt_timestamp
+                        del interrupt_line
+                    wait_and_record_player(
+                        interrupt_player,
+                        scenario.barge_in.clip,
+                        clip_role="barge_in_interrupt",
+                        repetition=repetition,
+                    )
+                    interrupt_player = None
                 del line
             if wake_player is not None:
                 wait_and_record_player(
@@ -642,6 +730,7 @@ def run(
     finally:
         _terminate_process(utterance_player)
         _terminate_process(wake_player)
+        _terminate_process(interrupt_player)
         monitor.stop()
 
 
