@@ -49,7 +49,7 @@
    `https://veetee.tail52a635.ts.net/` → Manager Web `18181`. Cùng origin phân
    bổ route như sau: `/api/v1/...` → Manager API `18101`, `/openapi.json` →
    Manager API, và `/veetee/v1/` (WebSocket; `Protocol-Version: 3`) → Voice
-   Server `18100`. Không còn dùng hostname `veetee-dev`, port `18443` hay Funnel.
+   Server `18100`. Không còn dùng legacy hostname, port `18443` hay Funnel.
    ESP32 vẫn dùng LAN WS, vì dashboard hostname không thay thế Tailscale client
    trên firmware.
 
@@ -94,11 +94,10 @@
   qua tailnet là `https://veetee.tail52a635.ts.net/`; nếu thiết bị đang xem
   không ở cùng tailnet, dùng local UI hoặc kiểm tra tailnet/Serve status trên
   chính máy host.
-- Kiểm tra read-only hostname được đề xuất `https://veetee.tail52a635.ts.net/`
-  trong lượt hiện tại: DNS không phân giải (`Could not resolve host`). Host
-  `veetee-dev.tail52a635.ts.net` có phân giải nhưng root/legacy ports trả `502`
-  và port `:18443` timeout từ shell này. Vì vậy chưa được coi là URL truy cập
-  Veetee hợp lệ; không tự đổi hostname, Funnel hay DNS của máy.
+- Kiểm tra read-only hostname được đề xuất trong snapshot đó chưa phân giải;
+  **legacy hostname** còn trả `502` ở root/legacy ports và `:18443` timeout từ
+  shell này. Vì vậy snapshot đó chưa được coi là URL truy cập Veetee hợp lệ;
+  không tự đổi hostname, Funnel hay DNS của máy.
 
 - `autoTurn` first-speech watchdog đã publish ở runtime revision `87`; physical
   wake + 6 giây silence pass `NO_SPEECH_TIMEOUT` và `wake detector armed`.
@@ -148,12 +147,11 @@
   nhất quán. Đây là hardening UI, không đổi API/protocol/runtime behavior.
 - Verification sau thay đổi: typecheck pass, ESLint pass, Vitest **63/63**,
   production build pass, Chromium E2E **9/9** (a11y serious/critical gate pass).
-- Read-only Tailscale status cho biết node là
-  `veetee-dev.tail52a635.ts.net`; `veetee.tail52a635.ts.net` không có DNS
-  record trong môi trường kiểm tra. Manager Web private mapping là
-  `https://veetee-dev.tail52a635.ts.net:18443` → `127.0.0.1:18181`; root
-  `https://veetee-dev.tail52a635.ts.net/` đi qua Funnel cũ tới `127.0.0.1:8081`
-  và trả `502`. Không tự rename node, đổi Serve/Funnel, DNS, route hay mạng.
+- Read-only Tailscale status ở snapshot đó cho biết node còn mang **legacy
+  hostname**; canonical origin chưa có DNS record trong môi trường kiểm tra.
+  Manager Web private mapping là `:18443` → `127.0.0.1:18181`; root đi qua
+  Funnel cũ tới `127.0.0.1:8081` và trả `502`. Không tự rename node, đổi
+  Serve/Funnel, DNS, route hay mạng trong snapshot đó.
 
 ### Tailscale canonical origin reallocation (2026-08-04)
 
@@ -188,7 +186,7 @@
   `200` sau cleanup.
 - `tailscale status --json` hiện trả node `veetee.tail52a635.ts.net` và
   `tailscale serve status --json` chỉ có `443 / → http://127.0.0.1:18181`;
-  không còn `veetee-dev`, `18443` hoặc Funnel mapping.
+  không còn legacy hostname, `18443` hoặc Funnel mapping.
 - URL sử dụng thống nhất: Web `https://veetee.tail52a635.ts.net/`, API
   `https://veetee.tail52a635.ts.net/api/v1/...`, OpenAPI
   `https://veetee.tail52a635.ts.net/openapi.json`, Voice WebSocket
@@ -197,6 +195,16 @@
 - TLS/HTML/WebSocket từ hostname cần được xác nhận trên một peer khác trong
   tailnet; userspace Tailscale trên chính host không được coi là self-route
   evidence.
+- Runtime manifest đã cho phép exact origin `https://veetee.tail52a635.ts.net`
+  cùng với local UI origins `http://127.0.0.1:18181` và
+  `http://localhost:18181`; vì vậy các thao tác ghi trên Manager Web không bị
+  CORS/CSRF chặn khi truy cập qua URL canonical. Không thêm hostname cũ.
+- Manager API đã được khởi động lại trên `127.0.0.1:18101` với đúng allow-list
+  này; preflight canonical trả `204` và `Access-Control-Allow-Origin` đúng
+  origin. Web root, API proxy, OpenAPI proxy và Voice route lần lượt kiểm tra
+  `200`, `200`, `200`, `400` (400 là probe thiếu hello và chứng minh đã tới
+  WebSocket handler). Runtime test harness `18 passed`; Voice vẫn ready,
+  `activeConnections=1`, không có lỗi refresh hiện tại.
 - Sau commit `68243d6`, Voice unit `veetee-voice-18100` đã được restart đúng
   source mới; VieNeu prewarm hoàn tất, health revision `87` ready và board đã
   reconnect (`activeConnections=1`, `activeTurns=0`). Server regression là

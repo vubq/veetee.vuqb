@@ -52,7 +52,7 @@
         "VEETEE_SECRET_MASTER_KEY_FILE": "${VEETEE_ROOT}/secrets/manager.secret",
         "VEETEE_INITIAL_SNAPSHOT_FILE": "${VEETEE_ROOT}/veetee-server/config/fixtures/m0.json",
         "VEETEE_PROVIDER_CATALOG_FILE": "${VEETEE_ROOT}/veetee-manager-api/config/provider-catalog.json",
-        "VEETEE_ALLOWED_ORIGINS": "http://127.0.0.1:18181",
+        "VEETEE_ALLOWED_ORIGINS": "http://127.0.0.1:18181,http://localhost:18181,https://veetee.tail52a635.ts.net",
         "VEETEE_AUTH_MODE": "disabled",
         "VEETEE_LOG_LEVEL": "info"
       },

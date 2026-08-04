@@ -409,6 +409,20 @@ loại bỏ hostname/mapping cũ:
 | `https://veetee.tail52a635.ts.net/openapi.json` | Vite proxy → `127.0.0.1:18101` | Manager API contract |
 | `wss://veetee.tail52a635.ts.net/veetee/v1/` | Vite WebSocket proxy → `127.0.0.1:18100` | Voice Server |
 
+Đây là phân bổ URL cố định để người dùng và các client không phải tự đoán port:
+
+| Môi trường | Manager Web | Manager API | Voice Server |
+|---|---|---|---|
+| Local trên host | `http://127.0.0.1:18181/` | `http://127.0.0.1:18101/api/v1/` | `ws://127.0.0.1:18100/veetee/v1/` |
+| Tailnet private | `https://veetee.tail52a635.ts.net/` | `https://veetee.tail52a635.ts.net/api/v1/` | `wss://veetee.tail52a635.ts.net/veetee/v1/` |
+
+`/` là UI; `/api/v1/` và `/openapi.json` đi qua proxy tới Manager API;
+`/veetee/v1/` là WebSocket tới Voice Server. Không mở trực tiếp API/Voice
+port ra tailnet, không tạo subdomain `api.*`/`voice.*`, và không dùng
+hostname cũ trong client hoặc runtime config. API production phải đưa cả hai
+origin local và origin tailnet ở trên vào `VEETEE_ALLOWED_ORIGINS`; không dùng
+wildcard khi credentials/cookie được bật.
+
 Hostname hiện tại lấy từ `tailscale status`: `veetee.tail52a635.ts.net`; hostname
 và Serve/Funnel mapping cũ đã được loại bỏ, không còn
 public Funnel. `/veetee/v1/` là route tương thích ổn định; profile wire mặc
