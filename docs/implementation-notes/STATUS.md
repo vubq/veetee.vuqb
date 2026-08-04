@@ -484,6 +484,22 @@
 - Đây là host/control-plane hardening, không phát audio, không flash/reset,
   không mutate `veetee_vubq`, Wi-Fi hoặc Tailscale.
 
+### Overnight audio-test pause and host regression (2026-08-05, non-audio)
+
+- Theo yêu cầu operator, từ mốc này **không** chạy `pw-play`, wake/audio
+  harness, microphone/speaker acceptance, serial audio check, flash/reset/erase
+  firmware hoặc thay đổi Wi-Fi/Tailscale. Các cổng physical M0/M1 vẫn giữ trạng
+  thái pending cho đến khi operator cấp quyền lại.
+- Regression sau commit `0ac28a7`: Voice Server **81/81**; Manager API với
+  dedicated PostgreSQL `veetee_vubq_test` **36/36**; Manager Web typecheck,
+  lint, build và unit **68/68**; Chromium E2E chưa chạy lại trong mốc này vì
+  không có thay đổi UI behavior, bằng chứng gần nhất vẫn **9/9**; firmware host
+  CTest **1/1**; runtime tools **20/20**.
+- Readiness read-only không restart service: Voice `18100`, API `18101`, Web
+  `18181` đều trả `200`; Voice `activeConnections=1`, `activeTurns=0`,
+  `protocol_errors=0`. Không gọi Groq, không load provider generation mới và
+  không mutate production DB `veetee_vubq`.
+
 ### Voice runtime source sync after resource gate (2026-08-05, non-audio)
 
 - Sau khi push `86e2041`, chỉ Voice service `veetee-voice-18100.service` được
