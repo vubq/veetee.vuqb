@@ -464,7 +464,7 @@
   còn session lease; candidate không vừa cả hai mode bị từ chối trước factory/
   CUDA allocation. Quiesce failure reload đúng snapshot cũ; không có provider
   fallback.
-- Regression resource/runtime: **23 tests passed** (initial plan, blue-green,
+- Regression resource/runtime: **24 tests passed** (initial plan, blue-green,
   reject trước instantiate, lease gate, quiesce promotion và rollback exact old
   snapshot). Snapshot cũ không có `resourceBudget` vẫn tương thích; field này
   hiện là deployment benchmark artifact, chưa hiển thị như form owner-facing.
