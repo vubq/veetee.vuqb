@@ -14,3 +14,8 @@ add_executable(veetee_firmware_mqtt_udp_wire_tests test_mqtt_udp_wire.c ../main/
 target_include_directories(veetee_firmware_mqtt_udp_wire_tests PRIVATE ../main)
 target_compile_options(veetee_firmware_mqtt_udp_wire_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
 add_test(NAME mqtt_udp_wire COMMAND veetee_firmware_mqtt_udp_wire_tests)
+
+add_executable(veetee_firmware_mcp_registry_tests test_mcp_registry.c ../main/veetee_mcp.c)
+target_include_directories(veetee_firmware_mcp_registry_tests PRIVATE ../main)
+target_compile_options(veetee_firmware_mcp_registry_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
+add_test(NAME mcp_registry COMMAND veetee_firmware_mcp_registry_tests)

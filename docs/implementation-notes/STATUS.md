@@ -994,6 +994,17 @@
 - Chỉ build, không flash/reset/erase, không mở carrier/socket/audio và không đổi
   Wi‑Fi/Tailscale. Kconfig warnings nền vẫn được giữ nguyên để xử lý riêng.
 
+### Firmware MCP registry core — host/ESP-IDF build-only (2026-08-05)
+
+- Thêm `veetee-firmware/main/veetee_mcp.[ch]`: registry descriptor/callback
+  bounded, positive request-ID high-water, duplicate digest/cache 16 entry và
+  session reset. Không hardcode tool/GPIO/broker/locale; cJSON/FreeRTOS/HAL
+  integration còn deferred.
+- Firmware host CTest **3/3**; ESP-IDF build **9/9**, binary `0x1593e0`, app
+  partition **66%**. Đây chưa phải JSON-RPC/hardware MCP runtime acceptance.
+- Không flash/reset/erase ESP32, không audio/carrier/socket, không đổi
+  Wi‑Fi/Tailscale và không dùng production DB.
+
 ### M3 UDP sequence guard parity — host-only (2026-08-05)
 
 - `UdpCryptoSession.decrypt()` từ chối sequence `0` ngay sau structural length
