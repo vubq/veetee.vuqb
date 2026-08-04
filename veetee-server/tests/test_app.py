@@ -312,6 +312,62 @@ async def test_compatibility_profile_handshake_and_turn(monkeypatch, version):
 
 
 @pytest.mark.asyncio
+async def test_duplicate_device_hello_handover_closes_old_session(monkeypatch):
+    """A device lease must never leave two connections controlling one speaker."""
+
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+
+    async def open_session(client_id: str):
+        websocket = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "single-device", "Client-Id": client_id, "Protocol-Version": "3"},
+        )
+        await websocket.send_json(
+            {
+                "type": "hello",
+                "version": 3,
+                "transport": "websocket",
+                "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+            }
+        )
+        return websocket, await websocket.receive_json()
+
+    old = None
+    replacement = None
+    try:
+        old, old_hello = await open_session("old-client")
+        replacement, replacement_hello = await open_session("new-client")
+
+        old_events = []
+        while not old.closed:
+            old_events.append(await old.receive(timeout=2))
+        assert old.close_code == 4001
+        assert any(message.type == 1 and '"reason":"session_replaced"' in message.data for message in old_events)
+        assert replacement_hello["type"] == "hello"
+        assert replacement_hello["session_id"] != old_hello["session_id"]
+        assert service.metrics["session_handovers"] == 1
+        assert service.metrics["active_connections"] == 1
+        assert service.metrics["session_admissions"] == 2
+        assert service.metrics["session_releases"] == 1
+    finally:
+        if old is not None:
+            await old.close()
+        if replacement is not None:
+            await replacement.close()
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_reference_mcp_peer_gets_ordered_initialize_then_tools_list(monkeypatch):
     """A reference-style MCP device must be able to answer discovery in order."""
 

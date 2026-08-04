@@ -24,6 +24,8 @@ from .providers import IntentMatch, MemorySession, OpusCodec, ProviderError
 from .runtime import RuntimeConfigManager, RuntimeView
 
 VOICE_APP_KEY = web.AppKey("voice", object)
+SESSION_REPLACED_CLOSE_CODE = 4001
+SESSION_REPLACED_REASON = "session_replaced"
 
 
 def _utc_now() -> str:
@@ -40,12 +42,18 @@ class VoiceApplication:
         self.metrics: dict[str, int] = {
             "connections": 0,
             "active_connections": 0,
+            "session_admissions": 0,
+            "session_releases": 0,
+            "session_handovers": 0,
+            "session_handover_cleanup_errors": 0,
             "protocol_errors": 0,
             "audio_frames_in": 0,
             "audio_frames_out": 0,
             "turn_count": 0,
         }
         self._sessions: set[VoiceSession] = set()
+        self._session_admission_lock = asyncio.Lock()
+        self._session_leases: dict[str, VoiceSession] = {}
 
     def make_app(self) -> web.Application:
         app = web.Application(client_max_size=self.config.max_ws_message_bytes)
@@ -109,6 +117,29 @@ class VoiceApplication:
             self.metrics["active_connections"] = max(0, self.metrics["active_connections"] - 1)
         return ws
 
+    async def admit_session(self, session: "VoiceSession") -> None:
+        """Grant one device lease and finish an older connection before return."""
+
+        async with self._session_admission_lock:
+            previous = self._session_leases.get(session.device_id)
+            self._session_leases[session.device_id] = session
+            session._admitted = True
+            self.metrics["session_admissions"] += 1
+            if previous is None or previous is session:
+                return
+            self.metrics["session_handovers"] += 1
+
+        # Do not hold the admission lock while awaiting provider/task cleanup.
+        # release_session() checks object identity, so a late old cleanup cannot
+        # remove the replacement lease.
+        await previous.replace_by()
+
+    async def release_session(self, session: "VoiceSession") -> None:
+        async with self._session_admission_lock:
+            if self._session_leases.get(session.device_id) is session:
+                del self._session_leases[session.device_id]
+            self.metrics["session_releases"] += 1
+
 
 class VoiceSession:
     def __init__(self, app: VoiceApplication, ws: web.WebSocketResponse, *, device_id: str, client_id: str, profile: str) -> None:
@@ -131,6 +162,8 @@ class VoiceSession:
         self.phase = "ready_idle"
         self._speech_frames = 0
         self._closed = False
+        self._admitted = False
+        self._finished = asyncio.Event()
         self._lock = asyncio.Lock()
         self.conversation_id = str(uuid4())
         self.conversation_started_at: str | None = None
@@ -145,6 +178,8 @@ class VoiceSession:
                 return
             hello = decode_json(first.data)
             await self._hello(hello)
+            if self._closed:
+                return
             async for message in self.ws:
                 try:
                     if message.type == WSMsgType.TEXT:
@@ -183,6 +218,10 @@ class VoiceSession:
                 if self.view is not None:
                     await self.app.runtime.release_view(self.view)
                     self.view = None
+                if self._admitted:
+                    await self.app.release_session(self)
+                    self._admitted = False
+                self._finished.set()
 
     async def _hello(self, message: dict[str, Any]) -> None:
         if message.get("type") != "hello":
@@ -205,7 +244,14 @@ class VoiceSession:
             raise ProtocolError("client audio must be opus mono 16kHz/60ms")
         self.client_hello = message
         self.device_info = self._parse_device_info(message.get("device_info"))
+        await self.app.admit_session(self)
+        if self._closed:
+            return
         self.view = await self.app.runtime.acquire_view()
+        if self._closed:
+            await self.app.runtime.release_view(self.view)
+            self.view = None
+            return
         snapshot = self.view.snapshot
         wire = snapshot.raw.get("wire") or {}
         self.codec = OpusCodec(int(wire.get("uplinkSampleRate", 16000)), int(wire.get("downlinkSampleRate", 24000)))
@@ -518,6 +564,21 @@ class VoiceSession:
     async def send_binary(self, value: bytes, *, turn_id: str | None = None) -> None:
         if not self._closed and (turn_id is None or (self.turn is not None and self.turn.turn_id == turn_id)):
             await self.ws.send_bytes(value)
+
+    async def replace_by(self) -> None:
+        """Stop this device session before a newer connection takes its lease."""
+
+        if self._closed:
+            await self._finished.wait()
+            return
+        try:
+            await self._abort(reason=SESSION_REPLACED_REASON)
+        except Exception as exc:  # noqa: BLE001 - replacement must still close the old peer
+            self.app.metrics["session_handover_cleanup_errors"] += 1
+            self.app.log.warning("session handover cleanup failed error_type=%s", type(exc).__name__)
+        finally:
+            await self.close(SESSION_REPLACED_CLOSE_CODE, SESSION_REPLACED_REASON)
+        await self._finished.wait()
 
     async def close(self, code: int, message: str) -> None:
         if self._closed:

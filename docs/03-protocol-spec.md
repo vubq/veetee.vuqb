@@ -133,6 +133,26 @@ khi có benchmark riêng; firmware decoder tham chiếu chỉ map các giá tr�
   downlink không có `session_id`
   (`references/xiaozhi-esp32-server/main/xiaozhi-server/core/providers/tools/device_mcp/mcp_handler.py:103-115`).
 
+### 3.4 Session admission và handover
+
+- Sau khi client `hello` hợp lệ, Veetee server MUST giữ tối đa một active
+  WebSocket session lease cho mỗi `Device-Id` đã qua lớp identity/authentication
+  của deployment (fixture local MAY tắt auth). Lease này là
+  ownership của audio/hardware, không phải giới hạn tổng số device đã pair.
+- Connection mới cùng `Device-Id` MUST atomically thay lease cũ. Server MUST
+  abort turn cũ với `reason:"session_replaced"`, gửi `tts/stop` nếu session cũ
+  còn sống, rồi đóng WebSocket cũ với close code `4001` và reason ASCII
+  `session_replaced`. Handover MUST không gọi provider thứ hai.
+- Server MUST chờ cleanup task tree và generation lease của session cũ hoàn tất
+  trước khi hoàn tất server `hello` cho connection mới. Late cleanup MUST NOT
+  xóa lease đã trỏ sang connection mới.
+- Một peer cũ không hiểu close code additive này vẫn chỉ thấy socket đóng và MAY
+  reconnect theo reconnect policy; server MUST NOT sniff hoặc silent downgrade
+  transport profile.
+- Socket chưa qua client `hello` hoặc hello sai MUST NOT thay thế lease hợp lệ.
+- Admission resource tổng host (`server_busy`) là policy riêng; per-device lease
+  không được xem là bằng chứng đã đạt concurrency/VRAM gate.
+
 ## 4. Direct WebSocket v1/v2/v3
 
 ### 4.1 HTTP Upgrade
