@@ -7,7 +7,7 @@
 ## Snapshot
 
 - Branch: `master`
-- Commit source gần nhất: `f7329eb` (`test(firmware): isolate AEC transform in wake diagnostics`)
+- Commit source gần nhất: `739b0d5` (`test(physical): add configurable barge-in timing probe`)
 - Working tree: sau mốc harness/note hiện sạch đối với file được track; secret,
   build output, raw audio và report `/tmp` vẫn bị ignore.
 - Runtime checkout này: Voice Server `18100`, Manager API `18101`; không dùng
