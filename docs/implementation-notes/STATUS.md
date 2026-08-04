@@ -345,6 +345,15 @@
 - Regression parser mới **3 passed**; probe chỉ là Internet text smoke, chưa
   phải E2E TTFA/WER/tool-following/VRAM promotion và không đổi production config.
 
+### Groq streamed tool-call smoke (test-only, 2026-08-05)
+
+- `llama-3.3-70b-versatile`: 4/4 HTTP 200; streamed function `get_weather`,
+  arguments JSON hợp lệ; first tool delta **306–512 ms**.
+- `llama-3.1-8b-instant`: 4/4 HTTP 200 nhưng không phát tool-call delta trong
+  prompt forced-call này; không coi là tool-following pass.
+- Probe chỉ đo capability Internet và không gửi call xuống thiết bị; fragmented
+  arguments, authorization và MCP end-to-end vẫn cần test riêng.
+
 ### PostgreSQL test isolation and acoustic-test pause (2026-08-04)
 
 - Test harness Manager API nay fail-closed nếu `VEETEE_TEST_DATABASE_URL_FILE`

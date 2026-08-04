@@ -26,6 +26,13 @@ def test_stream_text_delta_fails_closed_on_malformed_or_unexpected_payload():
     assert probe.stream_text_delta('data: {"choices":[{"delta":{"content":""}}]}') is None
 
 
+def test_stream_tool_delta_extracts_name_and_fragment_without_logging_payload():
+    probe = _module()
+    line = 'data: {"choices":[{"delta":{"tool_calls":[{"function":{"name":"get_weather","arguments":"{\\"city\\":\\"Hà Nội\\"}"}}]}}]}'
+    assert probe.stream_tool_delta(line) == ("get_weather", '{"city":"Hà Nội"}')
+    assert probe.stream_tool_delta('data: {"choices":[{"delta":{"content":"not a tool"}}]}') == (None, None)
+
+
 def test_load_keys_ignores_comments_and_empty_lines(tmp_path):
     probe = _module()
     path = tmp_path / "keys"
