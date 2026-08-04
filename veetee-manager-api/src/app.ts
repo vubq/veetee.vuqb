@@ -609,7 +609,9 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   } }, async (request) => {
     const installations = await store.listInstallations()
     const tts = installations.filter((item) => item.kind === 'tts')
-    return { items: tts.filter((item) => !request.query.locale || item.manifest.locales === undefined || (item.manifest.locales as unknown[]).includes('*') || (item.manifest.locales as unknown[]).includes(request.query.locale)).map((item) => ({ id: item.id, name: item.displayNameKey, providerName: item.displayNameKey, locale: request.query.locale ?? '*', description: item.displayNameKey, previewDurationMs: 0, available: true })), total: tts.length }
+    const filtered = tts.filter((item) => !request.query.locale || item.manifest.locales === undefined || (item.manifest.locales as unknown[]).includes('*') || (item.manifest.locales as unknown[]).includes(request.query.locale))
+    const items = filtered.map((item) => ({ id: item.id, name: item.displayNameKey, providerName: item.displayNameKey, locale: request.query.locale ?? '*', description: item.displayNameKey, previewDurationMs: 0, available: true }))
+    return { items, total: items.length }
   })
   app.get<{ Querystring: { kind?: ProviderKind } }>('/api/v1/provider-configs', { schema: {
     querystring: { type: 'object', additionalProperties: false, properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] } } },

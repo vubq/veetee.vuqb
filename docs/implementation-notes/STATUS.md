@@ -698,3 +698,14 @@
 - Verification: Manager Web typecheck/lint/build, unit **90/90**, Chromium E2E
   **11/11** (axe serious/critical pass). Không restart service, không phát
   audio, không flash/reset ESP32, không đổi Wi-Fi/Tailscale hoặc production DB.
+
+### Locale-filtered voice catalog contract (2026-08-05, host-only)
+
+- `GET /api/v1/voices?locale=...` giờ tính `total` từ chính danh sách đã lọc,
+  thay vì đếm toàn bộ TTS installation. Điều này giữ pagination/empty-state của
+  Manager Web nhất quán khi provider hỗ trợ locale khác nhau.
+- Regression kiểm tra `vi-VN` và `en-US`, đảm bảo `total === items.length` và
+  locale không phù hợp bị loại; không đổi provider selection/fallback policy.
+- Verification: Manager API dedicated `veetee_vubq_test` **40/40**, lint/build/
+  `openapi:check` pass. Không restart service, không phát audio, không mutate
+  production DB, không đổi Wi-Fi/Tailscale/firmware.

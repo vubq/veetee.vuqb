@@ -119,6 +119,23 @@ test('assistant search is validated and filtered by the API contract', async () 
   }
 })
 
+test('voice catalog total matches the locale-filtered items', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const all = await app.inject({ method: 'GET', url: '/api/v1/voices?locale=vi-VN' })
+    assert.equal(all.statusCode, 200)
+    assert.equal(all.json().total, all.json().items.length)
+
+    const filtered = await app.inject({ method: 'GET', url: '/api/v1/voices?locale=en-US' })
+    assert.equal(filtered.statusCode, 200)
+    assert.equal(filtered.json().total, filtered.json().items.length)
+    assert.ok(filtered.json().items.length < all.json().items.length)
+  } finally {
+    await app.close()
+  }
+})
+
 test('provider config is schema-driven and rejects unknown fields', async () => {
   const app = await buildApp({ env })
   await app.ready()
