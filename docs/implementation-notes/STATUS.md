@@ -940,3 +940,14 @@
   module này; audio lock, firmware/network lock và WebSocket v3 default giữ
   nguyên. Real-network transport comparison, firmware carrier, MCP, assets/OTA
   và promotion vẫn mở.
+
+### M3 MQTT/UDP session coordinator — host-only (2026-08-05)
+
+- `MqttUdpSession` đã ghép state `NEW → HELLO_SENT → READY → CLOSED`, client/server
+  hello, per-session AES material, exact control topic/session, UDP decrypt và
+  TTS stream barrier. `abort`, `goodbye` và `close` clear generation/key state.
+- Test `tests/test_mqtt_session.py`: **5 passed**; full Voice Server sau slice:
+  **133 passed**, Ruff/compileall pass.
+- Đây chưa phải live gateway: không MQTT library/broker, UDP socket, Opus decode,
+  firmware transport hoặc network side effect. Audio/ESP32/network lock vẫn giữ;
+  real-network comparison, MCP, assets/OTA và transport promotion còn mở.
