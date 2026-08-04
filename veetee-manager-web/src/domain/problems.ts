@@ -33,6 +33,14 @@ export interface NotFoundProblem extends ProblemBase {
   resourceId: string
 }
 
+export interface RetentionExpiredProblem extends ProblemBase {
+  type: 'retention-expired'
+  code: 'RETENTION_EXPIRED'
+  retryable: false
+  resource: 'conversation'
+  resourceId: string
+}
+
 export interface NameConflictProblem extends ProblemBase {
   type: 'name-conflict'
   code: 'NAME_CONFLICT'
@@ -69,6 +77,7 @@ export type CommonGatewayProblem =
   | ValidationProblem
   | OfflineProblem
   | NotFoundProblem
+  | RetentionExpiredProblem
   | NameConflictProblem
   | PairingCodeProblem
   | ProviderUnavailableProblem

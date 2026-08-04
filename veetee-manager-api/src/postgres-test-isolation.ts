@@ -10,6 +10,8 @@ const TEST_SCHEMA = 'veetee_manager'
 const TEST_LOCK_KEY = 0x56455445
 const TRUNCATE_SQL = `
 TRUNCATE TABLE
+  "${TEST_SCHEMA}"."conversation_tombstone",
+  "${TEST_SCHEMA}"."retention_delete_job",
   "${TEST_SCHEMA}"."conversation_turn",
   "${TEST_SCHEMA}"."conversation",
   "${TEST_SCHEMA}"."pairing_challenge",

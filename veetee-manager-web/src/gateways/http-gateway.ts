@@ -5,6 +5,7 @@ import type {
   ConversationExportSummary,
   ConversationDetail,
   ConversationSummary,
+  RetentionDeleteJob,
   CreateAssistantInput,
   DemoResetSummary,
   DeviceCard,
@@ -20,6 +21,7 @@ import type {
   ProviderInstallationView,
   RetentionPolicy,
   RetentionPolicyInput,
+  RetentionExpiredProblem,
   OfflineProblem,
   RevisionConflictProblem,
   RoleConfig,
@@ -57,6 +59,8 @@ type RetentionResource = paths['/api/v1/retention-policy']['get']['responses'][2
 type ConversationSummaryResource = paths['/api/v1/assistants/{id}/conversations']['get']['responses'][200]['content']['application/json']['items'][number]
 type ConversationDetailResource = paths['/api/v1/conversations/{id}']['get']['responses'][200]['content']['application/json']
 type ConversationExportResource = paths['/api/v1/conversations/{id}/export']['get']['responses'][200]['content']['application/json']
+type RetentionDeleteJobResource = paths['/api/v1/conversations/{id}']['delete']['responses'][202]['content']['application/json']
+type RetentionDeleteJobGetResource = paths['/api/v1/retention-delete-jobs/{id}']['get']['responses'][200]['content']['application/json']
 type SecretReferenceResource = paths['/api/v1/secret-references']['get']['responses'][200]['content']['application/json']['items'][number]
 
 export function createHttpGatewayDependencies(baseUrl: string): GatewayDependencies {
@@ -282,16 +286,28 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     return this.success({ items: result.data.items.map(conversationSummary), total: result.data.total })
   }
 
-  async getConversation(id: string): Promise<GatewayResult<ConversationDetail, never>> {
+  async getConversation(id: string): Promise<GatewayResult<ConversationDetail, NotFoundProblem | RetentionExpiredProblem>> {
     const result = await this.execute(() => this.client.GET('/api/v1/conversations/{id}', { params: { path: { id } } }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
     return this.success(conversationDetail(result.data))
   }
 
-  async exportConversation(id: string): Promise<GatewayResult<ConversationExport, NotFoundProblem | OfflineProblem>> {
+  async exportConversation(id: string): Promise<GatewayResult<ConversationExport, NotFoundProblem | RetentionExpiredProblem | OfflineProblem>> {
     const result = await this.execute(() => this.client.GET('/api/v1/conversations/{id}/export', { params: { path: { id } } }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
     return this.success(conversationExport(result.data))
+  }
+
+  async deleteConversation(id: string): Promise<GatewayResult<RetentionDeleteJob, NotFoundProblem | RetentionExpiredProblem | OfflineProblem>> {
+    const result = await this.execute(() => this.client.DELETE('/api/v1/conversations/{id}', { params: { path: { id } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(retentionDeleteJob(result.data as RetentionDeleteJobResource))
+  }
+
+  async getRetentionDeleteJob(id: string): Promise<GatewayResult<RetentionDeleteJob, NotFoundProblem | OfflineProblem>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/retention-delete-jobs/{id}', { params: { path: { id } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(retentionDeleteJob(result.data as RetentionDeleteJobGetResource))
   }
 
   getScenario(): PreviewScenarioId { return this.scenario }
@@ -317,7 +333,11 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     const error = result.error
     const code = isRecord(error) && typeof error.code === 'string' ? error.code : result.response.status === 503 ? 'OFFLINE_MUTATION_BLOCKED' : 'REQUEST_FAILED'
     const offline = result.response.status === 503 || code === 'OFFLINE_MUTATION_BLOCKED'
-    return { ok: false, problem: { type: 'validation', code, messageKey: `problem.${code}`, requestId: crypto.randomUUID(), retryable: result.response.status >= 500, fieldProblems: [] } as unknown as P, meta: { requestId: crypto.randomUUID(), completedAt: new Date().toISOString(), delayMs: 0, freshness: offline ? 'stale' : 'fresh', offline } }
+    const resourceId = (() => { try { return new URL(result.response.url).pathname.split('/').filter(Boolean).at(-1) ?? '' } catch { return '' } })()
+    const problem = result.response.status === 410 || code === 'RETENTION_EXPIRED'
+      ? { type: 'retention-expired' as const, code: 'RETENTION_EXPIRED' as const, messageKey: 'problem.RETENTION_EXPIRED', requestId: crypto.randomUUID(), retryable: false as const, resource: 'conversation' as const, resourceId }
+      : { type: 'validation' as const, code, messageKey: `problem.${code}`, requestId: crypto.randomUUID(), retryable: result.response.status >= 500, fieldProblems: [] }
+    return { ok: false, problem: problem as unknown as P, meta: { requestId: crypto.randomUUID(), completedAt: new Date().toISOString(), delayMs: 0, freshness: offline ? 'stale' : 'fresh', offline } }
   }
 }
 
@@ -453,4 +473,8 @@ function conversationExport(value: ConversationExportResource): ConversationExpo
     retentionUntil: value.conversation.summary.retentionUntil,
   }
   return { exportVersion: 1, exportedAt: value.exportedAt, conversation: { summary, turns: value.conversation.turns, retention: retentionPolicy(value.conversation.retention) } }
+}
+
+function retentionDeleteJob(value: RetentionDeleteJobResource | RetentionDeleteJobGetResource): RetentionDeleteJob {
+  return { id: value.id, conversationId: value.conversationId, status: value.status, requestedAt: value.requestedAt, startedAt: value.startedAt, completedAt: value.completedAt, errorCode: value.errorCode }
 }

@@ -5,6 +5,7 @@ import {
   assistantTable,
   conversationTable,
   conversationTurnTable,
+  conversationTombstoneTable,
   deviceTable,
   managerSessionTable,
   pairingChallengeTable,
@@ -12,6 +13,7 @@ import {
   providerConfigRevisionTable,
   providerConfigTable,
   runtimePublicationTable,
+  retentionDeleteJobTable,
   retentionPolicyTable,
   secretReferenceTable,
 } from './db/schema.js'
@@ -41,6 +43,7 @@ import {
   type ProviderInstallation,
   type ProviderKind,
   type RetentionPolicy,
+  type RetentionDeleteJob,
   type RetentionPurgeResult,
   type RuntimePublication,
   type RuntimeSnapshot,
@@ -64,6 +67,7 @@ type DeviceRow = typeof deviceTable.$inferSelect
 type RetentionPolicyRow = typeof retentionPolicyTable.$inferSelect
 type ConversationRow = typeof conversationTable.$inferSelect
 type ConversationTurnRow = typeof conversationTurnTable.$inferSelect
+type RetentionDeleteJobRow = typeof retentionDeleteJobTable.$inferSelect
 type AssistantSummary = Pick<Assistant, 'deviceCount' | 'onlineDeviceCount' | 'lastConversationAt'>
 
 export interface PostgresStoreOptions {
@@ -71,6 +75,7 @@ export interface PostgresStoreOptions {
   initial?: RuntimeSnapshot
   databaseUrlFile: string | undefined
   presenceTtlSeconds?: number
+  tombstoneTtlSeconds?: number
   now?: () => Date
 }
 
@@ -79,6 +84,7 @@ export class PostgresStore implements Store {
     private readonly handle: DatabaseHandle,
     private readonly installations: ProviderInstallation[],
     private readonly presenceTtlMs: number,
+    private readonly tombstoneTtlMs: number,
     private readonly clock: () => Date,
   ) {}
 
@@ -89,6 +95,7 @@ export class PostgresStore implements Store {
       handle,
       options.catalog,
       (options.presenceTtlSeconds ?? DEFAULT_DEVICE_ONLINE_TTL_SECONDS) * 1000,
+      Math.max(60, options.tombstoneTtlSeconds ?? 604800) * 1000,
       options.now ?? (() => new Date()),
     )
     try {
@@ -517,10 +524,75 @@ export class PostgresStore implements Store {
   }
 
   async purgeExpiredConversations(now: Date = new Date()): Promise<RetentionPurgeResult> {
-    const deleted = await this.handle.db.delete(conversationTable)
-      .where(and(isNotNull(conversationTable.retentionUntil), lte(conversationTable.retentionUntil, now)))
-      .returning({ id: conversationTable.id })
-    return { conversations: deleted.length }
+    return this.handle.db.transaction(async (tx) => {
+      const expired = await tx.select({ id: conversationTable.id, ownerId: conversationTable.ownerId }).from(conversationTable)
+        .where(and(isNotNull(conversationTable.retentionUntil), lte(conversationTable.retentionUntil, now)))
+        .for('update')
+      for (const row of expired) {
+        await tx.insert(conversationTombstoneTable).values({ conversationId: row.id, ownerId: row.ownerId, deletedAt: now, expiresAt: new Date(now.getTime() + this.tombstoneTtlMs), reason: 'retention_expired', deleteJobId: null }).onConflictDoNothing()
+      }
+      if (expired.length) await tx.delete(conversationTable).where(inArray(conversationTable.id, expired.map((row) => row.id)))
+      await tx.delete(conversationTombstoneTable).where(lte(conversationTombstoneTable.expiresAt, now))
+      return { conversations: expired.length }
+    })
+  }
+
+  async requestConversationDelete(ownerId: string, conversationId: string): Promise<RetentionDeleteJob> {
+    return this.handle.db.transaction(async (tx) => {
+      const [existingJob] = await tx.select().from(retentionDeleteJobTable).where(and(eq(retentionDeleteJobTable.ownerId, ownerId), eq(retentionDeleteJobTable.conversationId, conversationId))).limit(1).for('update')
+      const now = new Date()
+      if (existingJob) {
+        if (existingJob.status === 'failed' && existingJob.attempts < 3) {
+          const [updated] = await tx.update(retentionDeleteJobTable).set({ status: 'queued', requestedAt: now, startedAt: null, completedAt: null, errorCode: null }).where(eq(retentionDeleteJobTable.id, existingJob.id)).returning()
+          if (updated) return this.mapRetentionDeleteJob(updated)
+        }
+        return this.mapRetentionDeleteJob(existingJob)
+      }
+      const [conversation] = await tx.select({ id: conversationTable.id, ownerId: conversationTable.ownerId }).from(conversationTable).where(and(eq(conversationTable.id, conversationId), eq(conversationTable.ownerId, ownerId))).limit(1)
+      if (!conversation) {
+        const [tombstone] = await tx.select({ ownerId: conversationTombstoneTable.ownerId }).from(conversationTombstoneTable).where(and(eq(conversationTombstoneTable.conversationId, conversationId), eq(conversationTombstoneTable.ownerId, ownerId), gt(conversationTombstoneTable.expiresAt, now))).limit(1)
+        if (tombstone) throw problem('RETENTION_EXPIRED', 'Conversation has already expired or been deleted', 410)
+        throw problem('NOT_FOUND', 'Conversation not found', 404)
+      }
+      const [created] = await tx.insert(retentionDeleteJobTable).values({ id: randomUUID(), ownerId, conversationId, status: 'queued', attempts: 0, requestedAt: now, startedAt: null, completedAt: null, errorCode: null }).onConflictDoNothing().returning()
+      if (created) return this.mapRetentionDeleteJob(created)
+      const [raced] = await tx.select().from(retentionDeleteJobTable).where(and(eq(retentionDeleteJobTable.ownerId, ownerId), eq(retentionDeleteJobTable.conversationId, conversationId))).limit(1)
+      if (!raced) throw new Error('retention delete job insert returned no row')
+      return this.mapRetentionDeleteJob(raced)
+    })
+  }
+
+  async runConversationDeleteJob(jobId: string): Promise<RetentionDeleteJob> {
+    return this.handle.db.transaction(async (tx) => {
+      const [job] = await tx.select().from(retentionDeleteJobTable).where(eq(retentionDeleteJobTable.id, jobId)).limit(1).for('update')
+      if (!job) throw problem('NOT_FOUND', 'Retention delete job not found', 404)
+      if (job.status === 'completed') return this.mapRetentionDeleteJob(job)
+      if (job.attempts >= 3) {
+        const [failed] = await tx.update(retentionDeleteJobTable).set({ status: 'failed', errorCode: 'DELETE_RETRY_LIMIT', completedAt: new Date() }).where(eq(retentionDeleteJobTable.id, job.id)).returning()
+        return this.mapRetentionDeleteJob(failed ?? job)
+      }
+      const startedAt = new Date()
+      const [running] = await tx.update(retentionDeleteJobTable).set({ status: 'running', attempts: job.attempts + 1, startedAt, completedAt: null, errorCode: null }).where(eq(retentionDeleteJobTable.id, job.id)).returning()
+      const [conversation] = await tx.select({ id: conversationTable.id, ownerId: conversationTable.ownerId }).from(conversationTable).where(and(eq(conversationTable.id, job.conversationId), eq(conversationTable.ownerId, job.ownerId))).limit(1).for('update')
+      if (!conversation) {
+        const [tombstone] = await tx.select().from(conversationTombstoneTable).where(and(eq(conversationTombstoneTable.conversationId, job.conversationId), eq(conversationTombstoneTable.ownerId, job.ownerId))).limit(1)
+        if (!tombstone) {
+          const [failed] = await tx.update(retentionDeleteJobTable).set({ status: 'failed', completedAt: new Date(), errorCode: 'NOT_FOUND' }).where(eq(retentionDeleteJobTable.id, job.id)).returning()
+          return this.mapRetentionDeleteJob(failed ?? running ?? job)
+        }
+      } else {
+        const deletedAt = new Date()
+        await tx.insert(conversationTombstoneTable).values({ conversationId: job.conversationId, ownerId: job.ownerId, deletedAt, expiresAt: new Date(deletedAt.getTime() + this.tombstoneTtlMs), reason: 'owner_request', deleteJobId: job.id }).onConflictDoNothing()
+        await tx.delete(conversationTable).where(and(eq(conversationTable.id, job.conversationId), eq(conversationTable.ownerId, job.ownerId)))
+      }
+      const [completed] = await tx.update(retentionDeleteJobTable).set({ status: 'completed', completedAt: new Date(), errorCode: null }).where(eq(retentionDeleteJobTable.id, job.id)).returning()
+      return this.mapRetentionDeleteJob(completed ?? running ?? job)
+    })
+  }
+
+  async getRetentionDeleteJob(ownerId: string, jobId: string): Promise<RetentionDeleteJob | undefined> {
+    const [job] = await this.handle.db.select().from(retentionDeleteJobTable).where(and(eq(retentionDeleteJobTable.id, jobId), eq(retentionDeleteJobTable.ownerId, ownerId))).limit(1)
+    return job ? this.mapRetentionDeleteJob(job) : undefined
   }
 
   async ingestConversationTurn(value: ConversationTurnInput): Promise<ConversationDetail> {
@@ -590,7 +662,11 @@ export class PostgresStore implements Store {
 
   async getConversation(ownerId: string, id: string): Promise<ConversationDetail | undefined> {
     const [conversation] = await this.handle.db.select().from(conversationTable).where(and(eq(conversationTable.ownerId, ownerId), eq(conversationTable.id, id), or(isNull(conversationTable.retentionUntil), gt(conversationTable.retentionUntil, new Date())))).limit(1)
-    if (!conversation) return undefined
+    if (!conversation) {
+      const [tombstone] = await this.handle.db.select({ ownerId: conversationTombstoneTable.ownerId }).from(conversationTombstoneTable).where(and(eq(conversationTombstoneTable.conversationId, id), eq(conversationTombstoneTable.ownerId, ownerId), gt(conversationTombstoneTable.expiresAt, new Date()))).limit(1)
+      if (tombstone) throw problem('RETENTION_EXPIRED', 'Conversation has already expired or been deleted', 410)
+      return undefined
+    }
     const turns = await this.handle.db.select().from(conversationTurnTable).where(eq(conversationTurnTable.conversationId, id)).orderBy(asc(conversationTurnTable.sequence))
     return { summary: this.mapConversation(conversation), turns: turns.map((row) => this.mapConversationTurn(row)), retention: await this.getRetentionPolicy(ownerId) }
   }
@@ -725,6 +801,10 @@ export class PostgresStore implements Store {
     return { id: row.id, conversationId: row.conversationId, turnId: row.turnId, sequence: row.sequence, state: asTurnState(row.state), startedAt: row.startedAt.toISOString(), endedAt: row.endedAt.toISOString(), finishReason: row.finishReason, timings: asTimings(row.timings), transcript: asTranscript(row.transcript), toolCalls: asToolCalls(row.toolCalls) }
   }
 
+  private mapRetentionDeleteJob(row: RetentionDeleteJobRow): RetentionDeleteJob {
+    return { id: row.id, conversationId: row.conversationId, status: asRetentionDeleteJobStatus(row.status), requestedAt: row.requestedAt.toISOString(), startedAt: row.startedAt?.toISOString() ?? null, completedAt: row.completedAt?.toISOString() ?? null, errorCode: row.errorCode ?? null }
+  }
+
   private async modelMemory(current: Assistant): Promise<ModelMemoryView> {
     const kinds: ProviderKind[] = ['vad', 'asr', 'llm', 'tts', 'intent', 'memory']
     const selections = kinds.map((kind) => {
@@ -800,6 +880,10 @@ function isUuid(value: string): boolean {
 
 function asConversationStatus(value: string): ConversationStatus {
   return value === 'active' || value === 'completed' || value === 'aborted' ? value : 'error'
+}
+
+function asRetentionDeleteJobStatus(value: string): RetentionDeleteJob['status'] {
+  return value === 'queued' || value === 'running' || value === 'completed' || value === 'failed' ? value : 'failed'
 }
 
 function asTurnState(value: string): ConversationTurn['state'] {

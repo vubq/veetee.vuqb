@@ -521,7 +521,52 @@ test('retention purge job removes expired conversation data', async () => {
     const purge = await app.inject({ method: 'POST', url: '/internal/v1/retention/purge' })
     assert.equal(purge.statusCode, 202)
     assert.equal(purge.json().purgedConversations, 1)
-    assert.equal((await app.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}` })).statusCode, 404)
+    const expired = await app.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}` })
+    assert.equal(expired.statusCode, 410)
+    assert.equal(expired.json().code, 'RETENTION_EXPIRED')
+    assert.equal((await app.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}/export` })).statusCode, 410)
+  } finally {
+    await app.close()
+  }
+})
+
+test('conversation delete is owner-scoped, idempotent and exposes a bounded tombstone window', async () => {
+  const app = await buildApp({ env: { ...env, VEETEE_RETENTION_TOMBSTONE_SECONDS: 60 } })
+  await app.ready()
+  try {
+    const assistantId = (await app.inject({ method: 'GET', url: '/api/v1/assistants' })).json().items[0].id as string
+    const conversationId = '66666666-6666-4666-8666-666666666666'
+    const ingested = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: {
+      conversationId, assistantId, locale: 'vi-VN', configRevision: 1,
+      conversationStartedAt: '2026-08-05T01:00:00.000Z', conversationEndedAt: '2026-08-05T01:00:03.000Z', conversationStatus: 'completed',
+      turnId: 'delete-turn', sequence: 1, state: 'completed', startedAt: '2026-08-05T01:00:01.000Z', endedAt: '2026-08-05T01:00:03.000Z', finishReason: 'complete', timings: {}, transcript: [], toolCalls: [],
+    } })
+    assert.equal(ingested.statusCode, 202)
+
+    const accepted = await app.inject({ method: 'DELETE', url: `/api/v1/conversations/${conversationId}` })
+    assert.equal(accepted.statusCode, 202)
+    const job = accepted.json() as { id: string; status: string; conversationId: string }
+    assert.equal(job.conversationId, conversationId)
+    assert.ok(['queued', 'running', 'completed'].includes(job.status))
+
+    const repeated = await app.inject({ method: 'DELETE', url: `/api/v1/conversations/${conversationId}` })
+    assert.equal(repeated.statusCode, 202)
+    assert.equal(repeated.json().id, job.id)
+
+    const status = await app.inject({ method: 'GET', url: `/api/v1/retention-delete-jobs/${job.id}` })
+    assert.equal(status.statusCode, 200)
+    assert.equal(status.json().conversationId, conversationId)
+    await new Promise((resolve) => setImmediate(resolve))
+    const completed = await app.inject({ method: 'GET', url: `/api/v1/retention-delete-jobs/${job.id}` })
+    assert.equal(completed.statusCode, 200)
+    assert.equal(completed.json().status, 'completed')
+
+    const detail = await app.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}` })
+    assert.equal(detail.statusCode, 410)
+    assert.equal(detail.json().code, 'RETENTION_EXPIRED')
+    const list = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/conversations` })
+    assert.equal(list.statusCode, 200)
+    assert.equal(list.json().total, 0)
   } finally {
     await app.close()
   }
@@ -570,7 +615,7 @@ test('OpenAPI is generated from every registered route', async () => {
       '/api/v1/provider-configs', '/api/v1/provider-configs/{id}', '/api/v1/voices', '/api/v1/assistants',
       '/api/v1/assistants/{id}', '/api/v1/assistants/{id}/role-config', '/api/v1/assistants/{id}/model-memory',
       '/api/v1/assistants/{id}/model-memory/provider', '/api/v1/assistants/{id}/model-memory/memory',
-      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/api/v1/devices/{id}/binding', '/api/v1/conversations/{id}/export', '/internal/v1/devices/pairing-challenges', '/internal/v1/devices/presence', '/internal/v1/retention/purge',
+      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/api/v1/devices/{id}/binding', '/api/v1/conversations/{id}', '/api/v1/conversations/{id}/export', '/api/v1/retention-delete-jobs/{id}', '/internal/v1/devices/pairing-challenges', '/internal/v1/devices/presence', '/internal/v1/retention/purge',
       '/internal/v1/runtime-config',
     ]
     for (const path of requiredPaths) assert.ok(document.paths[path], `missing OpenAPI path ${path}`)
@@ -587,9 +632,12 @@ test('OpenAPI is generated from every registered route', async () => {
           for (const status of ['404', '409', '422', '428', '503']) {
             assert.ok(operation.responses?.[status], `missing domain-error response ${status} for ${method} ${path}`)
           }
+          if (path === '/api/v1/conversations/{id}' || path === '/api/v1/conversations/{id}/export') {
+            assert.ok(operation.responses?.['410'], `missing retention response 410 for ${method} ${path}`)
+          }
         }
         for (const [status, problemResponse] of Object.entries(operation.responses ?? {})) {
-          if (!new Set(['400', '401', '403', '404', '409', '413', '422', '428', '429', '500', '503']).has(status)) continue
+          if (!new Set(['400', '401', '403', '404', '409', '410', '413', '422', '428', '429', '500', '503']).has(status)) continue
           if (path === '/health/ready' && status === '503') continue
           const media = problemResponse.content?.['application/problem+json']
           assert.ok(media, `missing problem media type for ${status} ${method} ${path}`)
@@ -612,6 +660,7 @@ test('OpenAPI is generated from every registered route', async () => {
       { path: '/api/v1/assistants/{id}', method: 'get', status: '404', code: 'NOT_FOUND' },
       { path: '/internal/v1/runtime-config', method: 'get', status: '409', code: 'NO_PUBLISHED_CONFIG' },
       { path: '/internal/v1/conversations/turns', method: 'post', status: '413', code: 'HISTORY_LIMIT_EXCEEDED' },
+      { path: '/api/v1/conversations/{id}', method: 'delete', status: '410', code: 'RETENTION_EXPIRED' },
     ] as const
     for (const item of representativeCases) {
       const operation = document.paths[item.path]?.[item.method]

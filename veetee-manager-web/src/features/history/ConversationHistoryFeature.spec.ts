@@ -218,3 +218,45 @@ describe('ConversationHistoryFeature export', () => {
     expect(view.getByText('Chi tiết lượt nói')).toBeTruthy()
   })
 })
+
+describe('ConversationHistoryFeature delete', () => {
+  it('confirms and removes a completed delete job from the history view', async () => {
+    const job = {
+      id: '94444444-4444-4444-8444-000000000001',
+      conversationId: detail.summary.id,
+      status: 'completed' as const,
+      requestedAt: '2026-08-05T00:00:00.000Z',
+      startedAt: '2026-08-05T00:00:00.000Z',
+      completedAt: '2026-08-05T00:00:00.000Z',
+      errorCode: null,
+    }
+    const deleteConversation = vi.fn(async () => success(job))
+    const view = renderFeature(gateway({ deleteConversation }))
+
+    await view.findByText(/1 lượt · TTFA/)
+    await fireEvent.click(historyItem(view))
+    await view.findByRole('button', { name: 'Xóa' })
+    await fireEvent.click(view.getByRole('button', { name: 'Xóa' }))
+
+    const dialog = await view.findByRole('dialog')
+    expect(within(dialog).getByText(/không thể hoàn tác/i)).toBeTruthy()
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Xóa conversation' }))
+
+    expect(deleteConversation).toHaveBeenCalledWith(detail.summary.id)
+    expect(await view.findByText('Chưa có hội thoại', { selector: 'strong' })).toBeTruthy()
+    expect(view.queryByRole('dialog')?.getAttribute('data-state')).toBe('closed')
+  })
+
+  it('keeps the confirmation open and announces an offline delete failure', async () => {
+    const view = renderFeature(gateway({ deleteConversation: vi.fn(async () => failure(true)) }))
+
+    await view.findByText(/1 lượt · TTFA/)
+    await fireEvent.click(historyItem(view))
+    await fireEvent.click(view.getByRole('button', { name: 'Xóa' }))
+    const dialog = await view.findByRole('dialog')
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Xóa conversation' }))
+
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('Đang ngoại tuyến; conversation chưa được xóa.')
+    expect(view.getByText('Chi tiết lượt nói')).toBeTruthy()
+  })
+})

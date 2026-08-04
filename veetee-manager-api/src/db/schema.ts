@@ -173,3 +173,24 @@ export const conversationTurnTable = managerSchema.table('conversation_turn', {
   transcript: jsonb('transcript').$type<JsonArray>().notNull(),
   toolCalls: jsonb('tool_calls').$type<JsonArray>().notNull(),
 }, (table) => ({ turnUnique: uniqueIndex('conversation_turn_identity_unique').on(table.conversationId, table.turnId), sequenceUnique: uniqueIndex('conversation_turn_sequence_unique').on(table.conversationId, table.sequence) }))
+
+export const retentionDeleteJobTable = managerSchema.table('retention_delete_job', {
+  id: uuid('id').primaryKey(),
+  ownerId: text('owner_id').notNull(),
+  conversationId: uuid('conversation_id').notNull(),
+  status: text('status').notNull(),
+  attempts: integer('attempts').notNull(),
+  requestedAt: timestamp('requested_at', { withTimezone: true, mode: 'date' }).notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
+  completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+  errorCode: text('error_code'),
+}, (table) => ({ ownerConversationUnique: uniqueIndex('retention_delete_job_owner_conversation_unique').on(table.ownerId, table.conversationId) }))
+
+export const conversationTombstoneTable = managerSchema.table('conversation_tombstone', {
+  conversationId: uuid('conversation_id').primaryKey(),
+  ownerId: text('owner_id').notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true, mode: 'date' }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+  reason: text('reason').notNull(),
+  deleteJobId: uuid('delete_job_id').references(() => retentionDeleteJobTable.id, { onDelete: 'set null' }),
+})

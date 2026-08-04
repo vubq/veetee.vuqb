@@ -90,6 +90,20 @@ test('history export tải JSON allow-list cho conversation đang chọn', async
   expect(download.suggestedFilename()).toMatch(/^veetee-conversation-.*\.json$/)
 })
 
+test('history delete yêu cầu xác nhận và trả về empty state sau job hoàn tất', async ({ page }) => {
+  await page.goto(`/assistants/${assistantId}/history`)
+  const scenario = page.getByRole('combobox', { name: 'Tình huống mô phỏng' })
+  await scenario.click()
+  await page.getByRole('option', { name: /Có lịch sử/ }).click()
+  await page.getByRole('button').filter({ hasText: 'TTFA' }).first().click()
+  await page.getByRole('button', { name: 'Xóa', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Xóa conversation' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText(/không thể hoàn tác/i)).toBeVisible()
+  await dialog.getByRole('button', { name: 'Xóa conversation', exact: true }).click()
+  await expect(page.getByText('Chưa có hội thoại', { exact: true })).toBeVisible()
+})
+
 test('provider unavailable không fallback và conflict giữ draft', async ({ page }) => {
   await page.goto(`/assistants/${assistantId}/config/model-memory`)
   const scenario = page.getByRole('combobox', { name: 'Tình huống mô phỏng' })

@@ -635,7 +635,7 @@ vẫn gồm device đã bind dù presence đã stale.
 | `GET /turns/{id}/tool-calls` | User:R | `status,limit,cursor` | `200 Page<ToolCallView>` | `404` | `C`; redacted payload. |
 | `GET /audio-artifacts/{id}` | User:R | none | `200 AudioArtifactMetadata` | `404` hoặc `410` | Safe. |
 | `GET /audio-artifacts/{id}/content` | User:R | optional `Range` | `200/206` binary + content headers | `404` hoặc `410`; `416 INVALID_RANGE` | Stream, no full-file buffer. |
-| `DELETE /conversations/{id}` | User:W | none | `202 RetentionDeleteJob` | `409 LEGAL_HOLD` | `IK`; job deletion idempotent. |
+| `DELETE /conversations/{id}` | User:W | none | `202 RetentionDeleteJob` | `404`; `410 RETENTION_EXPIRED` | Unique owner/conversation job; repeated request idempotent. |
 | `GET /retention-delete-jobs/{jobId}` | User:R | none | `200 RetentionDeleteJob` | `404` | Safe/pollable. |
 | `GET /history-retention-policy` | User:R | none | `200 {captureTranscript,transcriptDays?,captureAudio,audioDays?,effectiveAt,noticeKey}` + `ETag` | — | Safe; effective policy luôn tồn tại. |
 | `PATCH /history-retention-policy` | Owner | Explicit policy | `200 RetentionPolicy` + `ETag` | `409`; `422 POLICY_INVALID` | `IM`; luôn persist effective policy. |

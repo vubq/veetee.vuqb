@@ -75,6 +75,7 @@ export const DEFAULT_DEVICE_ONLINE_TTL_SECONDS = 120
 
 export interface PresenceStoreOptions {
   onlineTtlSeconds?: number
+  tombstoneTtlSeconds?: number
   now?: () => Date
 }
 
@@ -92,6 +93,18 @@ export function isPresenceFresh(
 
 export interface RetentionPurgeResult {
   conversations: number
+}
+
+export type RetentionDeleteJobStatus = 'queued' | 'running' | 'completed' | 'failed'
+
+export interface RetentionDeleteJob {
+  id: string
+  conversationId: string
+  status: RetentionDeleteJobStatus
+  requestedAt: string
+  startedAt: string | null
+  completedAt: string | null
+  errorCode: string | null
 }
 
 export interface PairingChallenge {
@@ -320,6 +333,9 @@ export interface Store {
   getRetentionPolicy(ownerId: string): Promise<RetentionPolicy>
   updateRetentionPolicy(ownerId: string, value: Pick<RetentionPolicy, 'captureTranscript' | 'transcriptDays' | 'captureAudio' | 'audioDays'>, ifMatch: string): Promise<RetentionPolicy>
   purgeExpiredConversations(now?: Date): Promise<RetentionPurgeResult>
+  requestConversationDelete(ownerId: string, conversationId: string): Promise<RetentionDeleteJob>
+  runConversationDeleteJob(jobId: string): Promise<RetentionDeleteJob>
+  getRetentionDeleteJob(ownerId: string, jobId: string): Promise<RetentionDeleteJob | undefined>
   ingestConversationTurn(value: ConversationTurnInput): Promise<ConversationDetail>
   listConversations(ownerId: string, assistantId: string, limit: number): Promise<ConversationSummary[]>
   getConversation(ownerId: string, id: string): Promise<ConversationDetail | undefined>
@@ -336,13 +352,17 @@ export class InMemoryStore implements Store {
   private readonly pairingChallenges = new Map<string, { id: string; deviceId: string; codeHash: string; expiresAt: string; attempts: number; state: 'pending' | 'used' }>()
   private readonly retentionPolicies = new Map<string, RetentionPolicy>()
   private readonly conversations = new Map<string, { ownerId: string; summary: ConversationSummary; turns: ConversationTurn[] }>()
+  private readonly retentionDeleteJobs = new Map<string, { ownerId: string; conversationId: string; attempts: number; job: RetentionDeleteJob }>()
+  private readonly conversationTombstones = new Map<string, { ownerId: string; deletedAt: string; expiresAt: string; reason: 'owner_request' | 'retention_expired'; jobId: string | null }>()
   private readonly presenceTtlMs: number
+  private readonly tombstoneTtlMs: number
   private readonly clock: () => Date
   private publication: RuntimePublication | undefined
 
   constructor(installations: ProviderInstallation[], initial?: RuntimeSnapshot, options: PresenceStoreOptions = {}) {
     this.installations = installations
     this.presenceTtlMs = (options.onlineTtlSeconds ?? DEFAULT_DEVICE_ONLINE_TTL_SECONDS) * 1000
+    this.tombstoneTtlMs = Math.max(60, options.tombstoneTtlSeconds ?? 604800) * 1000
     this.clock = options.now ?? (() => new Date())
     if (initial) {
       const assistant: AssistantRecord = {
@@ -694,11 +714,78 @@ export class InMemoryStore implements Store {
     let conversations = 0
     for (const [id, record] of this.conversations) {
       if (record.summary.retentionUntil && Date.parse(record.summary.retentionUntil) <= cutoff) {
+        const deletedAt = now.toISOString()
+        this.conversationTombstones.set(id, {
+          ownerId: record.ownerId,
+          deletedAt,
+          expiresAt: new Date(cutoff + this.tombstoneTtlMs).toISOString(),
+          reason: 'retention_expired',
+          jobId: null,
+        })
         this.conversations.delete(id)
         conversations += 1
       }
     }
+    for (const [id, tombstone] of this.conversationTombstones) {
+      if (Date.parse(tombstone.expiresAt) <= cutoff) this.conversationTombstones.delete(id)
+    }
     return { conversations }
+  }
+
+  async requestConversationDelete(ownerId: string, conversationId: string): Promise<RetentionDeleteJob> {
+    await this.purgeExpiredConversations()
+    const now = this.clock().toISOString()
+    const existingJob = [...this.retentionDeleteJobs.values()].find((item) => item.ownerId === ownerId && item.conversationId === conversationId)
+    if (existingJob) {
+      if (existingJob.job.status === 'failed' && existingJob.attempts < 3) {
+        existingJob.job = { ...existingJob.job, status: 'queued', requestedAt: now, startedAt: null, completedAt: null, errorCode: null }
+      }
+      return structuredClone(existingJob.job)
+    }
+    const record = this.conversations.get(conversationId)
+    if (!record || record.ownerId !== ownerId) {
+      const tombstone = this.conversationTombstones.get(conversationId)
+      if (tombstone?.ownerId === ownerId && Date.parse(tombstone.expiresAt) > Date.parse(now)) throw problem('RETENTION_EXPIRED', 'Conversation has already expired or been deleted', 410)
+      throw problem('NOT_FOUND', 'Conversation not found', 404)
+    }
+    const job: RetentionDeleteJob = { id: randomUUID(), conversationId, status: 'queued', requestedAt: now, startedAt: null, completedAt: null, errorCode: null }
+    this.retentionDeleteJobs.set(job.id, { ownerId, conversationId, attempts: 0, job })
+    return structuredClone(job)
+  }
+
+  async runConversationDeleteJob(jobId: string): Promise<RetentionDeleteJob> {
+    const record = this.retentionDeleteJobs.get(jobId)
+    if (!record) throw problem('NOT_FOUND', 'Retention delete job not found', 404)
+    if (record.job.status === 'completed') return structuredClone(record.job)
+    if (record.attempts >= 3) {
+      record.job = { ...record.job, status: 'failed', errorCode: 'DELETE_RETRY_LIMIT' }
+      return structuredClone(record.job)
+    }
+    record.attempts += 1
+    record.job = { ...record.job, status: 'running', startedAt: this.clock().toISOString(), completedAt: null, errorCode: null }
+    try {
+      const current = this.conversations.get(record.conversationId)
+      if (current && current.ownerId !== record.ownerId) throw problem('NOT_FOUND', 'Conversation not found', 404)
+      if (current) {
+        const deletedAt = this.clock().toISOString()
+        this.conversationTombstones.set(record.conversationId, { ownerId: record.ownerId, deletedAt, expiresAt: new Date(Date.parse(deletedAt) + this.tombstoneTtlMs).toISOString(), reason: 'owner_request', jobId })
+        this.conversations.delete(record.conversationId)
+      } else {
+        const tombstone = this.conversationTombstones.get(record.conversationId)
+        if (!tombstone || tombstone.ownerId !== record.ownerId) throw problem('NOT_FOUND', 'Conversation not found', 404)
+      }
+      record.job = { ...record.job, status: 'completed', completedAt: this.clock().toISOString(), errorCode: null }
+    } catch (error) {
+      const value = error as { code?: string }
+      record.job = { ...record.job, status: 'failed', completedAt: this.clock().toISOString(), errorCode: value.code ?? 'DELETE_FAILED' }
+    }
+    return structuredClone(record.job)
+  }
+
+  async getRetentionDeleteJob(ownerId: string, jobId: string): Promise<RetentionDeleteJob | undefined> {
+    const record = this.retentionDeleteJobs.get(jobId)
+    if (!record || record.ownerId !== ownerId) return undefined
+    return structuredClone(record.job)
   }
 
   async ingestConversationTurn(value: ConversationTurnInput): Promise<ConversationDetail> {
@@ -783,7 +870,11 @@ export class InMemoryStore implements Store {
   async getConversation(ownerId: string, id: string): Promise<ConversationDetail | undefined> {
     await this.purgeExpiredConversations()
     const record = this.conversations.get(id)
-    if (!record || record.ownerId !== ownerId) return undefined
+    if (!record || record.ownerId !== ownerId) {
+      const tombstone = this.conversationTombstones.get(id)
+      if (tombstone?.ownerId === ownerId && Date.parse(tombstone.expiresAt) > this.clock().getTime()) throw problem('RETENTION_EXPIRED', 'Conversation has already expired or been deleted', 410)
+      return undefined
+    }
     return this.conversationDetail(record, await this.getRetentionPolicy(ownerId))
   }
 

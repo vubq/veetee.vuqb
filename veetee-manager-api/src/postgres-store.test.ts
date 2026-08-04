@@ -485,3 +485,42 @@ test('PostgreSQL persists conversation turns and retention policy across restart
     assert.equal(exported.json().conversation.summary.deviceKey, undefined)
   } finally { await restarted.close() }
 })
+
+test('PostgreSQL conversation delete job is idempotent and survives restart with a tombstone', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8028, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent', VEETEE_RETENTION_TOMBSTONE_SECONDS: 60,
+  }
+  const conversationId = `77777777-7777-4777-8777-${String(Date.now()).slice(-12)}`
+  const app = await buildApp({ env })
+  await app.ready()
+  let assistantId = ''
+  let jobId = ''
+  try {
+    assistantId = (await app.inject({ method: 'GET', url: '/api/v1/assistants' })).json().items[0]?.id
+    const event = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: {
+      conversationId, assistantId, locale: 'vi-VN', configRevision: 1, conversationStartedAt: '2026-08-05T01:00:00.000Z', conversationEndedAt: '2026-08-05T01:00:03.000Z', conversationStatus: 'completed', turnId: `delete-pg-turn-${Date.now()}`, sequence: 1, state: 'completed', startedAt: '2026-08-05T01:00:01.000Z', endedAt: '2026-08-05T01:00:03.000Z', finishReason: 'complete', timings: {}, transcript: [], toolCalls: [],
+    } })
+    assert.equal(event.statusCode, 202)
+    const accepted = await app.inject({ method: 'DELETE', url: `/api/v1/conversations/${conversationId}` })
+    assert.equal(accepted.statusCode, 202)
+    jobId = accepted.json().id
+    const repeated = await app.inject({ method: 'DELETE', url: `/api/v1/conversations/${conversationId}` })
+    assert.equal(repeated.statusCode, 202)
+    assert.equal(repeated.json().id, jobId)
+  } finally { await app.close() }
+
+  const restarted = await buildApp({ env })
+  await restarted.ready()
+  try {
+    await new Promise((resolve) => setImmediate(resolve))
+    const job = await restarted.inject({ method: 'GET', url: `/api/v1/retention-delete-jobs/${jobId}` })
+    assert.equal(job.statusCode, 200)
+    assert.equal(job.json().status, 'completed')
+    const expired = await restarted.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}` })
+    assert.equal(expired.statusCode, 410)
+    assert.equal(expired.json().code, 'RETENTION_EXPIRED')
+  } finally { await restarted.close() }
+})

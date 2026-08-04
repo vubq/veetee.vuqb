@@ -235,6 +235,13 @@ const retentionPurgeResponseSchema = {
   type: 'object', additionalProperties: false, required: ['purgedConversations', 'executedAt'],
   properties: { purgedConversations: { type: 'integer', minimum: 0 }, executedAt: { type: 'string' } },
 } as const
+const retentionDeleteJobResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'conversationId', 'status', 'requestedAt', 'startedAt', 'completedAt', 'errorCode'],
+  properties: {
+    id: { type: 'string' }, conversationId: { type: 'string' }, status: { type: 'string', enum: ['queued', 'running', 'completed', 'failed'] },
+    requestedAt: { type: 'string' }, startedAt: { type: ['string', 'null'] }, completedAt: { type: ['string', 'null'] }, errorCode: { type: ['string', 'null'] },
+  },
+} as const
 const retentionPolicyResponseSchema = {
   type: 'object', additionalProperties: false, required: ['ownerId', 'captureTranscript', 'transcriptDays', 'captureAudio', 'audioDays', 'effectiveAt', 'revision', 'etag'],
   properties: { ownerId: { type: 'string' }, captureTranscript: { type: 'boolean' }, transcriptDays: { type: ['integer', 'null'] }, captureAudio: { type: 'boolean' }, audioDays: { type: ['integer', 'null'] }, effectiveAt: { type: 'string' }, revision: { type: 'integer' }, etag: { type: 'string' } },
@@ -326,6 +333,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   const allowedOrigins = env.VEETEE_ALLOWED_ORIGINS.split(',').map((item) => item.trim()).filter(Boolean)
   let retentionTask: Promise<{ purgedConversations: number; executedAt: string }> | null = null
   const secretMutationTails = new Map<string, Promise<void>>()
+  const deleteTasks = new Map<string, Promise<void>>()
   async function withSecretMutationLock<T>(referenceId: string, operation: () => Promise<T>): Promise<T> {
     const previous = secretMutationTails.get(referenceId) ?? Promise.resolve()
     let release!: () => void
@@ -351,6 +359,14 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   }
   const retentionTimer = setInterval(() => { void runRetention().catch((error) => app.log.error({ err: error }, 'retention purge failed')) }, (env.VEETEE_RETENTION_INTERVAL_SECONDS ?? 3600) * 1000)
   retentionTimer.unref?.()
+  const scheduleDelete = (jobId: string): void => {
+    if (deleteTasks.has(jobId)) return
+    const task = (async () => {
+      const job = await store.runConversationDeleteJob(jobId)
+      app.log.info({ jobId: job.id, conversationId: job.conversationId, status: job.status }, 'conversation delete job completed')
+    })().catch((error) => app.log.error({ err: error, jobId }, 'conversation delete job failed')).finally(() => { deleteTasks.delete(jobId) })
+    deleteTasks.set(jobId, task)
+  }
 
   await app.register(sensible)
   await app.register(cookie)
@@ -402,6 +418,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
           '422': problemResponse('Domain validation failed', '422', url),
           '428': problemResponse('Precondition required', '428', url),
           '503': problemResponse('Dependency unavailable', '503', url),
+          ...((url === '/api/v1/conversations/:id' || url === '/api/v1/conversations/:id/export') ? { '410': problemResponse('Conversation expired or deleted', '410', url) } : {}),
           ...(url === '/internal/v1/conversations/turns' ? { '413': problemResponse('Conversation event too large', '413', url) } : {}),
         } : {}),
       }
@@ -680,18 +697,34 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     return { items, total: items.length }
   })
   app.get<{ Params: { id: string } }>('/api/v1/conversations/:id', { schema: { params: resourceIdParamsSchema, response: { 200: conversationDetailResponseSchema } } }, async (request, reply) => {
-    const value = await store.getConversation(owner(request), request.params.id)
-    if (!value) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Conversation not found')
-    return value
+    try {
+      const value = await store.getConversation(owner(request), request.params.id)
+      if (!value) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Conversation not found')
+      return value
+    } catch (error) { return sendProblem(reply, error) }
   })
   app.get<{ Params: { id: string } }>('/api/v1/conversations/:id/export', { schema: { params: resourceIdParamsSchema, response: { 200: conversationExportResponseSchema } } }, async (request, reply) => {
-    const value = await store.getConversation(owner(request), request.params.id)
-    if (!value) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Conversation not found')
-    const exported = mapConversationExport(value)
-    return reply
-      .header('Content-Disposition', `attachment; filename="veetee-conversation-${safeExportFilename(request.params.id)}.json"`)
-      .type('application/json; charset=utf-8')
-      .send(exported)
+    try {
+      const value = await store.getConversation(owner(request), request.params.id)
+      if (!value) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Conversation not found')
+      const exported = mapConversationExport(value)
+      return reply
+        .header('Content-Disposition', `attachment; filename="veetee-conversation-${safeExportFilename(request.params.id)}.json"`)
+        .type('application/json; charset=utf-8')
+        .send(exported)
+    } catch (error) { return sendProblem(reply, error) }
+  })
+  app.delete<{ Params: { id: string } }>('/api/v1/conversations/:id', { schema: { params: resourceIdParamsSchema, response: { 202: retentionDeleteJobResponseSchema } } }, async (request, reply) => {
+    try {
+      const job = await store.requestConversationDelete(owner(request), request.params.id)
+      scheduleDelete(job.id)
+      return reply.code(202).send(job)
+    } catch (error) { return sendProblem(reply, error) }
+  })
+  app.get<{ Params: { id: string } }>('/api/v1/retention-delete-jobs/:id', { schema: { params: resourceIdParamsSchema, response: { 200: retentionDeleteJobResponseSchema } } }, async (request, reply) => {
+    const job = await store.getRetentionDeleteJob(owner(request), request.params.id)
+    if (!job) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Retention delete job not found')
+    return job
   })
 
   app.post<{ Body: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string } }>('/internal/v1/devices/pairing-challenges', { schema: { body: pairingChallengeBodySchema, response: { 201: pairingChallengeResponseSchema } } }, async (request, reply) => {
@@ -746,6 +779,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   app.addHook('onClose', async () => {
     clearInterval(retentionTimer)
     if (retentionTask) await retentionTask.catch(() => undefined)
+    await Promise.all([...deleteTasks.values()])
     await store.close?.()
   })
   void runRetention().catch((error) => app.log.error({ err: error }, 'initial retention purge failed'))
@@ -757,9 +791,9 @@ async function createStore(env: Environment): Promise<Store> {
   const initial = await loadInitialSnapshot(env.VEETEE_INITIAL_SNAPSHOT_FILE)
   if (env.VEETEE_DATABASE_MODE === 'postgres') {
     const { createPostgresStore } = await import('./postgres-store.js')
-    return createPostgresStore({ catalog, initial, databaseUrlFile: env.VEETEE_DATABASE_URL_FILE, presenceTtlSeconds: env.VEETEE_DEVICE_ONLINE_TTL_SECONDS })
+    return createPostgresStore({ catalog, initial, databaseUrlFile: env.VEETEE_DATABASE_URL_FILE, presenceTtlSeconds: env.VEETEE_DEVICE_ONLINE_TTL_SECONDS, tombstoneTtlSeconds: env.VEETEE_RETENTION_TOMBSTONE_SECONDS })
   }
-  return new InMemoryStore(catalog, initial, { onlineTtlSeconds: env.VEETEE_DEVICE_ONLINE_TTL_SECONDS })
+  return new InMemoryStore(catalog, initial, { onlineTtlSeconds: env.VEETEE_DEVICE_ONLINE_TTL_SECONDS, tombstoneTtlSeconds: env.VEETEE_RETENTION_TOMBSTONE_SECONDS })
 }
 
 function owner(request: FastifyRequest): string { return (request as OwnerRequest).ownerId ?? 'local-owner' }
@@ -905,6 +939,7 @@ function problemExample(status: string, url: string): Record<string, unknown> {
     '401': { summary: 'Authentication required', value: { code: 'UNAUTHORIZED', detail: 'Authentication required' } },
     '403': { summary: 'Request forbidden', value: { code: 'FORBIDDEN', detail: 'The authenticated principal is not allowed to perform this operation' } },
     '404': { summary: 'Resource not found', value: { code: 'NOT_FOUND', detail: 'The requested resource was not found' } },
+    '410': { summary: 'Conversation expired or deleted', value: { code: 'RETENTION_EXPIRED', detail: 'Conversation has already expired or been deleted' } },
     '409': { summary: 'State conflict', value: { code: 'REVISION_CONFLICT', detail: 'The resource changed; reload the current revision' } },
     '413': { summary: 'Conversation event too large', value: { code: 'HISTORY_LIMIT_EXCEEDED', detail: 'Conversation event exceeds the configured size limit' } },
     '422': { summary: 'Domain validation failed', value: { code: 'CONFIG_INVALID', detail: 'The supplied configuration is not valid' } },

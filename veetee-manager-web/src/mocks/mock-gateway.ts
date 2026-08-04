@@ -3,6 +3,7 @@ import type {
   AssistantListQuery,
   ConversationDetail,
   ConversationExport,
+  RetentionDeleteJob,
   ConversationSummary,
   CreateAssistantInput,
   DemoResetSummary,
@@ -39,6 +40,7 @@ import type {
   ProviderInstallationView,
   RetentionPolicy,
   RetentionPolicyInput,
+  RetentionExpiredProblem,
 } from '@/domain'
 import { PROVIDER_KINDS } from '@/domain'
 import type {
@@ -113,6 +115,8 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
   private state: MockState
   private scenario: PreviewScenarioId
   private readonly unlinkedDevices = new Map<string, DeviceCard>()
+  private readonly deletedConversationIds = new Set<string>()
+  private readonly retentionDeleteJobs = new Map<string, RetentionDeleteJob>()
   private requestSequence = 0
   private readonly sleep: Sleep
   private readonly now: () => string
@@ -148,6 +152,8 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     this.retentionPolicy = this.defaultRetentionPolicy()
     this.scenario = 'happy'
     this.unlinkedDevices.clear()
+    this.deletedConversationIds.clear()
+    this.retentionDeleteJobs.clear()
 
     return this.success(
       {
@@ -798,15 +804,15 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     const request = await this.begin('read')
     if (!this.state.assistants[assistantId]) return this.failure(this.notFound('assistant', assistantId, request.requestId), request)
     const conversation = this.scenario === 'history' ? HISTORY_CONVERSATIONS[assistantId] : undefined
-    const items: ConversationSummary[] = conversation ? [clone(conversation.summary)] : []
+    const items: ConversationSummary[] = conversation && !this.deletedConversationIds.has(conversation.summary.id) ? [clone(conversation.summary)] : []
     return this.success({ items: items.slice(0, limit), total: items.length }, request)
   }
 
-  async getConversation(id: string): Promise<GatewayResult<ConversationDetail, NotFoundProblem>> {
+  async getConversation(id: string): Promise<GatewayResult<ConversationDetail, NotFoundProblem | RetentionExpiredProblem>> {
     const request = await this.begin('read')
     if (this.scenario === 'history') {
       const conversation = Object.values(HISTORY_CONVERSATIONS).find((item) => item.summary.id === id)
-      if (conversation) return this.success(clone(conversation), request)
+      if (conversation && !this.deletedConversationIds.has(conversation.summary.id)) return this.success(clone(conversation), request)
     }
     return this.failure(this.notFound('conversation', id, request.requestId), request)
   }
@@ -817,7 +823,7 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     if (offline) return this.failure(offline, request)
     if (this.scenario === 'history') {
       const conversation = Object.values(HISTORY_CONVERSATIONS).find((item) => item.summary.id === id)
-      if (conversation) {
+      if (conversation && !this.deletedConversationIds.has(conversation.summary.id)) {
         const source = conversation.summary
         const summary = {
           id: source.id,
@@ -836,6 +842,28 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
       }
     }
     return this.failure(this.notFound('conversation', id, request.requestId), request)
+  }
+
+  async deleteConversation(id: string): Promise<GatewayResult<RetentionDeleteJob, NotFoundProblem | RetentionExpiredProblem | OfflineProblem>> {
+    const request = await this.begin('mutation')
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    const existing = [...this.retentionDeleteJobs.values()].find((job) => job.conversationId === id)
+    if (existing) return this.success(clone(existing), request)
+    const conversation = Object.values(HISTORY_CONVERSATIONS).find((item) => item.summary.id === id)
+    if (!conversation || this.deletedConversationIds.has(id)) return this.failure(this.notFound('conversation', id, request.requestId), request)
+    const now = this.now()
+    const job: RetentionDeleteJob = { id: `94444444-4444-4444-8444-${String(this.retentionDeleteJobs.size + 1).padStart(12, '0')}`, conversationId: id, status: 'completed', requestedAt: now, startedAt: now, completedAt: now, errorCode: null }
+    this.retentionDeleteJobs.set(job.id, job)
+    this.deletedConversationIds.add(id)
+    return this.success(clone(job), request)
+  }
+
+  async getRetentionDeleteJob(id: string): Promise<GatewayResult<RetentionDeleteJob, NotFoundProblem | OfflineProblem>> {
+    const request = await this.begin('read')
+    const job = this.retentionDeleteJobs.get(id)
+    if (!job) return this.failure(this.notFound('conversation', id, request.requestId), request)
+    return this.success(clone(job), request)
   }
 
   private async begin(operation: DelayOperation): Promise<RequestContext> {

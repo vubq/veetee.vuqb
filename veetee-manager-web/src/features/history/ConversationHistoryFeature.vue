@@ -15,6 +15,7 @@ import VtSkeleton from '@/ui/primitives/VtSkeleton.vue'
 import { notify } from '@/ui/primitives/notifications'
 
 import ConversationExportButton from './ConversationExportButton.vue'
+import ConversationDeleteDialog from './ConversationDeleteDialog.vue'
 import RetentionPolicyPanel from './RetentionPolicyPanel.vue'
 import { downloadJsonFile } from './conversation-export'
 
@@ -27,6 +28,9 @@ const retentionSaveError = ref('')
 const selected = ref<ConversationDetail>()
 const selectedItem = ref<ConversationSummary>()
 const exporting = ref(false)
+const deleteDialogOpen = ref(false)
+const deleting = ref(false)
+const deleteError = ref('')
 const exportError = ref('')
 const loading = ref(true)
 const stale = ref(false)
@@ -146,6 +150,55 @@ async function exportSelectedConversation() {
     await focusExportError()
   } finally {
     exporting.value = false
+  }
+}
+
+function openDeleteDialog() {
+  if (selectedItem.value) {
+    deleteError.value = ''
+    deleteDialogOpen.value = true
+  }
+}
+
+async function deleteSelectedConversation() {
+  const item = selectedItem.value
+  if (!item || deleting.value) return
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    const result = await gateway.deleteConversation(item.id)
+    if (!result.ok) {
+      deleteError.value = result.meta.offline
+        ? 'Đang ngoại tuyến; conversation chưa được xóa.'
+        : result.problem.code === 'RETENTION_EXPIRED'
+          ? 'Conversation đã được xóa hoặc hết retention.'
+          : 'Không thể tạo delete job cho conversation này.'
+      return
+    }
+    let job = result.data
+    for (let attempt = 0; attempt < 20 && job.status !== 'completed' && job.status !== 'failed'; attempt += 1) {
+      await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 250))
+      const status = await gateway.getRetentionDeleteJob(job.id)
+      if (!status.ok) {
+        deleteError.value = status.meta.offline ? 'Đang ngoại tuyến; chưa thể kiểm tra delete job.' : 'Không đọc được trạng thái delete job.'
+        return
+      }
+      job = status.data
+    }
+    if (job.status !== 'completed') {
+      deleteError.value = job.errorCode ? `Delete job kết thúc với lỗi ${job.errorCode}.` : 'Delete job chưa hoàn tất; hãy thử lại sau.'
+      return
+    }
+    conversations.value = conversations.value.filter((conversation) => conversation.id !== item.id)
+    loadState.value = conversations.value.length > 0 ? 'ready' : 'empty'
+    selected.value = undefined
+    selectedItem.value = undefined
+    deleteDialogOpen.value = false
+    notify('Đã xóa conversation', { tone: 'success', message: 'Transcript và metadata đã được đưa qua delete job.' })
+  } catch {
+    deleteError.value = 'Không kết nối được Manager API; conversation vẫn giữ nguyên.'
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -317,6 +370,15 @@ onMounted(load)
               :loading="exporting"
               @click="exportSelectedConversation"
             />
+            <VtButton
+              v-if="detailState === 'ready'"
+              size="sm"
+              variant="danger"
+              :disabled="deleting"
+              @click="openDeleteDialog"
+            >
+              Xóa
+            </VtButton>
           </div>
         </header>
         <p
@@ -365,6 +427,13 @@ onMounted(load)
         </ol>
       </VtCard>
     </div>
+    <ConversationDeleteDialog
+      v-model:open="deleteDialogOpen"
+      :conversation="selectedItem"
+      :loading="deleting"
+      :error="deleteError"
+      @confirm="deleteSelectedConversation"
+    />
   </section>
 </template>
 

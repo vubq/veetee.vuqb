@@ -300,6 +300,18 @@ export interface ConversationExport {
   }
 }
 
+export type RetentionDeleteJobStatus = 'queued' | 'running' | 'completed' | 'failed'
+
+export interface RetentionDeleteJob {
+  id: string
+  conversationId: string
+  status: RetentionDeleteJobStatus
+  requestedAt: IsoDateTime
+  startedAt: IsoDateTime | null
+  completedAt: IsoDateTime | null
+  errorCode: string | null
+}
+
 export interface PairDeviceInput {
   assistantId: string
   verificationCode: string

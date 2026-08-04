@@ -174,7 +174,9 @@ Phương án B: không lưu transcript/audio, chỉ latency/error metadata.
 Phương án C: retention khác do chủ dự án chỉ định.  
 Chọn transcript 30 ngày, audio capture off mặc định; Owner có thể export/delete
 và UI luôn hiển thị retention notice. Export từng conversation JSON đã triển khai
-qua ADR-024; delete vẫn chờ retention-delete job/tombstone contract riêng.
+qua ADR-024. Conversation delete đã triển khai qua ADR-025: job bất đồng bộ,
+tombstone TTL cấu hình và `410 RETENTION_EXPIRED`; bulk archive/legal hold vẫn
+chưa thuộc baseline.
 
 ### Q-010 — Chỉ LAN hay cần remote/public access?
 

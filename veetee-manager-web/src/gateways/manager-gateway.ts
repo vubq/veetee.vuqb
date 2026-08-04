@@ -6,6 +6,7 @@ import type {
   DeviceCard,
   ConversationDetail,
   ConversationExport,
+  RetentionDeleteJob,
   ConversationSummary,
   GatewayResult,
   ModelMemoryWorkspace,
@@ -32,6 +33,7 @@ import type {
   ProviderInstallationView,
   RetentionPolicy,
   RetentionPolicyInput,
+  RetentionExpiredProblem,
 } from '@/domain'
 
 export type CreateAssistantProblem =
@@ -159,8 +161,10 @@ export interface HistoryGateway {
     expectedEtag: string,
   ): Promise<GatewayResult<RetentionPolicy, RetentionMutationProblem>>
   listConversations(assistantId: string, limit?: number): Promise<GatewayResult<Page<ConversationSummary>, NotFoundProblem>>
-  getConversation(id: string): Promise<GatewayResult<ConversationDetail, NotFoundProblem>>
-  exportConversation(id: string): Promise<GatewayResult<ConversationExport, NotFoundProblem | OfflineProblem>>
+  getConversation(id: string): Promise<GatewayResult<ConversationDetail, NotFoundProblem | RetentionExpiredProblem>>
+  exportConversation(id: string): Promise<GatewayResult<ConversationExport, NotFoundProblem | RetentionExpiredProblem | OfflineProblem>>
+  deleteConversation(id: string): Promise<GatewayResult<RetentionDeleteJob, NotFoundProblem | RetentionExpiredProblem | OfflineProblem>>
+  getRetentionDeleteJob(id: string): Promise<GatewayResult<RetentionDeleteJob, NotFoundProblem | OfflineProblem>>
 }
 
 export interface ManagerGateway

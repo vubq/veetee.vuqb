@@ -180,6 +180,33 @@ describe('HTTP gateway read failure metadata', () => {
     expect(result.data.conversation.summary).not.toHaveProperty('deviceKey')
   })
 
+  it('maps the async conversation delete job and retention tombstone response', async () => {
+    const calls: Request[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init)
+      calls.push(request)
+      if (request.url.endsWith('/api/v1/auth/me')) return new Response(JSON.stringify({ user: { id: 'owner' }, csrfToken: 'csrf-test' }), { status: 200 })
+      if (request.method === 'DELETE') {
+        return new Response(JSON.stringify({ id: 'job-1', conversationId: 'conversation-1', status: 'queued', requestedAt: '2026-08-05T00:00:00.000Z', startedAt: null, completedAt: null, errorCode: null }), { status: 202, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ code: 'RETENTION_EXPIRED', detail: 'Conversation has already expired or been deleted' }), { status: 410, headers: { 'Content-Type': 'application/problem+json' } })
+    }))
+
+    const gateway = createHttpGatewayDependencies('https://manager.test').managerGateway
+    const created = await gateway.deleteConversation('conversation-1')
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(created.data).toMatchObject({ id: 'job-1', conversationId: 'conversation-1', status: 'queued' })
+    const request = calls.find((item) => item.method === 'DELETE')
+    expect(request?.headers.get('X-Veetee-CSRF')).toBe('csrf-test')
+
+    const expired = await gateway.getConversation('conversation-1')
+    expect(expired.ok).toBe(false)
+    if (expired.ok) return
+    expect(expired.problem.type).toBe('retention-expired')
+    expect(expired.problem.code).toBe('RETENTION_EXPIRED')
+  })
+
   it('sends write-only secret create and maps metadata without exposing a value', async () => {
     const calls: Request[] = []
     const metadata = {

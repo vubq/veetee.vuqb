@@ -22,7 +22,7 @@
 | M0 — một lượt ESP32 qua server | Đang hoàn thiện, **chưa đóng DoD** | Firmware/host protocol, WS v3, provider path, runtime manager snapshot, unattended wake và fixture physical flow đã chạy. | Người dùng xác nhận thực tế loa/LCD/PTT và acceptance audio path; 30-turn DoD phải giữ đủ evidence. Xem [`M0.md`](M0.md) và [`10-roadmap.md`](../10-roadmap.md). |
 | M1 — realtime conversation | Đang làm, **chưa đóng DoD** | Streaming/cancellation/tool loop, v1/v2/v3 fixture, WakeNet, noise suppression, multi-key fixture 10/10, AEC lifecycle/resource 10/10; stale `tts/stop` barrier đã sửa; normal wake 2 lượt, barge-in lifecycle physical, corpus smoke 1 negative/1 positive và host TTFA warm p95 `1481,4 ms` pass. | Acoustic echo-only, false accept/reject corpus đủ lớn, voice-onset barge-in/time-to-silence, 100 repetition, provider promotion và cross-peer physical conformance. Các lần timeout AEC/bypass trước guard vẫn là diagnostic history, không coi là acoustic verdict. Xem [`M1.md`](M1.md). |
 | Groq multi-key | Hoàn tất cho **test harness** | `VEETEE_TEST_GROQ_KEYS_FILE` chỉ với fixture; round-robin; chỉ retry `429` trước delta đầu; không replay partial stream; firmware không chứa key. | Không phải production fallback/key rotation; nhiều key vẫn có thể cùng dính quota account/org/model/IP. |
-| M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary, TTL freshness và host regression. | Promotion provider/model/VRAM, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
+| M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary, TTL freshness, privacy export, async conversation delete/tombstone và host regression. | Promotion provider/model/VRAM, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
 | M3 — transport/hardware/OTA | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | MQTT/UDP, MCP phần cứng, assets/OTA cần mở milestone và input board/BOM. |
 | M4 — hardening/multilingual | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | Capacity, backup/restore, security, locale thứ hai và soak dài. |
 
@@ -610,6 +610,27 @@
   raw identity và audio; Web download object URL ngắn hạn rồi revoke.
 - API PostgreSQL test `veetee_vubq_test` **37/37**, OpenAPI check/lint/build pass;
   Web unit **84/84**, Chromium E2E **10/10**, gồm export download và a11y gate.
-- Bulk archive và delete conversation vẫn deferred tới retention-delete job;
+- Bulk archive vẫn deferred; delete async/tombstone đã có qua ADR-025;
   không ghi export content vào log/browser storage. Không gọi Groq, không phát
   audio, không flash/reset ESP32, không đổi Wi-Fi/Tailscale hoặc production DB.
+
+### Conversation delete job và tombstone (2026-08-05, non-audio)
+
+- Manager API thêm `DELETE /api/v1/conversations/{id}` và
+  `GET /api/v1/retention-delete-jobs/{jobId}`. Job unique theo owner/conversation,
+  trả `202`, worker bounded và retry tối đa 3 lần; không giữ request trong lúc
+  cascade xóa turns.
+- PostgreSQL migration `005_conversation_delete_jobs.sql` thêm job và
+  `conversation_tombstone`; InMemory adapter giữ cùng semantics. Delete transaction
+  xóa conversation/turns, không lưu transcript/device identity/audio vào tombstone.
+- GET detail/export cùng owner trả `410 RETENTION_EXPIRED` trong TTL tombstone;
+  retention purge cũng tạo tombstone rồi dọn tombstone hết hạn. TTL lấy từ
+  `VEETEE_RETENTION_TOMBSTONE_SECONDS` (mặc định 7 ngày), không hard-code UI.
+- Manager Web có `ConversationDeleteDialog` component, confirm/loading/offline/
+  failure state và loại item sau job completed; MockGateway không mutate fixture
+  dùng chung.
+- Verification: Manager API dedicated PostgreSQL `veetee_vubq_test` **39/39**,
+  OpenAPI export/check, lint/build pass; Manager Web typecheck/lint/build/unit
+  **87/87**, Chromium E2E **11/11** (a11y serious/critical gate). Không gọi Groq,
+  không phát audio, không mở microphone/speaker,
+  không flash/reset ESP32, không đổi Wi-Fi/Tailscale hoặc mutate production DB.
