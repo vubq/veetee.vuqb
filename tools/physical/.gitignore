@@ -1,4 +1,5 @@
 wake-test.local.json
+wake-test-*.local.json
 *.wav
 *.ogg
 *.mp3

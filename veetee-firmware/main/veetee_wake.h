@@ -41,6 +41,8 @@ typedef struct {
     size_t input_size;
     size_t chunk_samples;
     unsigned int word_count;
+    unsigned int threshold_percent;
+    unsigned int detection_mode;
     bool ready;
     bool armed;
     char model_name[64];

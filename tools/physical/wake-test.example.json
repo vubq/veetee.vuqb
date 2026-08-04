@@ -14,11 +14,12 @@
     "wake": "./local-wake-computer.wav",
     "utterance": "./local-utterance-vi.wav"
   },
+  "repetitions": 1,
   "utteranceAfter": "capture_started",
   "events": [
     {"name": "wake_detected", "marker": "wake detected", "timeoutSeconds": 15},
     {"name": "capture_started", "marker": "wake start", "timeoutSeconds": 8},
     {"name": "assistant_speaking", "marker": "state=speaking", "timeoutSeconds": 45},
-    {"name": "wake_rearmed", "marker": "wake capture complete", "timeoutSeconds": 90}
+    {"name": "wake_rearmed", "marker": "wake detector armed", "timeoutSeconds": 90}
   ]
 }

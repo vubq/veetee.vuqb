@@ -156,6 +156,15 @@ config VEETEE_AUDIO_FRAME_DURATION_MS
     range 20 120
     default 60
 
+config VEETEE_PLAYBACK_QUEUE_DEPTH
+    int "Downlink Opus playback queue depth"
+    range 4 64
+    default 32
+    help
+        Number of encoded downlink frames buffered while the I2S decoder
+        catches up with a streaming TTS burst. Increase only when PSRAM and
+        internal heap headroom have been measured on the target board.
+
 config VEETEE_AUDIO_DIAGNOSTICS
     bool "Log bounded microphone level diagnostics"
     default n

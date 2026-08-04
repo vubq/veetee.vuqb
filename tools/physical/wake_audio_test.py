@@ -54,6 +54,7 @@ class Scenario:
     stages: tuple[Stage, ...]
     utterance_after: str
     startup_wait_seconds: float
+    repetitions: int
     firmware_config: Path
     required_protocol_profile: int
     require_wake_enabled: bool
@@ -150,6 +151,7 @@ def load_scenario(path: Path) -> Scenario:
         stages=tuple(stages),
         utterance_after=_string(document.get("utteranceAfter", stages[0].name), "utteranceAfter"),
         startup_wait_seconds=_number(monitor.get("startupWaitSeconds", 1), "monitor.startupWaitSeconds", minimum=0, maximum=30),
+        repetitions=int(_number(document.get("repetitions", 1), "repetitions", minimum=1, maximum=100)),
         firmware_config=firmware_config,
         required_protocol_profile=required_protocol_profile,
         require_wake_enabled=_boolean(firmware.get("requireWakeEnabled"), "firmware.requireWakeEnabled", default=True),
@@ -418,6 +420,7 @@ def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) 
             "firmwareConfig": firmware_config or {"path": str(scenario.firmware_config), "exists": False},
             "events": [stage.__dict__ for stage in scenario.stages],
             "utteranceAfter": scenario.utterance_after,
+            "repetitions": scenario.repetitions,
         }, ensure_ascii=False, indent=2))
         return []
 
@@ -439,29 +442,31 @@ def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) 
         monitor.start()
         if scenario.startup_wait_seconds:
             time.sleep(scenario.startup_wait_seconds)
-        wake_player = _start_player(scenario.player_command, scenario.wake_clip, allow_audio=True)
-        utterance_played = False
-        for stage in scenario.stages:
-            timestamp, line = monitor.wait_for(stage.marker, stage.timeout_seconds)
-            result = _event(stage.name, started, marker=stage.marker, serialElapsedMs=round((timestamp - started) * 1000, 1))
-            results.append(result)
-            print(json.dumps(result, ensure_ascii=False), flush=True)
-            if stage.name == scenario.utterance_after and not utterance_played:
-                assert wake_player is not None
+        for repetition in range(1, scenario.repetitions + 1):
+            wake_player = _start_player(scenario.player_command, scenario.wake_clip, allow_audio=True)
+            utterance_played = False
+            for stage in scenario.stages:
+                timestamp, line = monitor.wait_for(stage.marker, stage.timeout_seconds)
+                result = _event(stage.name, started, repetition=repetition, marker=stage.marker,
+                                serialElapsedMs=round((timestamp - started) * 1000, 1))
+                results.append(result)
+                print(json.dumps(result, ensure_ascii=False), flush=True)
+                if stage.name == scenario.utterance_after and not utterance_played:
+                    assert wake_player is not None
+                    _wait_player(wake_player, scenario.wake_clip)
+                    wake_player = None
+                    utterance_player = _start_player(scenario.player_command, scenario.utterance_clip, allow_audio=True)
+                    _wait_player(utterance_player, scenario.utterance_clip)
+                    utterance_player = None
+                    utterance_played = True
+                del line
+            if wake_player is not None:
                 _wait_player(wake_player, scenario.wake_clip)
                 wake_player = None
+            if not utterance_played:
                 utterance_player = _start_player(scenario.player_command, scenario.utterance_clip, allow_audio=True)
                 _wait_player(utterance_player, scenario.utterance_clip)
                 utterance_player = None
-                utterance_played = True
-            del line
-        if wake_player is not None:
-            _wait_player(wake_player, scenario.wake_clip)
-            wake_player = None
-        if not utterance_played:
-            utterance_player = _start_player(scenario.player_command, scenario.utterance_clip, allow_audio=True)
-            _wait_player(utterance_player, scenario.utterance_clip)
-            utterance_player = None
         return results
     except subprocess.TimeoutExpired as error:
         raise HarnessError(f"audio player did not finish: {error}") from error

@@ -321,8 +321,16 @@ int vt_audio_play_tone(vt_audio_t *audio, int frequency_hz, int duration_ms, int
     return ESP_OK;
 }
 
-void vt_audio_reset(vt_audio_t *audio) {
+void vt_audio_reset_decoder(vt_audio_t *audio) {
     if (audio == NULL) return;
-    if (audio->encoder != NULL) (void)esp_opus_enc_reset(audio->encoder);
     if (audio->decoder != NULL) (void)esp_opus_dec_reset(audio->decoder);
+}
+
+void vt_audio_reset_encoder(vt_audio_t *audio) {
+    if (audio != NULL && audio->encoder != NULL) (void)esp_opus_enc_reset(audio->encoder);
+}
+
+void vt_audio_reset(vt_audio_t *audio) {
+    vt_audio_reset_decoder(audio);
+    vt_audio_reset_encoder(audio);
 }

@@ -47,6 +47,8 @@ int vt_wake_init(vt_wake_t *wake, const vt_wake_config_t *config) {
         return VT_WAKE_ERR_INVALID_ARG;
     }
     memset(wake, 0, sizeof(*wake));
+    wake->threshold_percent = config->threshold_percent;
+    wake->detection_mode = config->detection_mode;
 
     srmodel_list_t *models = esp_srmodel_init(config->partition_label);
     if (models == NULL || models->num <= 0) {
@@ -200,11 +202,48 @@ int vt_wake_feed(vt_wake_t *wake, const int16_t *samples, size_t sample_count, v
 int vt_wake_arm(vt_wake_t *wake) {
     if (wake == NULL) return VT_WAKE_ERR_INVALID_ARG;
     if (!wake->ready) return VT_WAKE_ERR_UNAVAILABLE;
-    wake->input_size = 0U;
-    if (wake->interface_handle != NULL && wake->model_data != NULL) {
-        const esp_wn_iface_t *iface = (const esp_wn_iface_t *)wake->interface_handle;
-        if (iface->clean != NULL) iface->clean((model_iface_data_t *)wake->model_data);
+    if (wake->interface_handle == NULL || wake->model_data == NULL) return VT_WAKE_ERR_MODEL;
+
+    const esp_wn_iface_t *iface = (const esp_wn_iface_t *)wake->interface_handle;
+    if (iface->destroy == NULL || iface->create == NULL || iface->get_samp_rate == NULL ||
+        iface->get_samp_chunksize == NULL || iface->get_word_num == NULL) {
+        wake->ready = false;
+        wake->armed = false;
+        return VT_WAKE_ERR_MODEL;
     }
+
+    /* The preset's clean() is unsafe after detection (it dereferences a
+       released convolution queue). Recreate the single model instance instead
+       so the next turn gets a fresh internal state without accumulating model
+       allocations across a long session. */
+    model_iface_data_t *previous = (model_iface_data_t *)wake->model_data;
+    wake->model_data = NULL;
+    wake->armed = false;
+    iface->destroy(previous);
+    det_mode_t mode = wake->detection_mode == 95U ? DET_MODE_95 : DET_MODE_90;
+    model_iface_data_t *model = iface->create(wake->model_name, mode);
+    if (model == NULL) {
+        wake->ready = false;
+        return VT_WAKE_ERR_MODEL;
+    }
+
+    int sample_rate = iface->get_samp_rate(model);
+    int chunk_samples = iface->get_samp_chunksize(model);
+    int word_count = iface->get_word_num(model);
+    if (sample_rate != 16000 || chunk_samples <= 0 || word_count <= 0 ||
+        (size_t)chunk_samples > wake->input_capacity) {
+        iface->destroy(model);
+        wake->ready = false;
+        return VT_WAKE_ERR_AUDIO;
+    }
+    if (wake->threshold_percent >= 40U && wake->threshold_percent <= 99U && iface->set_det_threshold != NULL) {
+        float threshold = (float)wake->threshold_percent / 100.0F;
+        for (int word = 1; word <= word_count; ++word) (void)iface->set_det_threshold(model, threshold, word);
+    }
+    wake->model_data = model;
+    wake->chunk_samples = (size_t)chunk_samples;
+    wake->word_count = (unsigned int)word_count;
+    wake->input_size = 0U;
     wake->armed = true;
     return VT_WAKE_OK;
 }

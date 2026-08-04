@@ -44,4 +44,6 @@ int vt_audio_read_pcm(vt_audio_t *audio, int16_t *samples, size_t sample_capacit
 int vt_audio_encode(vt_audio_t *audio, const int16_t *samples, size_t sample_count, uint8_t *opus, size_t opus_capacity, size_t *opus_size);
 int vt_audio_decode_and_play(vt_audio_t *audio, const uint8_t *opus, size_t opus_size);
 int vt_audio_play_tone(vt_audio_t *audio, int frequency_hz, int duration_ms, int amplitude);
+void vt_audio_reset_decoder(vt_audio_t *audio);
+void vt_audio_reset_encoder(vt_audio_t *audio);
 void vt_audio_reset(vt_audio_t *audio);

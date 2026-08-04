@@ -52,6 +52,15 @@ python3 tools/physical/wake_audio_test.py \
 
 The harness checks Voice Server readiness, starts a no-reset serial monitor,
 plays the wake clip, waits for `wake detected` and `wake start`, then plays the
-utterance. It waits for firmware speaking/re-arm markers before finishing. Use
+utterance. It waits for the post-recreation `wake detector armed` marker before
+starting the next repetition. Use
 `--verbose` only when raw serial output is needed; do not commit its output or
 any credential-bearing log.
+
+## Repeated physical soak
+
+Set the ignored local scenario field `"repetitions": 30` to reuse one monitor
+and WebSocket session for a bounded board turn soak. Each repetition waits for
+all configured markers before starting the next wake clip; the report stores
+only repetition/timing events. Keep the explicit `--allow-audio` gate and stop
+the run if the serial stream shows panic, stack, queue, capture or Opus errors.

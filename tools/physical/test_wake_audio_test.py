@@ -21,6 +21,30 @@ class WakeAudioHarnessTest(unittest.TestCase):
         command = wake_audio_test._render_player(("pw-play", "{file}"), Path("/tmp/a clip.wav"))
         self.assertEqual(command, ["pw-play", "/tmp/a clip.wav"])
 
+    def test_repetitions_are_bounded_and_configured(self) -> None:
+        root = Path(__file__).resolve().parent
+        scenario = wake_audio_test.load_scenario(root / "wake-test.example.json")
+        self.assertEqual(scenario.repetitions, 1)
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            scenario_file = base / "scenario.json"
+            scenario_file.write_text(json.dumps({
+                "monitor": {"command": ["never-run"], "projectDir": str(base), "serialPort": "/dev/null", "baud": 115200},
+                "player": {"command": ["never-run", "{file}"]},
+                "clips": {"wake": str(base / "wake.wav"), "utterance": str(base / "utterance.wav")},
+                "repetitions": 4,
+                "events": [{"name": "wake", "marker": "wake detected", "timeoutSeconds": 1}],
+            }), encoding="utf-8")
+            parsed = wake_audio_test.load_scenario(scenario_file)
+            self.assertEqual(parsed.repetitions, 4)
+
+            document = json.loads(scenario_file.read_text(encoding="utf-8"))
+            document["repetitions"] = 101
+            scenario_file.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(wake_audio_test.HarnessError, "repetitions"):
+                wake_audio_test.load_scenario(scenario_file)
+
     def test_run_refuses_audio_without_allow_flag_before_monitor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
