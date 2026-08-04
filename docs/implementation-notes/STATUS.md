@@ -317,6 +317,17 @@
 - Workspace sau kiểm tra vẫn sạch tại `master`/`origin/master`; không restart
   service hoặc thay đổi network/database/firmware.
 
+### Readiness snapshot after host-only work (2026-08-05)
+
+- Read-only probes: Voice `18100`, Manager API `18101`, Manager Web `18181` đều
+  HTTP **200**.
+- Voice metrics tại thời điểm probe: `active_turns=0`, `protocol_errors=0`,
+  `audio_frames_in=0`, `audio_frames_out=0`; một connection idle đang giữ.
+- Tailscale Serve vẫn chỉ map private origin
+  `https://veetee.tail52a635.ts.net/` → `http://127.0.0.1:18181`; không Funnel,
+  không đổi route/listener. Host tự không được coi là bằng chứng TLS/WebSocket
+  từ peer khác trong tailnet.
+
 ### PostgreSQL test isolation and acoustic-test pause (2026-08-04)
 
 - Test harness Manager API nay fail-closed nếu `VEETEE_TEST_DATABASE_URL_FILE`
