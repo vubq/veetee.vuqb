@@ -328,6 +328,14 @@
   không đổi route/listener. Host tự không được coi là bằng chứng TLS/WebSocket
   từ peer khác trong tailnet.
 
+### Groq text capability smoke (test-only, 2026-08-05)
+
+- `tools/groq_probe.py` nạp **4 key test** và không in secret.
+- `llama-3.3-70b-versatile`: 4/4 HTTP 200, request latency 285–507 ms.
+- `llama-3.1-8b-instant`: 4/4 HTTP 200, request latency 306–416 ms.
+- Đây chỉ là synchronous text smoke; chưa đủ để promote model theo streaming
+  TTFA, WER, tool-following hoặc VRAM. Production không dùng key pool fallback.
+
 ### PostgreSQL test isolation and acoustic-test pause (2026-08-04)
 
 - Test harness Manager API nay fail-closed nếu `VEETEE_TEST_DATABASE_URL_FILE`
