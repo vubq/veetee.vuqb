@@ -83,6 +83,10 @@ void vt_audio_deinit(vt_audio_t *audio) {
         (void)esp_opus_dec_close(audio->decoder);
         audio->decoder = NULL;
     }
+    if (audio->input_raw != NULL) {
+        heap_caps_free(audio->input_raw);
+        audio->input_raw = NULL;
+    }
     if (audio->rx_handle != NULL) {
         (void)i2s_del_channel(audio->rx_handle);
         audio->rx_handle = NULL;
@@ -111,6 +115,12 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
     audio->input_frame_bytes = audio->input_frame_samples * (int)sizeof(int16_t);
     audio->output_frame_bytes = audio->output_frame_samples * (int)sizeof(int16_t);
     if (audio->input_frame_samples <= 0 || audio->output_frame_samples <= 0) return ESP_ERR_INVALID_SIZE;
+    audio->input_raw = heap_caps_calloc((size_t)audio->input_frame_samples, sizeof(*audio->input_raw),
+                                        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (audio->input_raw == NULL) {
+        vt_audio_deinit(audio);
+        return ESP_ERR_NO_MEM;
+    }
     audio->decode_pcm = heap_caps_calloc((size_t)audio->output_frame_samples, sizeof(*audio->decode_pcm),
                                          MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     audio->output_pcm = heap_caps_calloc((size_t)audio->output_frame_samples, sizeof(*audio->output_pcm),
@@ -220,14 +230,19 @@ int vt_audio_stop(vt_audio_t *audio) {
 
 int vt_audio_read_pcm(vt_audio_t *audio, int16_t *samples, size_t sample_capacity, size_t *sample_count) {
     if (audio == NULL || samples == NULL || sample_count == NULL || !audio->started ||
-        sample_capacity < (size_t)audio->input_frame_samples) return ESP_ERR_INVALID_ARG;
-    int32_t raw[audio->input_frame_samples];
+        audio->input_raw == NULL || sample_capacity < (size_t)audio->input_frame_samples) return ESP_ERR_INVALID_ARG;
     size_t bytes_read = 0;
-    esp_err_t error = i2s_channel_read(audio->rx_handle, raw, sizeof(raw), &bytes_read, pdMS_TO_TICKS(250));
+    esp_err_t error = i2s_channel_read(audio->rx_handle, audio->input_raw,
+                                       (size_t)audio->input_frame_samples * sizeof(*audio->input_raw),
+                                       &bytes_read, pdMS_TO_TICKS(250));
     if (error != ESP_OK) return error;
     size_t count = bytes_read / sizeof(int32_t);
+    if (count > sample_capacity || count > (size_t)audio->input_frame_samples) {
+        *sample_count = 0;
+        return ESP_ERR_INVALID_SIZE;
+    }
     for (size_t index = 0; index < count; ++index) {
-        int32_t value = raw[index] >> VT_AUDIO_PCM_SHIFT;
+        int32_t value = audio->input_raw[index] >> VT_AUDIO_PCM_SHIFT;
         if (value > INT16_MAX) value = INT16_MAX;
         if (value < INT16_MIN) value = INT16_MIN;
         samples[index] = (int16_t)value;

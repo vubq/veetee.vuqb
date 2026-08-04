@@ -237,7 +237,11 @@ test('PostgreSQL persists conversation turns and retention policy across restart
   const restarted = await buildApp({ env })
   await restarted.ready()
   try {
-    const list = await restarted.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/conversations` })
+    /* The host test database is intentionally persistent between runs. Ask for
+       the supported upper page bound so an older fixture with the same
+       deterministic timestamp cannot hide the conversation under the default
+       recent-20 page. */
+    const list = await restarted.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/conversations?limit=100` })
     assert.equal(list.statusCode, 200)
     assert.ok(list.json().items.some((item: { id: string; turnCount: number }) => item.id === conversationId && item.turnCount === 1))
     const detail = await restarted.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}` })

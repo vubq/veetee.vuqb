@@ -25,6 +25,7 @@ typedef struct {
     i2s_chan_handle_t rx_handle;
     void *encoder;
     void *decoder;
+    int32_t *input_raw;
     int16_t *decode_pcm;
     int32_t *output_pcm;
     int input_frame_bytes;

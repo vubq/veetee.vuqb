@@ -140,6 +140,9 @@
 #ifndef CONFIG_VEETEE_WAKE_INPUT_BUFFER_SAMPLES
 #define CONFIG_VEETEE_WAKE_INPUT_BUFFER_SAMPLES 4096
 #endif
+#ifndef CONFIG_VEETEE_AUDIO_DIAGNOSTICS
+#define CONFIG_VEETEE_AUDIO_DIAGNOSTICS 0
+#endif
 
 static const char *TAG = "veetee-fw";
 
@@ -332,7 +335,10 @@ static void websocket_audio_callback(const uint8_t *payload, size_t payload_size
 
 static void playback_task(void *context) {
     vt_app_t *app = (vt_app_t *)context;
-    vt_playback_packet_t packet;
+    /* The decoder/I2S write path is nested and can use more stack than the
+       steady-state queue receive. Keep the packet in the single-owner task's
+       static storage and give the task a measured headroom budget. */
+    static vt_playback_packet_t packet;
     while (!app->stop_requested) {
         if (xQueueReceive(app->playback_queue, &packet, pdMS_TO_TICKS(250)) == pdTRUE) {
             if (vt_audio_decode_and_play(&app->audio, packet.bytes, packet.length) != ESP_OK) ESP_LOGW(TAG, "Opus playback decode failed");
@@ -343,8 +349,16 @@ static void playback_task(void *context) {
 
 static void capture_task(void *context) {
     vt_app_t *app = (vt_app_t *)context;
-    int16_t samples[CONFIG_VEETEE_MIC_SAMPLE_RATE * CONFIG_VEETEE_AUDIO_FRAME_DURATION_MS / 1000];
-    uint8_t opus[VT_MAX_OPUS_PAYLOAD_BYTES];
+    /* One capture task owns these buffers. Keeping them out of the task stack
+       avoids a wake->listen transition overflowing the stack when the Opus
+       transport frame is nested below I2S/codec calls. */
+    static int16_t samples[CONFIG_VEETEE_MIC_SAMPLE_RATE * CONFIG_VEETEE_AUDIO_FRAME_DURATION_MS / 1000];
+    static uint8_t opus[VT_MAX_OPUS_PAYLOAD_BYTES];
+#if CONFIG_VEETEE_AUDIO_DIAGNOSTICS
+    TickType_t next_level_log = 0;
+    TickType_t next_read_error_log = 0;
+    TickType_t next_partial_frame_log = 0;
+#endif
     while (!app->stop_requested) {
         vt_wake_command_t command = 0;
         while (app->wake_command_queue != NULL && xQueueReceive(app->wake_command_queue, &command, 0) == pdTRUE) {
@@ -360,7 +374,36 @@ static void capture_task(void *context) {
             continue;
         }
         size_t sample_count = 0;
-        if (vt_audio_read_pcm(&app->audio, samples, sizeof(samples) / sizeof(samples[0]), &sample_count) != ESP_OK) continue;
+        esp_err_t read_result = vt_audio_read_pcm(&app->audio, samples, sizeof(samples) / sizeof(samples[0]), &sample_count);
+        if (read_result != ESP_OK) {
+#if CONFIG_VEETEE_AUDIO_DIAGNOSTICS
+            TickType_t now = xTaskGetTickCount();
+            if ((int32_t)(now - next_read_error_log) >= 0) {
+                ESP_LOGW(TAG, "audio capture read failed result=%s", esp_err_to_name(read_result));
+                next_read_error_log = now + pdMS_TO_TICKS(1000);
+            }
+#endif
+            continue;
+        }
+#if CONFIG_VEETEE_AUDIO_DIAGNOSTICS
+        TickType_t now = xTaskGetTickCount();
+        if ((int32_t)(now - next_level_log) >= 0) {
+            uint32_t peak = 0;
+            uint64_t absolute_sum = 0;
+            for (size_t index = 0; index < sample_count; ++index) {
+                int32_t magnitude = samples[index];
+                if (magnitude < 0) magnitude = -magnitude;
+                if ((uint32_t)magnitude > peak) peak = (uint32_t)magnitude;
+                absolute_sum += (uint32_t)magnitude;
+            }
+            uint32_t mean_absolute = sample_count == 0 ? 0U : (uint32_t)(absolute_sum / sample_count);
+            ESP_LOGI(TAG, "audio level samples=%u peak=%u mean_abs=%u wake_ready=%d capture=%d stack_free=%u",
+                     (unsigned)sample_count, (unsigned)peak, (unsigned)mean_absolute,
+                     vt_wake_is_ready(&app->wake) ? 1 : 0, app->capture_active ? 1 : 0,
+                     (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            next_level_log = now + pdMS_TO_TICKS(1000);
+        }
+#endif
 
         /* The detector owns idle and playback audio. During an active capture
            turn, do not let the same wake phrase interrupt its own utterance. */
@@ -380,6 +423,21 @@ static void capture_task(void *context) {
         }
 
         if (!app->capture_active || !vt_transport_is_ready(&app->transport)) continue;
+        /* I2S may return a short frame while a remote tts/start or local
+           interrupt pauses capture. Opus accepts only one complete configured
+           frame; dropping the partial frame avoids a DATA_LACK warning and
+           never sends malformed audio to the server. */
+        if (sample_count != (size_t)app->audio.input_frame_samples) {
+#if CONFIG_VEETEE_AUDIO_DIAGNOSTICS
+            now = xTaskGetTickCount();
+            if ((int32_t)(now - next_partial_frame_log) >= 0) {
+                ESP_LOGW(TAG, "audio capture partial frame samples=%u expected=%u",
+                         (unsigned)sample_count, (unsigned)app->audio.input_frame_samples);
+                next_partial_frame_log = now + pdMS_TO_TICKS(1000);
+            }
+#endif
+            continue;
+        }
         size_t opus_size = 0;
         if (vt_audio_encode(&app->audio, samples, sample_count, opus, sizeof(opus), &opus_size) != ESP_OK) {
             ESP_LOGW(TAG, "Opus capture encode failed");
@@ -679,9 +737,9 @@ void app_main(void) {
         .intr_type = GPIO_INTR_DISABLE,
     };
     ESP_ERROR_CHECK(gpio_config(&ptt));
-    BaseType_t task = xTaskCreate(capture_task, "vt_capture", 12288, app, 6, NULL);
+    BaseType_t task = xTaskCreate(capture_task, "vt_capture", 32768, app, 6, NULL);
     configASSERT(task == pdPASS);
-    task = xTaskCreate(playback_task, "vt_playback", 8192, app, 6, NULL);
+    task = xTaskCreate(playback_task, "vt_playback", 16384, app, 6, NULL);
     configASSERT(task == pdPASS);
     task = xTaskCreate(ptt_task, "vt_ptt", 4096, app, 7, NULL);
     configASSERT(task == pdPASS);

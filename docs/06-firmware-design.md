@@ -161,9 +161,9 @@ MUST assert range. Stack là initial ceiling và phải được chỉnh bằng 
 
 | Task | Core | Priority | Stack budget | Owner / deadline |
 |---|---:|---:|---:|---|
-| `audio_capture` | 0 | 20 | 6 KiB | codec RX/resample/feed; không block quá 10 ms |
+| `audio_capture` | 0 | 20 | 32 KiB | codec RX/resample/feed; không block quá 10 ms; measured nested Opus/transport path |
 | `afe_fetch` | 0 | 19 | 8 KiB | duy nhất được fetch/reset/toggle AFE; output mỗi engine chunk |
-| `audio_output` | 0 | 18 | 5 KiB | PCM → codec TX; không làm UI/log format |
+| `audio_output` | 0 | 18 | 16 KiB | PCM → codec TX; không làm UI/log format; decoder/I2S path has nested stack use |
 | `wire_dispatch` | 1 | 15 | 10 KiB | validate/copy WS/MQTT/UDP frame, route control/audio |
 | `opus_codec` | 1 | 13 | 24 KiB | encode/decode công bằng theo queue watermark |
 | `app_main` | 1 | 10 | 10 KiB | state, turn generation, config snapshot, hardware orchestration |

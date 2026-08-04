@@ -95,8 +95,12 @@ config VEETEE_WAKE_DETECTION_MODE
 config VEETEE_WAKE_THRESHOLD_PERCENT
     int "WakeNet threshold percent"
     range 40 99
-    default 90
+    default 65
     depends on VEETEE_WAKE_ENABLED
+    help
+        The default matches the selected Computer model manifest's calibrated
+        0.648-0.650 threshold. Tune per signed model asset; do not use a
+        generic high threshold that makes the configured phrase unreachable.
 
 config VEETEE_WAKE_INPUT_BUFFER_SAMPLES
     int "Wake input buffer samples"
@@ -151,6 +155,15 @@ config VEETEE_AUDIO_FRAME_DURATION_MS
     int "Opus frame duration"
     range 20 120
     default 60
+
+config VEETEE_AUDIO_DIAGNOSTICS
+    bool "Log bounded microphone level diagnostics"
+    default n
+    depends on VEETEE_ENABLE_HARDWARE
+    help
+        Log rate-limited sample count, peak and mean absolute level only. No
+        PCM, transcript or microphone content is logged. Enable temporarily
+        for physical audio bring-up; keep disabled in normal builds.
 
 config VEETEE_LCD_ENABLED
     bool "Enable ST7789 LCD"

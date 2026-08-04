@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import pty
 import signal
 import subprocess
 import sys
@@ -25,6 +26,7 @@ import time
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlparse
 
 
 class HarnessError(RuntimeError):
@@ -52,6 +54,9 @@ class Scenario:
     stages: tuple[Stage, ...]
     utterance_after: str
     startup_wait_seconds: float
+    firmware_config: Path
+    required_protocol_profile: int
+    require_wake_enabled: bool
 
 
 def _string(value: Any, field: str) -> str:
@@ -75,6 +80,14 @@ def _number(value: Any, field: str, *, minimum: float, maximum: float) -> float:
     return float(value)
 
 
+def _boolean(value: Any, field: str, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise HarnessError(f"{field} must be a boolean")
+    return value
+
+
 def _path(value: Any, *, base: Path, field: str) -> Path:
     raw = os.path.expandvars(os.path.expanduser(_string(value, field)))
     path = Path(raw)
@@ -96,7 +109,8 @@ def load_scenario(path: Path) -> Scenario:
     player = document.get("player")
     clips = document.get("clips")
     events = document.get("events")
-    if not isinstance(monitor, dict) or not isinstance(player, dict) or not isinstance(clips, dict) or not isinstance(events, list):
+    firmware = document.get("firmware", {})
+    if not isinstance(monitor, dict) or not isinstance(player, dict) or not isinstance(clips, dict) or not isinstance(events, list) or not isinstance(firmware, dict):
         raise HarnessError("scenario requires monitor, player, clips and events")
 
     stages: list[Stage] = []
@@ -116,6 +130,13 @@ def load_scenario(path: Path) -> Scenario:
 
     base = source.parent
     project_dir = _path(monitor.get("projectDir", "../../veetee-firmware"), base=base, field="monitor.projectDir")
+    firmware_config = _path(firmware.get("configFile", str(project_dir / "sdkconfig")), base=base, field="firmware.configFile")
+    required_protocol_profile = int(_number(
+        firmware.get("requiredProtocolProfile", 3),
+        "firmware.requiredProtocolProfile",
+        minimum=1,
+        maximum=3,
+    ))
     return Scenario(
         source=source,
         monitor_command=_command(monitor.get("command", ["idf.py"]), "monitor.command"),
@@ -129,6 +150,9 @@ def load_scenario(path: Path) -> Scenario:
         stages=tuple(stages),
         utterance_after=_string(document.get("utteranceAfter", stages[0].name), "utteranceAfter"),
         startup_wait_seconds=_number(monitor.get("startupWaitSeconds", 1), "monitor.startupWaitSeconds", minimum=0, maximum=30),
+        firmware_config=firmware_config,
+        required_protocol_profile=required_protocol_profile,
+        require_wake_enabled=_boolean(firmware.get("requireWakeEnabled"), "firmware.requireWakeEnabled", default=True),
     )
 
 
@@ -157,6 +181,67 @@ def _health(url: str) -> dict[str, Any]:
     return payload
 
 
+def _sdkconfig_value(lines: list[str], key: str) -> str | None:
+    prefix = f"CONFIG_{key}="
+    disabled = f"# CONFIG_{key} is not set"
+    for raw in lines:
+        line = raw.strip()
+        if line == disabled:
+            return None
+        if not line.startswith(prefix):
+            continue
+        value = line[len(prefix):].strip()
+        if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError as error:
+                raise HarnessError(f"invalid {key} value in firmware config {value!r}") from error
+            if not isinstance(parsed, str):
+                raise HarnessError(f"{key} must be a string in firmware config")
+            return parsed
+        return value
+    return None
+
+
+def preflight_firmware_config(scenario: Scenario) -> dict[str, Any]:
+    """Validate build-time gates before any monitor or audio process starts."""
+
+    try:
+        lines = scenario.firmware_config.read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise HarnessError(f"cannot read firmware config {scenario.firmware_config}: {error}") from error
+
+    uri = _sdkconfig_value(lines, "VEETEE_WS_URI")
+    if not uri or urlparse(uri).scheme not in {"ws", "wss"}:
+        raise HarnessError(
+            f"firmware config {scenario.firmware_config} has no valid WebSocket URI; "
+            "provision CONFIG_VEETEE_WS_URI before physical audio"
+        )
+
+    profile = _sdkconfig_value(lines, "VEETEE_PROTOCOL_PROFILE")
+    if profile != str(scenario.required_protocol_profile):
+        raise HarnessError(
+            f"firmware protocol profile is {profile!r}; expected "
+            f"{scenario.required_protocol_profile} for this scenario"
+        )
+
+    wake_enabled = _sdkconfig_value(lines, "VEETEE_WAKE_ENABLED") == "y"
+    model_name = _sdkconfig_value(lines, "VEETEE_WAKE_MODEL_NAME") or ""
+    if scenario.require_wake_enabled and (not wake_enabled or not model_name):
+        raise HarnessError(
+            "firmware WakeNet is not enabled/configured; set "
+            "CONFIG_VEETEE_WAKE_ENABLED=y and a model name before physical audio"
+        )
+
+    return {
+        "path": str(scenario.firmware_config),
+        "websocketScheme": urlparse(uri).scheme,
+        "protocolProfile": int(profile),
+        "wakeEnabled": wake_enabled,
+        "wakeModelConfigured": bool(model_name),
+    }
+
+
 class Monitor:
     def __init__(self, scenario: Scenario, *, verbose: bool) -> None:
         command = [
@@ -168,19 +253,23 @@ class Monitor:
             "--monitor-baud", str(scenario.monitor_baud),
         ]
         self.command = command
+        self.project_dir = scenario.project_dir
         self.verbose = verbose
         self.process: subprocess.Popen[str] | None = None
+        self._pty_master: int | None = None
         self.lines: deque[tuple[float, str]] = deque(maxlen=120)
         self._queue: deque[tuple[float, str]] = deque()
         self._condition = threading.Condition()
         self._reader: threading.Thread | None = None
 
     def start(self) -> None:
+        master, slave = pty.openpty()
+        self._pty_master = master
         try:
             self.process = subprocess.Popen(
                 self.command,
                 cwd=str(self.project_dir),
-                stdin=subprocess.DEVNULL,
+                stdin=slave,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -188,7 +277,11 @@ class Monitor:
                 start_new_session=True,
             )
         except OSError as error:
+            os.close(slave)
+            os.close(master)
+            self._pty_master = None
             raise HarnessError(f"could not start monitor {' '.join(self.command)}: {error}") from error
+        os.close(slave)
         assert self.process.stdout is not None
         self._reader = threading.Thread(target=self._read, args=(self.process.stdout,), name="veetee-serial-reader", daemon=True)
         self._reader.start()
@@ -222,17 +315,24 @@ class Monitor:
 
     def stop(self) -> None:
         process = self.process
-        if process is None or process.poll() is not None:
-            return
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-            process.wait(timeout=5)
-        except (OSError, subprocess.TimeoutExpired):
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except OSError:
-                pass
-            process.wait(timeout=2)
+            if process is not None and process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                    process.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                    process.wait(timeout=2)
+        finally:
+            if self._pty_master is not None:
+                try:
+                    os.close(self._pty_master)
+                except OSError:
+                    pass
+                self._pty_master = None
 
 
 def _start_player(command: tuple[str, ...], clip: Path, *, allow_audio: bool) -> subprocess.Popen[bytes]:
@@ -295,6 +395,18 @@ def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) 
     ]
     player_wake = _render_player(scenario.player_command, scenario.wake_clip)
     player_utterance = _render_player(scenario.player_command, scenario.utterance_clip)
+    if not dry_run and not allow_audio:
+        raise HarnessError("refusing to play audio without explicit --allow-audio")
+    firmware_config: dict[str, Any] | None = None
+    if scenario.firmware_config.is_file():
+        try:
+            firmware_config = preflight_firmware_config(scenario)
+        except HarnessError as error:
+            if not dry_run:
+                raise
+            firmware_config = {"path": str(scenario.firmware_config), "error": str(error)}
+    elif not dry_run:
+        raise HarnessError(f"firmware config does not exist: {scenario.firmware_config}")
     if dry_run:
         print(json.dumps({
             "dryRun": True,
@@ -303,13 +415,13 @@ def run(scenario: Scenario, *, allow_audio: bool, dry_run: bool, verbose: bool) 
             "playerWake": player_wake,
             "playerUtterance": player_utterance,
             "missingClips": missing,
+            "firmwareConfig": firmware_config or {"path": str(scenario.firmware_config), "exists": False},
             "events": [stage.__dict__ for stage in scenario.stages],
             "utteranceAfter": scenario.utterance_after,
         }, ensure_ascii=False, indent=2))
         return []
 
-    if not allow_audio:
-        raise HarnessError("refusing to play audio without explicit --allow-audio")
+    assert firmware_config is not None
     if not scenario.project_dir.is_dir():
         raise HarnessError(f"monitor project directory does not exist: {scenario.project_dir}")
     if scenario.utterance_after not in {stage.name for stage in scenario.stages}:
