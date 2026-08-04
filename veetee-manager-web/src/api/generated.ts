@@ -3200,10 +3200,18 @@ export interface operations {
                     speech?: {
                         [key: string]: unknown;
                     };
-                    progress?: Record<string, never>;
-                    segmentation?: Record<string, never>;
-                    bargeIn?: Record<string, never>;
-                    toolPolicy?: Record<string, never>;
+                    progress?: {
+                        [key: string]: unknown;
+                    };
+                    segmentation?: {
+                        [key: string]: unknown;
+                    };
+                    bargeIn?: {
+                        [key: string]: unknown;
+                    };
+                    toolPolicy?: {
+                        [key: string]: unknown;
+                    };
                     admission?: {
                         maxActiveTurns?: number;
                         retryAfterMs?: number;

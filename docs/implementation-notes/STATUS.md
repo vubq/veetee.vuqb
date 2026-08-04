@@ -472,6 +472,18 @@
   không flash/reset firmware, không restart runtime production, không đổi
   Wi-Fi/Tailscale, không mutate `veetee_vubq`.
 
+### Additive role-policy preservation (2026-08-05, host-only)
+
+- Manager API PATCH schema và OpenAPI giờ giữ rõ các object additive
+  `progress`/`segmentation`/`bargeIn`/`toolPolicy`; Web generated client đã
+  regenerate. RoleConfig gateway/feature cũng round-trip các policy và `tools`
+  thay vì làm mất chúng khi operator chỉnh một field khác.
+- Vue policy clone dùng JSON detach để tránh `DataCloneError` từ reactive proxy;
+  regression Web **68/68**, HTTP gateway round-trip pass, E2E **9/9**. Manager
+  API test DB riêng `veetee_vubq_test` **36/36**, lint/build/OpenAPI pass.
+- Đây là host/control-plane hardening, không phát audio, không flash/reset,
+  không mutate `veetee_vubq`, Wi-Fi hoặc Tailscale.
+
 ### Voice runtime source sync after resource gate (2026-08-05, non-audio)
 
 - Sau khi push `86e2041`, chỉ Voice service `veetee-voice-18100.service` được

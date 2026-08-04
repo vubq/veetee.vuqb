@@ -24,10 +24,13 @@ const roleBodySchema = {
     basePrompt: { type: 'string', minLength: 1, maxLength: 16000 },
     personality: { type: 'object', additionalProperties: true },
     speech: { type: 'object', additionalProperties: true },
-    progress: { type: 'object', maxProperties: 32 },
-    segmentation: { type: 'object', maxProperties: 32 },
-    bargeIn: { type: 'object', maxProperties: 32 },
-    toolPolicy: { type: 'object', maxProperties: 32 },
+    // These policy objects are intentionally additive: provider/firmware
+    // capabilities can add fields without the Manager route dropping them.
+    // Domain validation remains owned by the published runtime snapshot.
+    progress: { type: 'object', additionalProperties: true, maxProperties: 32 },
+    segmentation: { type: 'object', additionalProperties: true, maxProperties: 32 },
+    bargeIn: { type: 'object', additionalProperties: true, maxProperties: 32 },
+    toolPolicy: { type: 'object', additionalProperties: true, maxProperties: 32 },
     admission: {
       type: 'object', additionalProperties: false, maxProperties: 4,
       properties: {

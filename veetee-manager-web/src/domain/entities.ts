@@ -65,6 +65,13 @@ export interface AutoTurnSettings {
   noSpeechAlert: AutoTurnAlertSettings
 }
 
+/**
+ * Additive runtime policy payloads are preserved by the Web gateway even when
+ * this UI surface does not edit every field yet. This prevents a save from
+ * silently deleting server/firmware capabilities published by another tool.
+ */
+export type RolePolicyObject = Record<string, unknown>
+
 export interface RoleConfig {
   assistantId: string
   locale: string
@@ -74,6 +81,11 @@ export interface RoleConfig {
   speech: SpeechSettings
   admission: AdmissionSettings
   autoTurn: AutoTurnSettings
+  progress?: RolePolicyObject
+  segmentation?: RolePolicyObject
+  bargeIn?: RolePolicyObject
+  toolPolicy?: RolePolicyObject
+  tools?: RolePolicyObject[]
 }
 
 export type RoleConfigDraft = Omit<RoleConfig, 'assistantId'>

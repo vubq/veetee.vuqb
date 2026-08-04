@@ -6925,18 +6925,22 @@
                   },
                   "progress": {
                     "type": "object",
+                    "additionalProperties": true,
                     "maxProperties": 32
                   },
                   "segmentation": {
                     "type": "object",
+                    "additionalProperties": true,
                     "maxProperties": 32
                   },
                   "bargeIn": {
                     "type": "object",
+                    "additionalProperties": true,
                     "maxProperties": 32
                   },
                   "toolPolicy": {
                     "type": "object",
+                    "additionalProperties": true,
                     "maxProperties": 32
                   },
                   "admission": {

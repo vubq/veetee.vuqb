@@ -116,6 +116,26 @@ describe('RoleConfigFeature mutations', () => {
     expect(saveRoleConfig.mock.calls[0]?.[1].admission).toEqual({ maxActiveTurns: 2, retryAfterMs: 250 })
   })
 
+  it('preserves additive runtime policies that this surface does not edit yet', async () => {
+    const saveRoleConfig = vi.fn(async (...args: [string, RoleConfigDraft]) => {
+      void args
+      return success(resource)
+    })
+    const view = renderFeature(gateway({ saveRoleConfig }))
+
+    const prompt = await view.findByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })
+    await fireEvent.update(prompt, 'Giữ nguyên các policy đã publish.')
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
+
+    await waitFor(() => expect(saveRoleConfig).toHaveBeenCalledTimes(1))
+    const draft = saveRoleConfig.mock.calls[0]?.[1]
+    expect(draft?.progress).toEqual({ enabled: true, acknowledgementId: 'processing', deadlineMs: 900 })
+    expect(draft?.segmentation).toEqual({ minimumCharacters: 2, maximumCharacters: 120 })
+    expect(draft?.bargeIn).toEqual({ minSpeechFrames: 2 })
+    expect(draft?.toolPolicy).toEqual({ maxRounds: 2, timeoutMs: 5000 })
+    expect(draft?.tools).toEqual([{ name: 'device.led.set', description: 'Set the RGB LED.' }])
+  })
+
   it('configures the first-speech timeout and localized alert through the role form', async () => {
     const saveRoleConfig = vi.fn(async (...args: [string, RoleConfigDraft]) => {
       void args

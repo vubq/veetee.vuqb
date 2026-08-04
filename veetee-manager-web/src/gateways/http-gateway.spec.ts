@@ -73,4 +73,63 @@ describe('HTTP gateway read failure metadata', () => {
     expect(headers.get('If-Match')).toBe('"device-etag"')
     expect(headers.get('X-Veetee-CSRF')).toBe('csrf-test')
   })
+
+  it('round-trips additive role policies without dropping tool/runtime fields', async () => {
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    const role = {
+      locale: 'vi-VN',
+      basePrompt: 'Trợ lý có policy additive.',
+      personality: { id: 'personality', name: 'Focused' },
+      speech: { voiceId: 'voice', rate: 1, pitch: 0, style: 'natural' },
+      progress: { enabled: true, acknowledgementId: 'processing', deadlineMs: 900 },
+      segmentation: { minimumCharacters: 2, maximumCharacters: 120 },
+      bargeIn: { minSpeechFrames: 2 },
+      toolPolicy: { maxRounds: 2, timeoutMs: 5000 },
+      tools: [{ name: 'device.led.set', description: 'Set RGB.' }],
+      admission: { maxActiveTurns: 1, retryAfterMs: 250 },
+      autoTurn: { enabled: false, noSpeechTimeoutMs: 5000, noSpeechAlert: { status: 'warning', message: '', emotion: 'neutral' } },
+    }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ input, init })
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.endsWith('/api/v1/auth/me')) return new Response(JSON.stringify({}), { status: 200 })
+      if (url.endsWith('/role-config') && (input instanceof Request ? input.method : init?.method) === 'PATCH') {
+        return new Response(JSON.stringify(role), { status: 200, headers: { ETag: '"role-next"', 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify(role), { status: 200, headers: { ETag: '"role-current"', 'Content-Type': 'application/json' } })
+    }))
+
+    const gateway = createHttpGatewayDependencies('https://manager.test').managerGateway
+    const loaded = await gateway.getRoleConfig('assistant-test')
+    expect(loaded.ok).toBe(true)
+    if (!loaded.ok) return
+    const saved = await gateway.saveRoleConfig('assistant-test', {
+      locale: loaded.data.value.locale,
+      basePrompt: loaded.data.value.basePrompt,
+      personalityId: loaded.data.value.personalityId,
+      personalityName: loaded.data.value.personalityName,
+      speech: loaded.data.value.speech,
+      admission: loaded.data.value.admission,
+      autoTurn: loaded.data.value.autoTurn,
+      progress: loaded.data.value.progress,
+      segmentation: loaded.data.value.segmentation,
+      bargeIn: loaded.data.value.bargeIn,
+      toolPolicy: loaded.data.value.toolPolicy,
+      tools: loaded.data.value.tools,
+    }, loaded.data.etag)
+
+    expect(saved.ok).toBe(true)
+    const patchCall = calls.find(({ input, init }) => {
+      const url = input instanceof Request ? input.url : String(input)
+      const method = input instanceof Request ? input.method : init?.method
+      return url.endsWith('/api/v1/assistants/assistant-test/role-config') && method === 'PATCH'
+    })
+    expect(patchCall).toBeDefined()
+    const body = JSON.parse(patchCall?.input instanceof Request ? await patchCall.input.clone().text() : String(patchCall?.init?.body))
+    expect(body.progress).toEqual(role.progress)
+    expect(body.segmentation).toEqual(role.segmentation)
+    expect(body.bargeIn).toEqual(role.bargeIn)
+    expect(body.toolPolicy).toEqual(role.toolPolicy)
+    expect(body.tools).toEqual(role.tools)
+  })
 })

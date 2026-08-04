@@ -36,6 +36,11 @@ function toRoleDraft(role: RoleConfig): RoleConfigDraft {
     speech: structuredClone(role.speech),
     admission: structuredClone(role.admission),
     autoTurn: structuredClone(role.autoTurn),
+    progress: structuredClone(role.progress),
+    segmentation: structuredClone(role.segmentation),
+    bargeIn: structuredClone(role.bargeIn),
+    toolPolicy: structuredClone(role.toolPolicy),
+    tools: structuredClone(role.tools),
   }
 }
 

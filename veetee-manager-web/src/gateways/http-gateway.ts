@@ -19,6 +19,7 @@ import type {
   RevisionConflictProblem,
   RoleConfig,
   RoleConfigDraft,
+  RolePolicyObject,
   UpdateProviderSelectionInput,
   ValidationProblem,
   Versioned,
@@ -103,6 +104,11 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
         noSpeechTimeoutMs: draft.autoTurn.noSpeechTimeoutMs,
         noSpeechAlert: { ...draft.autoTurn.noSpeechAlert },
       },
+      ...(draft.progress ? { progress: cloneJson(draft.progress) } : {}),
+      ...(draft.segmentation ? { segmentation: cloneJson(draft.segmentation) } : {}),
+      ...(draft.bargeIn ? { bargeIn: cloneJson(draft.bargeIn) } : {}),
+      ...(draft.toolPolicy ? { toolPolicy: cloneJson(draft.toolPolicy) } : {}),
+      ...(draft.tools ? { tools: cloneJson(draft.tools) } : {}),
     }
     const result = await this.execute(() => this.client.PATCH('/api/v1/assistants/{id}/role-config', {
       params: { path: { id: assistantId } },
@@ -305,7 +311,26 @@ function roleConfig(assistantId: string, value: Record<string, unknown>): RoleCo
         emotion: isRecord(value.autoTurn) && isRecord(value.autoTurn.noSpeechAlert) && typeof value.autoTurn.noSpeechAlert.emotion === 'string' ? value.autoTurn.noSpeechAlert.emotion : 'neutral',
       },
     },
+    progress: policyObject(value.progress),
+    segmentation: policyObject(value.segmentation),
+    bargeIn: policyObject(value.bargeIn),
+    toolPolicy: policyObject(value.toolPolicy),
+    tools: policyTools(value.tools),
   }
+}
+
+function policyObject(value: unknown): RolePolicyObject | undefined {
+  return isRecord(value) ? cloneJson(value) : undefined
+}
+
+function policyTools(value: unknown): RolePolicyObject[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const tools = value.filter(isRecord).map((tool) => cloneJson(tool))
+  return tools.length ? tools : undefined
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function providerInstallation(value: ProviderInstallationResource): ProviderInstallationView {

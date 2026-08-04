@@ -60,7 +60,18 @@ function toDraft(config: RoleConfig): RoleConfigDraft {
         emotion: config.autoTurn?.noSpeechAlert?.emotion ?? 'neutral',
       },
     },
+    ...(config.progress ? { progress: clonePolicy(config.progress) } : {}),
+    ...(config.segmentation ? { segmentation: clonePolicy(config.segmentation) } : {}),
+    ...(config.bargeIn ? { bargeIn: clonePolicy(config.bargeIn) } : {}),
+    ...(config.toolPolicy ? { toolPolicy: clonePolicy(config.toolPolicy) } : {}),
+    ...(config.tools ? { tools: clonePolicy(config.tools) } : {}),
   }
+}
+
+function clonePolicy<T>(value: T): T {
+  // Role policies are JSON payloads, but Vue wraps nested values in reactive
+  // proxies. JSON round-trip detaches those proxies without DataCloneError.
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function toRoleConfig(config: RoleConfig): RoleConfig {
@@ -167,6 +178,11 @@ async function save() {
         speech: { ...draft.value.speech },
         admission: { ...draft.value.admission },
         autoTurn: { ...draft.value.autoTurn, noSpeechAlert: { ...draft.value.autoTurn.noSpeechAlert } },
+        ...(draft.value.progress ? { progress: clonePolicy(draft.value.progress) } : {}),
+        ...(draft.value.segmentation ? { segmentation: clonePolicy(draft.value.segmentation) } : {}),
+        ...(draft.value.bargeIn ? { bargeIn: clonePolicy(draft.value.bargeIn) } : {}),
+        ...(draft.value.toolPolicy ? { toolPolicy: clonePolicy(draft.value.toolPolicy) } : {}),
+        ...(draft.value.tools ? { tools: clonePolicy(draft.value.tools) } : {}),
       },
       resource.value.etag,
     )
