@@ -111,7 +111,14 @@ class WakeAudioHarnessTest(unittest.TestCase):
             self.assertIsNotNone(parsed.barge_in)
             assert parsed.barge_in is not None
             self.assertEqual(parsed.barge_in.after_stage, "speaking")
+            self.assertEqual(parsed.barge_in.start_delay_seconds, 0)
             self.assertEqual(parsed.barge_in.stages[0].marker, "wake interrupt")
+
+            document["bargeIn"]["startDelaySeconds"] = 2.5
+            scenario_file.write_text(json.dumps(document), encoding="utf-8")
+            parsed = wake_audio_test.load_scenario(scenario_file)
+            assert parsed.barge_in is not None
+            self.assertEqual(parsed.barge_in.start_delay_seconds, 2.5)
 
             document["bargeIn"]["afterStage"] = "wake"
             scenario_file.write_text(json.dumps(document), encoding="utf-8")

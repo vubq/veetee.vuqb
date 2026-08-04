@@ -57,6 +57,7 @@ class BargeInConfig:
 
     clip: Path
     after_stage: str
+    start_delay_seconds: float
     stages: tuple[Stage, ...]
 
 
@@ -199,6 +200,12 @@ def load_scenario(path: Path) -> Scenario:
         barge_in = BargeInConfig(
             clip=_path(raw_barge_in.get("clip"), base=base, field="bargeIn.clip"),
             after_stage=after_stage,
+            start_delay_seconds=_number(
+                raw_barge_in.get("startDelaySeconds", 0),
+                "bargeIn.startDelaySeconds",
+                minimum=0,
+                maximum=60,
+            ),
             stages=_stages(raw_barge_in.get("events"), "bargeIn.events"),
         )
     return Scenario(
@@ -588,6 +595,7 @@ def run(
                 {
                     "clip": str(scenario.barge_in.clip),
                     "afterStage": scenario.barge_in.after_stage,
+                    "startDelaySeconds": scenario.barge_in.start_delay_seconds,
                     "events": [stage.__dict__ for stage in scenario.barge_in.stages],
                 }
                 if scenario.barge_in is not None else None
@@ -677,6 +685,9 @@ def run(
                     utterance_played = True
                 if scenario.barge_in is not None and stage.name == scenario.barge_in.after_stage:
                     interrupt_boundary = time.monotonic()
+                    if scenario.barge_in.start_delay_seconds > 0:
+                        time.sleep(scenario.barge_in.start_delay_seconds)
+                        interrupt_boundary = time.monotonic()
                     interrupt_player = _start_player(
                         scenario.player_command,
                         scenario.barge_in.clip,

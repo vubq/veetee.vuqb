@@ -28,6 +28,7 @@
   "bargeIn": {
     "clip": "./local-wake-computer.wav",
     "afterStage": "assistant_speaking",
+    "startDelaySeconds": 0,
     "events": [
       {"name": "interrupt_wake_detected", "marker": "wake detected", "timeoutSeconds": 15},
       {"name": "interrupt_state_listening", "marker": "state=listening", "timeoutSeconds": 8},

@@ -105,7 +105,9 @@ keys; Manager-source production runtime remains single-secret/no-rotation.
 `wake_audio_test.py` also accepts an optional `bargeIn` block. It starts the
 configured interrupt clip after the final normal stage (usually
 `state=speaking`) and waits for configured serial markers such as `wake
-detected`, `state=listening`, `wake interrupt` and a new `wake start`:
+detected`, `state=listening`, `wake interrupt` and a new `wake start`. Set
+`startDelaySeconds` when testing a different point inside the speaking window;
+the delay is bounded and recorded in the report:
 
 ```bash
 python3 tools/physical/wake_audio_test.py \
