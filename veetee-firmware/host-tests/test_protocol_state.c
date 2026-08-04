@@ -100,6 +100,13 @@ static void test_abort_from_thinking(void) {
     assert(machine.generation == 1U);
 }
 
+static void test_interruptible_states(void) {
+    assert(!vt_state_is_interruptible(VT_DEVICE_IDLE));
+    assert(!vt_state_is_interruptible(VT_DEVICE_LISTENING));
+    assert(vt_state_is_interruptible(VT_DEVICE_THINKING));
+    assert(vt_state_is_interruptible(VT_DEVICE_SPEAKING));
+}
+
 static void test_repeated_manual_turns(void) {
     vt_device_state_machine_t machine = {.state = VT_DEVICE_IDLE, .generation = 0U};
     assert(vt_state_apply(&machine, VT_EVENT_CONNECT));
@@ -126,6 +133,7 @@ int main(void) {
     test_protocol_rejections();
     test_state();
     test_abort_from_thinking();
+    test_interruptible_states();
     test_repeated_manual_turns();
     test_config_gate();
     puts("firmware host tests passed");

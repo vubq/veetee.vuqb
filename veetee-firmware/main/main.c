@@ -515,7 +515,7 @@ static void ptt_task(void *context) {
             pending_start = true;
             pending_auto = true;
             vt_device_state_t current = state_read(app);
-            if (current == VT_DEVICE_SPEAKING || current == VT_DEVICE_THINKING) {
+            if (vt_state_is_interruptible(current)) {
                 app->capture_active = false;
                 app->wake_auto_capture = false;
                 (void)send_control(app, "abort", NULL, "wake_word_detected");
@@ -535,13 +535,14 @@ static void ptt_task(void *context) {
                 if (stable) {
                     pending_start = true;
                     pending_auto = false;
-                    if (state_read(app) == VT_DEVICE_SPEAKING) {
+                    vt_device_state_t current = state_read(app);
+                    if (vt_state_is_interruptible(current)) {
                         app->capture_active = false;
                         app->wake_auto_capture = false;
                         (void)send_control(app, "abort", NULL, "button_interrupt");
                         (void)xQueueReset(app->playback_queue);
                         (void)state_apply(app, VT_EVENT_ABORT);
-                        ESP_LOGI(TAG, "PTT interrupt");
+                        ESP_LOGI(TAG, "PTT interrupt state=%s", vt_state_name(current));
                     }
                 } else if (app->capture_active) {
                     pending_start = false;

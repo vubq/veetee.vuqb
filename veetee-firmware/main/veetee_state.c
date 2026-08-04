@@ -16,6 +16,10 @@ bool vt_state_can_transition(vt_device_state_t from, vt_device_state_t to) {
     return false;
 }
 
+bool vt_state_is_interruptible(vt_device_state_t state) {
+    return state == VT_DEVICE_THINKING || state == VT_DEVICE_SPEAKING;
+}
+
 bool vt_state_apply(vt_device_state_machine_t *machine, vt_device_event_t event) {
     if (machine == NULL) return false;
     vt_device_state_t next = machine->state;
