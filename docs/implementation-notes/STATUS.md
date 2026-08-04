@@ -864,3 +864,18 @@
 - Đây không đóng physical M0/M1 gates: LCD, loa, mic, PTT, wake corpus,
   acoustic barge-in và cross-peer conformance vẫn cần kiểm tra khi operator mở
   lại audio.
+
+### M3 UDP v3 core — host-only (2026-08-05)
+
+- Bổ sung `veetee_server.mqtt_udp` theo contract §5 của protocol spec: parse UDP
+  hello, validate key/nonce, AES-128/CTR header-IV, payload ceiling 1.400 byte,
+  sequence wrap guard và bounded reorder (window 4, jump 256, gap 120 ms).
+- Golden vector deterministic nằm ở `tests/fixtures/mqtt_udp_v3.json`; test chỉ
+  dùng bytes giả lập, không mở UDP/MQTT socket, không phát audio và không gọi
+  provider. Reorder test cover contiguous release, duplicate, loss timeout,
+  window overflow và jump reset.
+- Voice Server suite sau slice: **91 passed**, Ruff và compileall pass. M3 vẫn
+  chưa đóng: MQTT client/gateway, UDP socket, stream barrier, firmware carrier,
+  hardware MCP, assets/OTA, loss/soak và transport-promotion evidence còn mở.
+- Audio/physical lock vẫn giữ nguyên; WebSocket v3 vẫn là default và không có
+  silent fallback sang MQTT/UDP.

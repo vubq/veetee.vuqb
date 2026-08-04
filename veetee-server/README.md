@@ -93,6 +93,14 @@ Health:
 - `GET /metrics` (redacted counters)
 - `WS /veetee/v1/` (path có thể đổi bằng `VEETEE_WS_PATH`)
 
+### Staged MQTT/UDP v3 core
+
+`veetee_server.mqtt_udp` hiện chỉ cung cấp parser/crypto/reorder primitives cho
+profile M3. Nó không mở MQTT broker, UDP socket hoặc tự chuyển transport; direct
+WebSocket v3 vẫn là default. Chạy test core bằng `uv run pytest -q` trong
+checkout này. Gateway, stream barrier và transport promotion chỉ được bật sau
+golden/loss/soak evidence tương ứng.
+
 ## Test
 
 ```bash
