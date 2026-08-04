@@ -686,3 +686,15 @@
   tĩnh bổ sung sau hai hardening slice, không phải provider/physical acceptance.
 - Audio lock, production DB isolation, service/process ownership và network
   boundaries vẫn giữ nguyên.
+
+### Manager Web router guard hardening (2026-08-05, host-only)
+
+- Router được tách thành `createVeeteeRouter(session, history)` để auth guard
+  có thể kiểm thử độc lập bằng memory history; singleton browser router vẫn giữ
+  `authSession` + `createWebHistory` như trước.
+- Regression mới bao phủ redirect unauthenticated với `redirect` path, preview
+  mode, authenticated login redirect chỉ nhận path nội bộ an toàn và document
+  title theo route. Không đổi API/auth contract hoặc UI layout.
+- Verification: Manager Web typecheck/lint/build, unit **90/90**, Chromium E2E
+  **11/11** (axe serious/critical pass). Không restart service, không phát
+  audio, không flash/reset ESP32, không đổi Wi-Fi/Tailscale hoặc production DB.

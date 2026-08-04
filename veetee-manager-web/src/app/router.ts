@@ -1,6 +1,6 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHistory, type RouteRecordRaw, type RouterHistory } from 'vue-router'
 
-import { authSession } from '@/auth/auth-session'
+import { authSession, type AuthSession } from '@/auth/auth-session'
 import AssistantIndexView from '@/views/AssistantIndexView.vue'
 import AssistantModelMemoryView from '@/views/AssistantModelMemoryView.vue'
 import AssistantRoleView from '@/views/AssistantRoleView.vue'
@@ -57,27 +57,41 @@ if (import.meta.env.DEV) {
 
 routes.push({ path: '/:pathMatch(.*)*', component: NotFoundView })
 
-export const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
-  routes,
-  scrollBehavior: () => ({ top: 0 }),
-})
+/**
+ * Create an isolated router for the application or a memory-history test.
+ * Keeping the session and history injectable makes the auth boundary
+ * deterministic without mutating the singleton used by the browser app.
+ */
+export function createVeeteeRouter(
+  session: AuthSession = authSession,
+  history: RouterHistory = createWebHistory(import.meta.env.BASE_URL),
+) {
+  const instance = createRouter({
+    history,
+    routes,
+    scrollBehavior: () => ({ top: 0 }),
+  })
 
-router.beforeEach(async (to) => {
-  const publicRoute = to.meta.public === true || to.name === 'login'
-  const status = await authSession.hydrate()
-  if (publicRoute) {
-    if (to.name === 'login' && status === 'authenticated') return { path: safeRedirect(to.query.redirect) }
-    return true
-  }
-  if (!authSession.isApiMode || status === 'authenticated' || status === 'preview') return true
-  return { name: 'login', query: { redirect: to.fullPath } }
-})
+  instance.beforeEach(async (to) => {
+    const publicRoute = to.meta.public === true || to.name === 'login'
+    const status = await session.hydrate()
+    if (publicRoute) {
+      if (to.name === 'login' && status === 'authenticated') return { path: safeRedirect(to.query.redirect) }
+      return true
+    }
+    if (!session.isApiMode || status === 'authenticated' || status === 'preview') return true
+    return { name: 'login', query: { redirect: to.fullPath } }
+  })
 
-router.afterEach((to) => {
-  const title = typeof to.meta.title === 'string' ? to.meta.title : 'Bảng điều khiển'
-  document.title = `${title} · Veetee`
-})
+  instance.afterEach((to) => {
+    const title = typeof to.meta.title === 'string' ? to.meta.title : 'Bảng điều khiển'
+    document.title = `${title} · Veetee`
+  })
+
+  return instance
+}
+
+export const router = createVeeteeRouter()
 
 function safeRedirect(value: unknown): string {
   return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/assistants'
