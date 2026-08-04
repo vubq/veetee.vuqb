@@ -376,3 +376,16 @@
   không mở serial để phát test, không flash board, không đổi Wi-Fi/network và
   không mutate database production. Physical wake/PTT/mic/speaker acceptance
   vẫn chờ operator cấp quyền lại.
+
+### Non-blocking provider generation warm-up (2026-08-05, host-only)
+
+- Runtime config manager dùng activation lock riêng: provider/model candidate
+  được prepare ngoài view/lease lock, còn swap generation vẫn atomic. Vì vậy
+  session cũ không bị chặn acquire/release khi PhoWhisper/VieNeu hoặc provider
+  pool đang warm; `stop()` chờ activation để tránh publish sau shutdown.
+- Regression mới chứng minh lease cũ vẫn acquire được trong lúc candidate bị giữ
+  ở `prepare()`; regression cancellation cũng chứng minh candidate dở dang được
+  close khi shutdown/hủy task. Voice Server full suite **66 passed**, Ruff pass.
+- Không phát audio, không chạy wake harness, không flash/đổi firmware, không
+  restart runtime production, không đổi Wi-Fi/network và không mutate
+  `veetee_vubq`.

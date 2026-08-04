@@ -42,6 +42,10 @@ class RuntimeConfigManager:
         self._view: RuntimeView | None = None
         self._etag: str | None = None
         self._lock = asyncio.Lock()
+        # Provider/model preparation can take seconds. Keep it outside the
+        # view/lease lock so an active session can still acquire or release
+        # its generation while a candidate is warming.
+        self._activation_lock = asyncio.Lock()
         self._http_lock = asyncio.Lock()
         self._http_client: httpx.AsyncClient | None = None
         self._task: asyncio.Task[None] | None = None
@@ -96,13 +100,16 @@ class RuntimeConfigManager:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
             self._task = None
-        async with self._lock:
-            views = [view for view in (self._view, *self._retired.values()) if view is not None]
-            self._view = None
-            self._retired.clear()
-            self._leases.clear()
-        for view in views:
-            await self._close_registry(view.registry)
+        # Do not let a stop race an in-flight candidate activation and publish
+        # a new view after all existing views have been closed.
+        async with self._activation_lock:
+            async with self._lock:
+                views = [view for view in (self._view, *self._retired.values()) if view is not None]
+                self._view = None
+                self._retired.clear()
+                self._leases.clear()
+            for view in views:
+                await self._close_registry(view.registry)
         await self._close_http_client()
 
     async def refresh_now(self) -> bool:
@@ -180,8 +187,8 @@ class RuntimeConfigManager:
             return load_snapshot(Path(handle.name))
 
     async def _activate(self, snapshot: RuntimeSnapshot) -> bool:
-        candidate: ProviderRegistry | None = None
-        async with self._lock:
+        async with self._activation_lock:
+            candidate: ProviderRegistry | None = None
             try:
                 # Validate additive interaction policy before allocating a
                 # provider generation. A malformed watchdog config must keep
@@ -193,8 +200,18 @@ class RuntimeConfigManager:
                     secret_resolver=self.secret_resolver,
                     test_groq_keys_file=self.test_groq_keys_file,
                 )
+                # Never hold the view/lease lock while loading model weights or
+                # opening provider pools. Existing sessions stay responsive and
+                # can release their old generation during a slow warm-up.
                 await candidate.prepare()
                 view = RuntimeView(snapshot=snapshot, registry=candidate)
+            except asyncio.CancelledError:
+                # Shutdown can cancel a slow model warm-up. Dispose the
+                # partially-created candidate before propagating cancellation
+                # so CUDA/HTTP/file resources do not survive the task.
+                if candidate is not None:
+                    await self._close_registry(candidate)
+                raise
             except (ConfigurationError, ProviderError) as exc:
                 if candidate is not None:
                     await self._close_registry(candidate)
@@ -202,17 +219,18 @@ class RuntimeConfigManager:
                 self.last_activation_error_type = type(exc).__name__
                 LOG.warning("runtime activation failed error_type=%s", self.last_activation_error_type)
                 return False
-            old = self._view
-            self._view = view
-            self.last_activation_error_type = None
-            retired = None
-            if old is not None:
-                old_key = id(old)
-                if self._leases.get(old_key, 0) > 0:
-                    self._retired[old_key] = old
-                else:
-                    retired = old
-            listeners = tuple(self._listeners)
+            async with self._lock:
+                old = self._view
+                self._view = view
+                self.last_activation_error_type = None
+                retired = None
+                if old is not None:
+                    old_key = id(old)
+                    if self._leases.get(old_key, 0) > 0:
+                        self._retired[old_key] = old
+                    else:
+                        retired = old
+                listeners = tuple(self._listeners)
         if retired is not None:
             await self._close_registry(retired.registry)
         for listener in listeners:

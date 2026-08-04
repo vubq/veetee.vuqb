@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -71,6 +72,75 @@ async def test_retired_generation_closes_only_after_last_session_lease(monkeypat
     assert old_view.registry.close_calls == 1
     await runtime.stop()
     assert TrackingRegistry.instances[-1].close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_candidate_prepare_does_not_block_existing_view_leases(monkeypatch, tmp_path):
+    source = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    source["revision"] = 2
+    replacement = tmp_path / "replacement.json"
+    replacement.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(FIXTURE))
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class BlockingRegistry(TrackingRegistry):
+        async def prepare(self) -> None:
+            if self.snapshot.revision == 2:
+                started.set()
+                await release.wait()
+            await super().prepare()
+
+    monkeypatch.setattr("veetee_server.runtime.ProviderRegistry", BlockingRegistry)
+    TrackingRegistry.instances.clear()
+    TrackingRegistry.fail_revisions.clear()
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    await runtime.start()
+    old_view = await runtime.acquire_view()
+    activation = asyncio.create_task(runtime._activate(load_snapshot(replacement)))
+    await asyncio.wait_for(started.wait(), timeout=1)
+
+    probe = await asyncio.wait_for(runtime.acquire_view(), timeout=0.1)
+    assert probe is old_view
+    await runtime.release_view(probe)
+    release.set()
+    assert await activation is True
+    assert runtime.view.snapshot.revision == 2
+    await runtime.release_view(old_view)
+    await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_candidate_prepare_closes_partial_registry(monkeypatch, tmp_path):
+    source = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    source["revision"] = 2
+    replacement = tmp_path / "replacement.json"
+    replacement.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(FIXTURE))
+    started = asyncio.Event()
+
+    class BlockingRegistry(TrackingRegistry):
+        async def prepare(self) -> None:
+            if self.snapshot.revision == 2:
+                started.set()
+                await asyncio.Future()
+            await super().prepare()
+
+    monkeypatch.setattr("veetee_server.runtime.ProviderRegistry", BlockingRegistry)
+    TrackingRegistry.instances.clear()
+    TrackingRegistry.fail_revisions.clear()
+    runtime = RuntimeConfigManager(ServerConfig.from_env())
+    await runtime.start()
+    activation = asyncio.create_task(runtime._activate(load_snapshot(replacement)))
+    await asyncio.wait_for(started.wait(), timeout=1)
+    activation.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await activation
+    assert TrackingRegistry.instances[-1].close_calls == 1
+    assert runtime.view.snapshot.revision == 1
+    await runtime.stop()
 
 
 @pytest.mark.asyncio
