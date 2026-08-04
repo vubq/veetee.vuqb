@@ -296,6 +296,19 @@
   không phát audio, không truy cập mic/loa/serial audio, không đổi Wi‑Fi/Tailscale
   và không mutate production database `veetee_vubq`.
 
+### Full non-audio regression after serializer (2026-08-05)
+
+- Voice Server: **138 passed**, Ruff và `compileall` pass.
+- Manager API: **31 passed / 12 skipped** (các PostgreSQL test cần dedicated DSN),
+  TypeScript lint/build và OpenAPI artifact check pass.
+- Manager Web: **93 unit passed**, Chromium E2E **11/11**, typecheck/lint/build
+  pass; a11y E2E không có serious/critical violation.
+- Firmware host CTest thường và ASan/UBSan đều **4/4**; ESP-IDF 6.0.2 build
+  pass sau commit `d5cee47`.
+- Đây là bằng chứng host/build/UI; không restart runtime, không phát audio,
+  không truy cập mic/loa/serial audio, không flash/reset ESP32, không đổi
+  Wi‑Fi/Tailscale và không dùng database production.
+
 ### PostgreSQL test isolation and acoustic-test pause (2026-08-04)
 
 - Test harness Manager API nay fail-closed nếu `VEETEE_TEST_DATABASE_URL_FILE`
