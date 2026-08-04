@@ -75,3 +75,21 @@ Tool chỉ ghi event shape, số packet và timing; không ghi transcript, promp
 credential hay raw audio vào report. `--warmup-turns` bị loại khỏi p50/p95;
 default gate là warm p95 ≤ 1.500 ms và mỗi turn phải có `tts.start`, binary
 packet, `tts.stop`, không có protocol error.
+
+Lab có thể chạy explicit từng WebSocket wire profile để conformance với peer
+ngoài; tool không tự sniff hoặc downgrade profile:
+
+```bash
+PYTHONPATH=veetee-server/src \
+  veetee-server/.venv/bin/python tools/runtime/realtime_lab.py \
+  --url ws://127.0.0.1:18100/veetee/v1/ \
+  --profile 1 --turns 1 --warmup-turns 0 \
+  --wav tools/physical/local-utterance-vi.wav \
+  --report /tmp/veetee-conformance-v1.json
+```
+
+`--profile 1` dùng raw Opus, `2` dùng header 16-byte và `3` dùng header
+4-byte; header version, hello version và `Protocol-Version` đều lấy từ cùng
+tham số. Kết quả chạy với Voice Server Veetee là host evidence; chỉ được ghi
+conformance hai repo sau khi endpoint thật của peer tham chiếu cũng pass cùng
+fixture.

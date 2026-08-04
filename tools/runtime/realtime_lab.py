@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a redacted WebSocket v3 realtime lab against a Voice Server.
+"""Run a redacted WebSocket profile realtime lab against a Voice Server.
 
 This is a host-only probe. It sends a configured WAV as Opus to the server and
 never opens a sound device, serial port, or firmware connection.
@@ -23,6 +23,16 @@ sys.path.insert(0, str(ROOT / "veetee-server" / "src"))
 
 class LabError(RuntimeError):
     """Invalid fixture or failed lab acceptance."""
+
+
+def profile_name(version: int) -> str:
+    """Map the explicit wire version to the protocol encoder profile."""
+
+    profiles = {1: "ws-v1-compat", 2: "ws-v2", 3: "ws-v3"}
+    try:
+        return profiles[version]
+    except KeyError as error:
+        raise LabError("profile must be one of 1, 2 or 3") from error
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +90,15 @@ def resample_pcm(raw: bytes, source_rate: int, target_rate: int = 16_000) -> byt
     return np.clip(converted, -32768, 32767).astype("<i2").tobytes()
 
 
-async def run_lab(url: str, pcm: bytes, *, turns: int, timeout_seconds: float, device_prefix: str) -> list[TurnResult]:
+async def run_lab(
+    url: str,
+    pcm: bytes,
+    *,
+    turns: int,
+    timeout_seconds: float,
+    device_prefix: str,
+    profile: int = 3,
+) -> list[TurnResult]:
     try:
         import aiohttp
         import opuslib
@@ -89,19 +107,20 @@ async def run_lab(url: str, pcm: bytes, *, turns: int, timeout_seconds: float, d
         raise LabError("run this tool with veetee-server/.venv/bin/python") from error
     if turns < 1:
         raise LabError("turns must be positive")
+    wire_profile = profile_name(profile)
     frame_bytes = 960 * 2
     results: list[TurnResult] = []
     timeout = aiohttp.ClientTimeout(total=timeout_seconds)
     async with aiohttp.ClientSession(timeout=timeout) as client:
         for index in range(1, turns + 1):
             identity = f"{device_prefix}-{index}-{time.time_ns()}"
-            headers = {"Device-Id": identity, "Client-Id": identity, "Protocol-Version": "3"}
+            headers = {"Device-Id": identity, "Client-Id": identity, "Protocol-Version": str(profile)}
             async with client.ws_connect(url, headers=headers, heartbeat=30) as ws:
                 # Opus keeps predictor state. A lab turn is an independent
                 # session, so never carry encoder history across connections.
                 encoder = opuslib.Encoder(16_000, 1, opuslib.APPLICATION_AUDIO)
                 await ws.send_json({
-                    "type": "hello", "version": 3, "transport": "websocket",
+                    "type": "hello", "version": profile, "transport": "websocket",
                     "features": {"mcp": False},
                     "audio_params": {"format": "opus", "sample_rate": 16_000, "channels": 1, "frame_duration": 60},
                 })
@@ -115,7 +134,7 @@ async def run_lab(url: str, pcm: bytes, *, turns: int, timeout_seconds: float, d
                     if len(frame) < frame_bytes:
                         frame += b"\0" * (frame_bytes - len(frame))
                     packet = encoder.encode(frame, 960)
-                    await ws.send_bytes(encode_audio(AudioFrame("ws-v3", packet)))
+                    await ws.send_bytes(encode_audio(AudioFrame(wire_profile, packet)))
                 stop_sent = time.perf_counter()
                 await ws.send_json({"type": "listen", "state": "stop", "session_id": session_id})
                 first_audio: float | None = None
@@ -154,7 +173,14 @@ async def run_lab(url: str, pcm: bytes, *, turns: int, timeout_seconds: float, d
     return results
 
 
-def report(results: list[TurnResult], *, warmup_turns: int, max_ttfa_ms: float) -> dict[str, object]:
+def report(
+    results: list[TurnResult],
+    *,
+    warmup_turns: int,
+    max_ttfa_ms: float,
+    profile: int = 3,
+) -> dict[str, object]:
+    profile_name(profile)
     accepted = results[warmup_turns:]
     ttfa = [item.ttfa_ms for item in accepted if item.ttfa_ms is not None]
     checks = all(item.packets > 0 and item.tts_started and item.tts_stopped and not item.protocol_error for item in accepted)
@@ -162,6 +188,7 @@ def report(results: list[TurnResult], *, warmup_turns: int, max_ttfa_ms: float) 
     return {
         "turns": [asdict(item) for item in results],
         "warmupTurns": warmup_turns,
+        "profile": profile,
         "warmP50Ms": percentile([float(item) for item in ttfa], 50),
         "warmP95Ms": p95,
         "maxTtfaMs": max_ttfa_ms,
@@ -178,6 +205,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-ttfa-ms", type=float, default=1500)
     parser.add_argument("--timeout-seconds", type=float, default=60)
     parser.add_argument("--device-prefix", default="veetee-lab")
+    parser.add_argument("--profile", type=int, choices=(1, 2, 3), default=3,
+                        help="explicit WebSocket wire profile (1 raw, 2 header16, 3 header4)")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args(argv)
     try:
@@ -185,8 +214,20 @@ def main(argv: list[str] | None = None) -> int:
         pcm = resample_pcm(raw, source_rate)
         if not 0 <= args.warmup_turns < args.turns:
             raise LabError("warmup-turns must be less than turns")
-        results = asyncio.run(run_lab(args.url, pcm, turns=args.turns, timeout_seconds=args.timeout_seconds, device_prefix=args.device_prefix))
-        value = report(results, warmup_turns=args.warmup_turns, max_ttfa_ms=args.max_ttfa_ms)
+        results = asyncio.run(run_lab(
+            args.url,
+            pcm,
+            turns=args.turns,
+            timeout_seconds=args.timeout_seconds,
+            device_prefix=args.device_prefix,
+            profile=args.profile,
+        ))
+        value = report(
+            results,
+            warmup_turns=args.warmup_turns,
+            max_ttfa_ms=args.max_ttfa_ms,
+            profile=args.profile,
+        )
         rendered = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
         print(rendered, end="")
         if args.report:
