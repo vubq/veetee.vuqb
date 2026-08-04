@@ -41,6 +41,15 @@ class Stage:
 
 
 @dataclass(frozen=True)
+class PlayerResult:
+    """Bounded, non-audio result from one playback process."""
+
+    returncode: int
+    duration_ms: float
+    stderr: str
+
+
+@dataclass(frozen=True)
 class Scenario:
     source: Path
     monitor_command: tuple[str, ...]
@@ -380,16 +389,24 @@ def _start_player(command: tuple[str, ...], clip: Path, *, allow_audio: bool) ->
         raise HarnessError(f"could not start audio player {' '.join(rendered)}: {error}") from error
 
 
-def _wait_player(process: subprocess.Popen[bytes], clip: Path, timeout_seconds: float = 300) -> None:
+def _wait_player(process: subprocess.Popen[bytes], clip: Path, timeout_seconds: float = 300) -> PlayerResult:
+    started = time.monotonic()
     try:
-        result = process.wait(timeout=timeout_seconds)
+        _, raw_stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as error:
         _terminate_process(process)
         raise HarnessError(f"audio player did not finish within {timeout_seconds:g}s: {clip}") from error
-    if result != 0:
-        stderr = process.stderr.read().decode("utf-8", errors="replace").strip() if process.stderr else ""
-        detail = f": {stderr}" if stderr else ""
-        raise HarnessError(f"audio player exited with status {result} for {clip}{detail}")
+    stderr = raw_stderr.decode("utf-8", errors="replace").strip() if raw_stderr else ""
+    # Keep diagnostics useful without allowing an unexpectedly chatty player to
+    # turn a redacted report into an unbounded artifact. Raw audio is never
+    # captured here; only the player's textual stderr is retained.
+    if len(stderr) > 512:
+        stderr = f"{stderr[:512]}..."
+    return PlayerResult(
+        returncode=process.returncode if process.returncode is not None else -1,
+        duration_ms=round((time.monotonic() - started) * 1000, 1),
+        stderr=stderr,
+    )
 
 
 def _terminate_process(process: subprocess.Popen[Any] | None) -> None:
@@ -484,6 +501,33 @@ def run(
         monitor.start()
         if scenario.startup_wait_seconds:
             time.sleep(scenario.startup_wait_seconds)
+
+        def wait_and_record_player(
+            process: subprocess.Popen[bytes],
+            clip: Path,
+            *,
+            clip_role: str,
+            repetition: int,
+        ) -> PlayerResult:
+            result = _wait_player(process, clip)
+            event = _event(
+                "audio_player_exit",
+                started,
+                repetition=repetition,
+                clipRole=clip_role,
+                exitCode=result.returncode,
+                playerDurationMs=result.duration_ms,
+                stderr=result.stderr,
+            )
+            results.append(event)
+            print(json.dumps(event, ensure_ascii=False), flush=True)
+            if result.returncode != 0:
+                detail = f": {result.stderr}" if result.stderr else ""
+                raise HarnessError(
+                    f"audio player exited with status {result.returncode} for {clip}{detail}"
+                )
+            return result
+
         for repetition in range(1, scenario.repetitions + 1):
             stage_not_before = time.monotonic()
             wake_player = _start_player(scenario.player_command, scenario.wake_clip, allow_audio=True)
@@ -500,19 +544,39 @@ def run(
                 stage_not_before = timestamp
                 if stage.name == scenario.utterance_after and not utterance_played:
                     assert wake_player is not None
-                    _wait_player(wake_player, scenario.wake_clip)
+                    wait_and_record_player(
+                        wake_player,
+                        scenario.wake_clip,
+                        clip_role="wake",
+                        repetition=repetition,
+                    )
                     wake_player = None
                     utterance_player = _start_player(scenario.player_command, scenario.utterance_clip, allow_audio=True)
-                    _wait_player(utterance_player, scenario.utterance_clip)
+                    wait_and_record_player(
+                        utterance_player,
+                        scenario.utterance_clip,
+                        clip_role="utterance",
+                        repetition=repetition,
+                    )
                     utterance_player = None
                     utterance_played = True
                 del line
             if wake_player is not None:
-                _wait_player(wake_player, scenario.wake_clip)
+                wait_and_record_player(
+                    wake_player,
+                    scenario.wake_clip,
+                    clip_role="wake",
+                    repetition=repetition,
+                )
                 wake_player = None
             if not utterance_played:
                 utterance_player = _start_player(scenario.player_command, scenario.utterance_clip, allow_audio=True)
-                _wait_player(utterance_player, scenario.utterance_clip)
+                wait_and_record_player(
+                    utterance_player,
+                    scenario.utterance_clip,
+                    clip_role="utterance",
+                    repetition=repetition,
+                )
                 utterance_player = None
             if repetition < scenario.repetitions and scenario.inter_repetition_delay_seconds > 0:
                 time.sleep(scenario.inter_repetition_delay_seconds)

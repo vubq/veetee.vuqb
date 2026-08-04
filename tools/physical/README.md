@@ -62,6 +62,13 @@ starting the next repetition. Use
 `--verbose` only when raw serial output is needed; do not commit its output or
 any credential-bearing log.
 
+Every completed playback now emits a redacted `audio_player_exit` event in the
+optional report. It contains only `clipRole`, process `exitCode`, bounded player
+duration and at most 512 characters of player `stderr`; it never captures raw
+audio or microphone data. A wake timeout with `exitCode: 0` therefore separates a
+successful host playback process from a WakeNet/AFE recognition miss. A non-zero
+exit code fails the repetition immediately and preserves the diagnostic text.
+
 For a test-only Groq multi-key run, start Voice Server separately from a fixture
 snapshot with `VEETEE_TEST_GROQ_KEYS_FILE=...` (see
 `veetee-server/README.md`). The physical harness itself never reads or prints

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 import tempfile
 import time
 import unittest
@@ -21,6 +22,44 @@ class WakeAudioHarnessTest(unittest.TestCase):
     def test_player_placeholder_is_argv_based(self) -> None:
         command = wake_audio_test._render_player(("pw-play", "{file}"), Path("/tmp/a clip.wav"))
         self.assertEqual(command, ["pw-play", "/tmp/a clip.wav"])
+
+    def test_player_exit_captures_bounded_stderr_without_audio(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            clip = Path(directory) / "fixture.wav"
+            clip.write_bytes(b"RIFF")
+            process = wake_audio_test._start_player(
+                (
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stderr.write('player-ok\\n')",
+                    "{file}",
+                ),
+                clip,
+                allow_audio=True,
+            )
+            result = wake_audio_test._wait_player(process, clip, timeout_seconds=2)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stderr, "player-ok")
+            self.assertGreaterEqual(result.duration_ms, 0)
+
+    def test_player_exit_truncates_chatty_stderr(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            clip = Path(directory) / "fixture.wav"
+            clip.write_bytes(b"RIFF")
+            process = wake_audio_test._start_player(
+                (
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stderr.write('x' * 2048)",
+                    "{file}",
+                ),
+                clip,
+                allow_audio=True,
+            )
+            result = wake_audio_test._wait_player(process, clip, timeout_seconds=2)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(len(result.stderr), 515)
+            self.assertTrue(result.stderr.endswith("..."))
 
     def test_repetitions_are_bounded_and_configured(self) -> None:
         root = Path(__file__).resolve().parent
