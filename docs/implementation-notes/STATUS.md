@@ -915,3 +915,16 @@
   mutate production `veetee_vubq`.
 - M3 vẫn mở các phần carrier/gateway/firmware, loss/soak, MCP hardware,
   assets/OTA và transport-promotion; WebSocket v3 tiếp tục là default.
+
+### M3 deterministic loss/reorder soak — host-only (2026-08-05)
+
+- `tests/test_mqtt_udp_soak.py` dùng seed cố định để mô phỏng loss `0%`, `1%`,
+  `5%`, bounded reorder/duplicate và stream 20.000 packet; packet cuối được
+  giữ để kiểm tra graceful drain, còn stop-timeout đã có test riêng.
+- Reorder core đã sửa invariant: không mark packet đã nằm trong slot là lost và
+  không để `reorder_slots` vượt 4 trong các gap rời rạc.
+- Targeted UDP + soak: **22 passed**; full Voice Server sau slice: **124
+  passed**, Ruff/compileall pass. Không broker/socket/audio/provider, không
+  restart runtime, không flash/reset ESP32 và không đổi mạng.
+- Đây chưa đóng M3: carrier/gateway/firmware, real loss/latency comparison,
+  MCP, assets/OTA và transport promotion vẫn mở; WebSocket v3 là default.

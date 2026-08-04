@@ -276,13 +276,39 @@ class UdpReorderBuffer:
             raise UdpProtocolError("UDP_SEQUENCE_JUMP", "UDP sequence jumped beyond the bounded window")
 
         lost_sequences: list[int] = []
+        released: list[UdpAudioPacket] = []
+        # A forward packet may coexist with already buffered packets.  Never
+        # declare a sequence that is already in a slot lost: first release the
+        # contiguous prefix, then advance only genuinely missing sequences.
         while sequence >= next_sequence + self.window_packets:
+            if next_sequence in self._slots:
+                released.extend(self._drain_contiguous())
+                next_sequence = self.remote_sequence + 1
+                continue
             lost_sequences.append(next_sequence)
             self.remote_sequence = next_sequence
             self.lost += 1
             next_sequence += 1
-        self._slots[sequence] = packet
-        released = self._drain_contiguous()
+
+        # Keep the slot map bounded even when several disjoint gaps arrive.
+        while len(self._slots) >= self.window_packets and sequence != next_sequence:
+            if next_sequence in self._slots:
+                released.extend(self._drain_contiguous())
+                next_sequence = self.remote_sequence + 1
+                continue
+            lost_sequences.append(next_sequence)
+            self.remote_sequence = next_sequence
+            self.lost += 1
+            next_sequence += 1
+
+        if sequence == next_sequence:
+            self.remote_sequence = sequence
+            self._released_sequence = sequence
+            released.append(packet)
+            released.extend(self._drain_contiguous())
+        else:
+            self._slots[sequence] = packet
+            released.extend(self._drain_contiguous())
         released, timeout_lost = self._flush_if_due(observed_at, released)
         lost_sequences.extend(timeout_lost)
         self._update_gap_timer(observed_at)
