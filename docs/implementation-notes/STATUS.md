@@ -82,6 +82,11 @@
   Tailscale `:18443` vẫn được ghi theo mapping đã kiểm tra trước đó; nếu không
   truy cập được từ thiết bị đang xem, dùng local UI hoặc kiểm tra tailnet/Serve
   status trên chính máy host.
+- Kiểm tra read-only hostname được đề xuất `https://veetee.tail52a635.ts.net/`
+  trong lượt hiện tại: DNS không phân giải (`Could not resolve host`). Host
+  `veetee-dev.tail52a635.ts.net` có phân giải nhưng root/legacy ports trả `502`
+  và port `:18443` timeout từ shell này. Vì vậy chưa được coi là URL truy cập
+  Veetee hợp lệ; không tự đổi hostname, Funnel hay DNS của máy.
 
 - `autoTurn` first-speech watchdog đã publish ở runtime revision `87`; physical
   wake + 6 giây silence pass `NO_SPEECH_TIMEOUT` và `wake detector armed`.
