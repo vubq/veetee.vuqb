@@ -326,6 +326,8 @@ async def test_realtime_barge_in_cancels_old_turn_before_new_audio(monkeypatch):
                     barge_event = event
         await asyncio.sleep(0.25)
         assert stale_binary == 0
+        assert service.metrics["barge_in_count"] == 1
+        assert 0 <= service.metrics["last_barge_in_control_ms"] < 250
         await ws.close()
     finally:
         await client.close()

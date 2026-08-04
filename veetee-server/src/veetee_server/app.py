@@ -47,6 +47,8 @@ class VoiceApplication:
             "session_handovers": 0,
             "session_handover_cleanup_errors": 0,
             "turn_disconnect_aborts": 0,
+            "barge_in_count": 0,
+            "last_barge_in_control_ms": 0,
             "active_turns": 0,
             "turn_admissions": 0,
             "turn_rejections": 0,
@@ -521,7 +523,10 @@ class VoiceSession:
             self._speech_frames += 1
             threshold = int((view.snapshot.raw.get("bargeIn") or {}).get("minSpeechFrames", 2))
             if self._speech_frames >= max(1, threshold):
+                barge_started = time.perf_counter()
                 await self._abort(reason="barge_in")
+                self.app.metrics["barge_in_count"] += 1
+                self.app.metrics["last_barge_in_control_ms"] = round((time.perf_counter() - barge_started) * 1000)
                 await self._start_turn("realtime")
         await self.pipeline.ingest(pcm)
         # Ingest the endpointing frame before scheduling ASR finalization. This
