@@ -39,6 +39,28 @@ const roleBodySchema = {
     memoryEnabled: { type: 'boolean' },
   },
 } as const
+const roleResponseSchema = {
+  type: 'object', additionalProperties: true, required: ['locale', 'basePrompt'],
+  properties: {
+    locale: { type: 'string' },
+    basePrompt: { type: 'string' },
+    personality: { type: 'object', additionalProperties: true },
+    speech: { type: 'object', additionalProperties: true },
+    progress: { type: 'object', additionalProperties: true },
+    segmentation: { type: 'object', additionalProperties: true },
+    bargeIn: { type: 'object', additionalProperties: true },
+    toolPolicy: { type: 'object', additionalProperties: true },
+    admission: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        maxActiveTurns: { type: 'integer', minimum: 1, maximum: 8 },
+        retryAfterMs: { type: 'integer', minimum: 100, maximum: 10000 },
+      },
+    },
+    tools: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    memoryEnabled: { type: 'boolean' },
+  },
+} as const
 const providerBodySchema = {
   type: 'object', additionalProperties: false, required: ['installationId', 'name', 'config'],
   properties: {
@@ -492,12 +514,12 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     if (!item) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Assistant not found')
     return reply.header('ETag', item.etag).send(item)
   })
-  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/role-config', { schema: { params: resourceIdParamsSchema, response: { 200: { type: 'object', additionalProperties: true } } } }, async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/role-config', { schema: { params: resourceIdParamsSchema, response: { 200: roleResponseSchema } } }, async (request, reply) => {
     const item = await store.getAssistant(owner(request), request.params.id)
     if (!item) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Assistant not found')
     return reply.header('ETag', item.etag).send(item.role)
   })
-  app.patch<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/v1/assistants/:id/role-config', { schema: { params: resourceIdParamsSchema, body: roleBodySchema, response: { 200: { type: 'object', additionalProperties: true } } } }, async (request, reply) => {
+  app.patch<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/v1/assistants/:id/role-config', { schema: { params: resourceIdParamsSchema, body: roleBodySchema, response: { 200: roleResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
     try { const item = await store.updateRole(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', item.etag).send(item.role) } catch (error) { return sendProblem(reply, error) }

@@ -69,6 +69,30 @@ test('manager API publishes config through immutable ETag flow', async () => {
   }
 })
 
+test('role config OpenAPI response documents known policy fields while keeping additive extensions', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    type OpenApiOperation = {
+      responses?: Record<string, {
+        content?: Record<string, { schema?: { required?: string[]; properties?: Record<string, unknown> } }>
+      }>
+    }
+    type OpenApiPath = { get?: OpenApiOperation; patch?: OpenApiOperation }
+    const artifact = app.swagger() as { paths: Record<string, OpenApiPath> }
+    const path = artifact.paths['/api/v1/assistants/{id}/role-config']
+    assert.ok(path?.get && path.patch)
+    for (const operation of [path.get, path.patch]) {
+      const schema = operation.responses?.['200']?.content?.['application/json']?.schema
+      assert.deepEqual(schema?.required, ['locale', 'basePrompt'])
+      assert.ok(schema?.properties?.admission)
+      assert.ok(schema?.properties?.tools)
+    }
+  } finally {
+    await app.close()
+  }
+})
+
 test('assistant search is validated and filtered by the API contract', async () => {
   const app = await buildApp({ env })
   await app.ready()

@@ -6405,7 +6405,69 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "additionalProperties": true,
+                  "required": [
+                    "locale",
+                    "basePrompt"
+                  ],
+                  "properties": {
+                    "locale": {
+                      "type": "string"
+                    },
+                    "basePrompt": {
+                      "type": "string"
+                    },
+                    "personality": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "speech": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "progress": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "segmentation": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "bargeIn": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "toolPolicy": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "admission": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxActiveTurns": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 8
+                        },
+                        "retryAfterMs": {
+                          "type": "integer",
+                          "minimum": 100,
+                          "maximum": 10000
+                        }
+                      }
+                    },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "memoryEnabled": {
+                      "type": "boolean"
+                    }
+                  }
                 }
               }
             }
@@ -6854,7 +6916,69 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "additionalProperties": true,
+                  "required": [
+                    "locale",
+                    "basePrompt"
+                  ],
+                  "properties": {
+                    "locale": {
+                      "type": "string"
+                    },
+                    "basePrompt": {
+                      "type": "string"
+                    },
+                    "personality": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "speech": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "progress": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "segmentation": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "bargeIn": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "toolPolicy": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "admission": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "maxActiveTurns": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 8
+                        },
+                        "retryAfterMs": {
+                          "type": "integer",
+                          "minimum": 100,
+                          "maximum": 10000
+                        }
+                      }
+                    },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "memoryEnabled": {
+                      "type": "boolean"
+                    }
+                  }
                 }
               }
             }
