@@ -349,6 +349,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/devices/{id}/binding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** DELETE /api/v1/devices/:id/binding */
+        delete: operations["deleteApiV1DevicesByIdBinding"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/retention-policy": {
         parameters: {
             query?: never;
@@ -2500,6 +2517,9 @@ export interface operations {
                             };
                             draftRevision: number;
                             publishedRevision: null | number;
+                            deviceCount: number;
+                            onlineDeviceCount: number;
+                            lastConversationAt: null | string;
                             etag: string;
                             updatedAt: string;
                         }[];
@@ -2669,6 +2689,9 @@ export interface operations {
                         };
                         draftRevision: number;
                         publishedRevision: null | number;
+                        deviceCount: number;
+                        onlineDeviceCount: number;
+                        lastConversationAt: null | string;
                         etag: string;
                         updatedAt: string;
                     };
@@ -2833,6 +2856,9 @@ export interface operations {
                         };
                         draftRevision: number;
                         publishedRevision: null | number;
+                        deviceCount: number;
+                        onlineDeviceCount: number;
+                        lastConversationAt: null | string;
                         etag: string;
                         updatedAt: string;
                     };
@@ -2984,6 +3010,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        locale: string;
+                        basePrompt: string;
+                        personality?: {
+                            [key: string]: unknown;
+                        };
+                        speech?: {
+                            [key: string]: unknown;
+                        };
+                        progress?: {
+                            [key: string]: unknown;
+                        };
+                        segmentation?: {
+                            [key: string]: unknown;
+                        };
+                        bargeIn?: {
+                            [key: string]: unknown;
+                        };
+                        toolPolicy?: {
+                            [key: string]: unknown;
+                        };
+                        admission?: {
+                            maxActiveTurns?: number;
+                            retryAfterMs?: number;
+                        };
+                        autoTurn?: {
+                            enabled?: boolean;
+                            noSpeechTimeoutMs?: number;
+                            noSpeechAlert?: {
+                                status?: string;
+                                message?: string;
+                                emotion?: string;
+                            };
+                        };
+                        tools?: {
+                            [key: string]: unknown;
+                        }[];
+                        memoryEnabled?: boolean;
+                    } & {
                         [key: string]: unknown;
                     };
                 };
@@ -3144,6 +3208,15 @@ export interface operations {
                         maxActiveTurns?: number;
                         retryAfterMs?: number;
                     };
+                    autoTurn?: {
+                        enabled: boolean;
+                        noSpeechTimeoutMs: number;
+                        noSpeechAlert: {
+                            status: string;
+                            message: string;
+                            emotion: string;
+                        };
+                    };
                     tools?: {
                         [key: string]: unknown;
                     }[];
@@ -3159,6 +3232,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
+                        locale: string;
+                        basePrompt: string;
+                        personality?: {
+                            [key: string]: unknown;
+                        };
+                        speech?: {
+                            [key: string]: unknown;
+                        };
+                        progress?: {
+                            [key: string]: unknown;
+                        };
+                        segmentation?: {
+                            [key: string]: unknown;
+                        };
+                        bargeIn?: {
+                            [key: string]: unknown;
+                        };
+                        toolPolicy?: {
+                            [key: string]: unknown;
+                        };
+                        admission?: {
+                            maxActiveTurns?: number;
+                            retryAfterMs?: number;
+                        };
+                        autoTurn?: {
+                            enabled?: boolean;
+                            noSpeechTimeoutMs?: number;
+                            noSpeechAlert?: {
+                                status?: string;
+                                message?: string;
+                                emotion?: string;
+                            };
+                        };
+                        tools?: {
+                            [key: string]: unknown;
+                        }[];
+                        memoryEnabled?: boolean;
+                    } & {
                         [key: string]: unknown;
                     };
                 };
@@ -4055,6 +4166,7 @@ export interface operations {
                             id: string;
                             ownerId: string;
                             assistantId: string;
+                            etag: string;
                             displayName: string;
                             maskedMac: string;
                             firmwareVersion: string;
@@ -4223,6 +4335,7 @@ export interface operations {
                         id: string;
                         ownerId: string;
                         assistantId: string;
+                        etag: string;
                         displayName: string;
                         maskedMac: string;
                         firmwareVersion: string;
@@ -4233,6 +4346,152 @@ export interface operations {
                         lastConversationAt: null | string;
                     };
                 };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Domain validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Precondition required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+        };
+    };
+    deleteApiV1DevicesByIdBinding: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Invalid request */
             400: {

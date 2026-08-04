@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 from aiohttp import WSMsgType, web
 
-from .config import ServerConfig
+from .config import AutoTurnPolicy, ServerConfig
 from .history import ConversationHistoryReporter
 from .pipeline import Turn, TurnPipeline
 from .presence import DevicePresenceReporter
@@ -53,6 +53,7 @@ class VoiceApplication:
             "turn_admissions": 0,
             "turn_rejections": 0,
             "turn_releases": 0,
+            "auto_no_speech_timeouts": 0,
             "protocol_errors": 0,
             "audio_frames_in": 0,
             "audio_frames_out": 0,
@@ -213,8 +214,10 @@ class VoiceSession:
         self._speech_frames = 0
         self._closed = False
         self._admitted = False
+        self._turn_started_once = False
         self._finished = asyncio.Event()
         self._turn_lease_id: str | None = None
+        self._no_speech_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self.conversation_id = str(uuid4())
         self.conversation_started_at: str | None = None
@@ -407,6 +410,7 @@ class VoiceSession:
             await self._start_turn(str(message.get("mode", "manual")))
         elif state == "stop":
             if self.turn and self.pipeline and self.turn.task is None:
+                await self._cancel_no_speech_watchdog()
                 self.turn.listen_stopped_at = time.perf_counter()
                 self.phase = "thinking"
                 turn = self.turn
@@ -447,12 +451,14 @@ class VoiceSession:
             )
             return
         self._turn_lease_id = turn_id
+        self._turn_started_once = True
         try:
             self.turn = Turn(
                 turn_id=turn_id,
                 generation=self.generation,
                 mode=mode,
                 cancelled=asyncio.Event(),
+                speech_confirmed=asyncio.Event(),
                 sequence=self.turn_sequence,
                 started_at=now,
                 conversation_started_at=self.conversation_started_at,
@@ -478,6 +484,12 @@ class VoiceSession:
             )
             view.registry.vad.reset()
             view.registry.asr.reset()
+            policy = view.snapshot.auto_turn_policy()
+            if mode == "auto" and policy is not None:
+                self._no_speech_task = asyncio.create_task(
+                    self._watch_no_speech(self.turn, policy),
+                    name=f"no-speech-watch-{self.turn.turn_id}",
+                )
         except BaseException:
             turn = self.turn
             self.pipeline = None
@@ -490,6 +502,53 @@ class VoiceSession:
                 self._turn_lease_id = None
             raise
 
+    async def _watch_no_speech(self, turn: Turn, policy: AutoTurnPolicy) -> None:
+        """Release an auto wake turn that never reaches confirmed speech."""
+
+        event = turn.speech_confirmed
+        if event is None:
+            return
+        try:
+            await asyncio.wait_for(event.wait(), timeout=policy.no_speech_timeout_ms / 1000)
+            return
+        except asyncio.TimeoutError:
+            pass
+        except asyncio.CancelledError:
+            raise
+
+        # The receive loop owns normal state transitions, but this timer runs
+        # concurrently. Identity checks make a late timer harmless after an
+        # abort, endpoint, disconnect or replacement turn.
+        if self.turn is not turn or self.generation != turn.generation or self.phase != "listening":
+            return
+        self.app.metrics["auto_no_speech_timeouts"] += 1
+        await self._abort(reason="no_speech_timeout", send_stop=False)
+        self.phase = "ready_idle"
+        if self.ready and not self._closed:
+            try:
+                await self.send_text(
+                    control_message(
+                        "alert",
+                        session_id=self.session_id,
+                        status=policy.alert_status,
+                        message=policy.alert_message,
+                        emotion=policy.alert_emotion,
+                        code="NO_SPEECH_TIMEOUT",
+                    )
+                )
+            except (ConnectionError, RuntimeError):
+                # Disconnect cleanup owns the session; a late alert must not
+                # leave an unobserved watchdog exception behind.
+                return
+
+    async def _cancel_no_speech_watchdog(self) -> None:
+        task = self._no_speech_task
+        self._no_speech_task = None
+        if task is None or task.done() or task is asyncio.current_task():
+            return
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
     async def _finish_turn(self, turn: Turn, pipeline: TurnPipeline) -> None:
         cancelled = False
         try:
@@ -498,19 +557,30 @@ class VoiceSession:
             cancelled = True
             raise
         finally:
+            await self._cancel_no_speech_watchdog()
             if not cancelled:
                 await self._report_turn(turn)
             await self._release_turn(turn)
 
     async def _audio(self, raw: bytes) -> None:
-        if not self.ready or self.pipeline is None or self.turn is None or self.codec is None:
+        pipeline = self.pipeline
+        turn = self.turn
+        if not self.ready or self.codec is None:
+            raise ProtocolError("audio received outside listening turn")
+        if pipeline is None or turn is None:
+            # A control abort/alert can race one already queued uplink frame.
+            # Once this session has owned a turn, that late frame is ambient
+            # audio and must not tear down a healthy WebSocket/reconnect loop.
+            if self._turn_started_once:
+                self.app.metrics["audio_frames_ignored"] = self.app.metrics.get("audio_frames_ignored", 0) + 1
+                return
             raise ProtocolError("audio received outside listening turn")
         # A manual/auto turn owns the microphone only while it is listening.
         # Once endpointing has scheduled finish(), or while the answer is being
         # spoken, late packets are ambient audio and must not be appended to the
         # finalized ASR session. Realtime is the explicit duplex exception.
-        if (self.phase in {"thinking", "speaking"} and self.turn.mode != "realtime") or (
-            self.phase == "listening" and self.turn.task is not None
+        if (self.phase in {"thinking", "speaking"} and turn.mode != "realtime") or (
+            self.phase == "listening" and turn.task is not None
         ):
             self.app.metrics["audio_frames_ignored"] = self.app.metrics.get("audio_frames_ignored", 0) + 1
             return
@@ -519,7 +589,13 @@ class VoiceSession:
         pcm = self.codec.decode_uplink(frame.payload, int(view.snapshot.raw.get("wire", {}).get("uplinkSampleRate", 16000)) * 60 // 1000)
         self.app.metrics["audio_frames_in"] += 1
         speech = view.registry.vad.accept(pcm, 16000)
-        if self.phase == "speaking" and self.turn.mode == "realtime" and speech:
+        if self.phase == "listening" and turn.mode == "auto" and speech:
+            if turn.speech_confirmed is not None:
+                turn.speech_confirmed.set()
+            await self._cancel_no_speech_watchdog()
+            if self.turn is not turn or self.pipeline is not pipeline:
+                return
+        if self.phase == "speaking" and turn.mode == "realtime" and speech:
             self._speech_frames += 1
             threshold = int((view.snapshot.raw.get("bargeIn") or {}).get("minSpeechFrames", 2))
             if self._speech_frames >= max(1, threshold):
@@ -528,14 +604,16 @@ class VoiceSession:
                 self.app.metrics["barge_in_count"] += 1
                 self.app.metrics["last_barge_in_control_ms"] = round((time.perf_counter() - barge_started) * 1000)
                 await self._start_turn("realtime")
-        await self.pipeline.ingest(pcm)
+                pipeline = self.pipeline
+                turn = self.turn
+                if pipeline is None or turn is None:
+                    return
+        await pipeline.ingest(pcm)
         # Ingest the endpointing frame before scheduling ASR finalization. This
         # ordering is important for short utterances where VAD marks the last
         # frame as endpointed: finish() must observe that frame.
-        if self.phase == "listening" and self.turn.mode == "auto" and view.registry.vad.endpoint() and self.turn.task is None:
+        if self.phase == "listening" and self.turn is turn and self.turn.mode == "auto" and view.registry.vad.endpoint() and turn.task is None:
             self.phase = "thinking"
-            turn = self.turn
-            pipeline = self.pipeline
             turn.listen_stopped_at = time.perf_counter()
             turn.task = asyncio.create_task(self._finish_turn(turn, pipeline), name=f"turn-{turn.turn_id}")
 
@@ -547,6 +625,7 @@ class VoiceSession:
     async def _handle_intent(self, match: IntentMatch) -> None:
         if match.action not in {"conversation.exit", "turn.cancel"}:
             return
+        await self._cancel_no_speech_watchdog()
         turn = self.turn
         if turn is not None:
             turn.cancelled.set()
@@ -565,6 +644,7 @@ class VoiceSession:
         await self.send_text(control_message("alert", session_id=self.session_id, status="ok", code=match.action.replace(".", "_")))
 
     async def _abort(self, *, reason: str, send_stop: bool = True) -> None:
+        await self._cancel_no_speech_watchdog()
         pipeline = self.pipeline
         turn = self.turn
         task = turn.task if turn else None

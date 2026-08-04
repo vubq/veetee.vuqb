@@ -832,6 +832,26 @@ provider. Nó gửi additive `alert` với `code:"SERVER_BUSY"` và optional
 thể thử lại. `retry_after_ms` là hint, không phải queue guarantee. Capacity lấy
 từ snapshot `admission.maxActiveTurns`; default tương thích an toàn là `1`.
 
+Khi snapshot bật `autoTurn.enabled`, server có thể tự giải phóng một
+`listen/start mode:"auto"` nếu chưa nhận speech được VAD xác nhận trong
+`autoTurn.noSpeechTimeoutMs`. Server MUST không gọi ASR final/LLM/TTS cho lượt
+rỗng; nó gửi:
+
+```json
+{
+  "type": "alert",
+  "status": "warning",
+  "message": "<localized config text>",
+  "emotion": "neutral",
+  "code": "NO_SPEECH_TIMEOUT",
+  "session_id": "<session>"
+}
+```
+
+`code` là field additive optional; peer cũ bỏ qua field này nhưng vẫn xử lý ba
+field alert bắt buộc và dừng capture/re-arm. Policy chỉ là first-speech watchdog,
+không phải timeout của conversation đã bắt đầu.
+
 `tts/sentence_end` không thuộc contract bắt buộc vì snapshot chỉ có browser client
 nhận type đó mà không có producer tương ứng trong sender
 (`references/xiaozhi-esp32-server/main/digital-human/js/core/network/websocket.js:172-202`,

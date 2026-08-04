@@ -44,6 +44,11 @@ test('manager API publishes config through immutable ETag flow', async () => {
       bargeIn: { minSpeechFrames: 2 },
       toolPolicy: { maxRounds: 2, timeoutMs: 5000 },
       admission: { maxActiveTurns: 1, retryAfterMs: 250 },
+      autoTurn: {
+        enabled: true,
+        noSpeechTimeoutMs: 5000,
+        noSpeechAlert: { status: 'warning', message: 'Mình chưa nghe thấy bạn.', emotion: 'neutral' },
+      },
       tools: [{ name: 'device.led.set', description: 'Set the RGB LED.' }],
     }
     const update = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/role-config`, headers: { 'if-match': role.headers.etag }, payload: nextRole })
@@ -60,6 +65,8 @@ test('manager API publishes config through immutable ETag flow', async () => {
     assert.equal(runtime.json().toolPolicy.maxRounds, 2)
     assert.equal(runtime.json().admission.maxActiveTurns, 1)
     assert.equal(runtime.json().admission.retryAfterMs, 250)
+    assert.equal(runtime.json().autoTurn.noSpeechTimeoutMs, 5000)
+    assert.equal(runtime.json().autoTurn.noSpeechAlert.message, 'Mình chưa nghe thấy bạn.')
     assert.equal(runtime.json().tools[0].name, 'device.led.set')
 
     const notModified = await app.inject({ method: 'GET', url: '/internal/v1/runtime-config', headers: { 'if-none-match': runtime.headers.etag } })
@@ -86,6 +93,7 @@ test('role config OpenAPI response documents known policy fields while keeping a
       const schema = operation.responses?.['200']?.content?.['application/json']?.schema
       assert.deepEqual(schema?.required, ['locale', 'basePrompt'])
       assert.ok(schema?.properties?.admission)
+      assert.ok(schema?.properties?.autoTurn)
       assert.ok(schema?.properties?.tools)
     }
   } finally {
@@ -144,6 +152,7 @@ test('device pairing challenge is single-use and binds a device to an assistant'
     assert.equal(paired.statusCode, 201)
     assert.equal(paired.json().displayName, 'Veetee phòng làm việc')
     assert.equal(paired.json().maskedMac, 'A4:CF:12:••:••:9D')
+    assert.equal(typeof paired.json().etag, 'string')
 
     const listed = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/devices` })
     assert.equal(listed.statusCode, 200)
@@ -151,6 +160,150 @@ test('device pairing challenge is single-use and binds a device to an assistant'
     assert.equal(listed.json().items[0].id, paired.json().id)
     const reused = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: code } })
     assert.equal(reused.statusCode, 422)
+  } finally {
+    await app.close()
+  }
+})
+
+test('assistant summaries are derived from owner-scoped paired devices and retained conversations', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/assistants', payload: { name: 'Dashboard summary test' } })
+    assert.equal(created.statusCode, 201)
+    const assistantId = created.json().id as string
+
+    const pair = async (suffix: string) => {
+      const identityHash = (suffix === '01' ? '1' : '2').repeat(64)
+      const clientIdHash = (suffix === '01' ? '3' : '4').repeat(64)
+      const challenge = await app.inject({
+        method: 'POST',
+        url: '/internal/v1/devices/pairing-challenges',
+        payload: { identityHash, clientIdHash, maskedMac: `AA:BB:CC:••:••:${suffix}`, board: 'ESP32-S3 N16R8', firmwareVersion: 'summary-test' },
+      })
+      assert.equal(challenge.statusCode, 201)
+      const device = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: challenge.json().verificationCode, displayName: `Summary robot ${suffix}` } })
+      assert.equal(device.statusCode, 201)
+      return { identityHash, clientIdHash, deviceId: device.json().id as string }
+    }
+
+    const first = await pair('01')
+    await pair('02')
+    const offline = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/devices/presence',
+      payload: { identityHash: first.identityHash, clientIdHash: first.clientIdHash, maskedMac: 'AA:BB:CC:••:••:01', board: 'ESP32-S3 N16R8', firmwareVersion: 'summary-test', onlineState: 'offline' },
+    })
+    assert.equal(offline.statusCode, 202)
+    const unpaired = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/devices/presence',
+      payload: { identityHash: '5'.repeat(64), clientIdHash: '6'.repeat(64), maskedMac: 'AA:BB:CC:••:••:03', board: 'ESP32-S3 N16R8', firmwareVersion: 'summary-test', onlineState: 'online' },
+    })
+    assert.equal(unpaired.statusCode, 202)
+
+    const earlierEndedAt = new Date(Date.now() - 120_000).toISOString()
+    const latestEndedAt = new Date(Date.now() - 60_000).toISOString()
+    for (const [conversationId, endedAt] of [
+      ['55555555-5555-4555-8555-555555555555', earlierEndedAt],
+      ['66666666-6666-4666-8666-666666666666', latestEndedAt],
+    ]) {
+      const ingested = await app.inject({
+        method: 'POST',
+        url: '/internal/v1/conversations/turns',
+        payload: {
+          conversationId, assistantId, locale: 'vi-VN', configRevision: 1,
+          conversationStartedAt: '2026-08-01T08:00:00.000Z', conversationEndedAt: endedAt, conversationStatus: 'completed',
+          turnId: `summary-turn-${conversationId}`, sequence: 1, state: 'completed', startedAt: '2026-08-01T08:00:01.000Z', endedAt, finishReason: 'complete', timings: {}, transcript: [], toolCalls: [],
+        },
+      })
+      assert.equal(ingested.statusCode, 202)
+    }
+
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    assert.equal(listed.statusCode, 200)
+    const card = listed.json().items.find((item: { id: string }) => item.id === assistantId) as Record<string, unknown> | undefined
+    assert.ok(card)
+    assert.equal(card?.deviceCount, 2)
+    assert.equal(card?.onlineDeviceCount, 1)
+    assert.equal(card?.lastConversationAt, latestEndedAt)
+    assert.equal('identityHash' in (card ?? {}), false)
+    assert.equal('clientIdHash' in (card ?? {}), false)
+
+    const detail = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}` })
+    assert.equal(detail.statusCode, 200)
+    assert.equal(detail.json().deviceCount, 2)
+    assert.equal(detail.json().onlineDeviceCount, 1)
+    assert.equal(detail.json().lastConversationAt, latestEndedAt)
+
+    const otherAssistant = await app.inject({ method: 'POST', url: '/api/v1/assistants', payload: { name: 'Summary ownership guard' } })
+    assert.equal(otherAssistant.statusCode, 201)
+    const reassignedConversation = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/conversations/turns',
+      payload: {
+        conversationId: '55555555-5555-4555-8555-555555555555', assistantId: otherAssistant.json().id, locale: 'vi-VN', configRevision: 1,
+        conversationStartedAt: '2026-08-01T08:00:00.000Z', conversationEndedAt: latestEndedAt, conversationStatus: 'completed',
+        turnId: 'summary-reassigned-turn', sequence: 2, state: 'completed', startedAt: '2026-08-01T08:00:01.000Z', endedAt: latestEndedAt, finishReason: 'complete', timings: {}, transcript: [], toolCalls: [],
+      },
+    })
+    assert.equal(reassignedConversation.statusCode, 404)
+    const otherDetail = await app.inject({ method: 'GET', url: `/api/v1/assistants/${otherAssistant.json().id}` })
+    assert.equal(otherDetail.statusCode, 200)
+    assert.equal(otherDetail.json().lastConversationAt, null)
+  } finally {
+    await app.close()
+  }
+})
+
+test('device binding unlink is ETag guarded, idempotent and preserves identity/history', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistantId = (await app.inject({ method: 'GET', url: '/api/v1/assistants' })).json().items[0].id as string
+    const identityHash = 'e'.repeat(64)
+    const clientIdHash = 'f'.repeat(64)
+    const challenge = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/devices/pairing-challenges',
+      payload: { identityHash, clientIdHash, maskedMac: 'EE:FF:00:••:••:01', board: 'ESP32-S3 N16R8', firmwareVersion: 'unlink-test' },
+    })
+    assert.equal(challenge.statusCode, 201)
+    const paired = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: challenge.json().verificationCode, displayName: 'Unlink test robot' } })
+    assert.equal(paired.statusCode, 201)
+    const device = paired.json() as { id: string; etag: string }
+
+    const missingIfMatch = await app.inject({ method: 'DELETE', url: `/api/v1/devices/${device.id}/binding` })
+    assert.equal(missingIfMatch.statusCode, 428)
+    const stale = await app.inject({ method: 'DELETE', url: `/api/v1/devices/${device.id}/binding`, headers: { 'if-match': '"stale-device-etag"' } })
+    assert.equal(stale.statusCode, 409)
+
+    const conversationId = '44444444-4444-4444-8444-444444444444'
+    const history = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: {
+      conversationId, assistantId, deviceKey: device.id, locale: 'vi-VN', configRevision: 1,
+      conversationStartedAt: '2026-08-04T01:00:00.000Z', conversationEndedAt: '2026-08-04T01:00:03.000Z', conversationStatus: 'completed',
+      turnId: 'unlink-history-turn', sequence: 1, state: 'completed', startedAt: '2026-08-04T01:00:01.000Z', endedAt: '2026-08-04T01:00:03.000Z', finishReason: 'complete', timings: {}, transcript: [], toolCalls: [],
+    } })
+    assert.equal(history.statusCode, 202)
+
+    const removed = await app.inject({ method: 'DELETE', url: `/api/v1/devices/${device.id}/binding`, headers: { 'if-match': device.etag } })
+    assert.equal(removed.statusCode, 204)
+    const repeated = await app.inject({ method: 'DELETE', url: `/api/v1/devices/${device.id}/binding`, headers: { 'if-match': device.etag } })
+    assert.equal(repeated.statusCode, 204)
+
+    const listed = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/devices` })
+    assert.equal(listed.statusCode, 200)
+    assert.equal(listed.json().items.some((item: { id: string }) => item.id === device.id), false)
+    const retainedHistory = await app.inject({ method: 'GET', url: `/api/v1/conversations/${conversationId}` })
+    assert.equal(retainedHistory.statusCode, 200)
+    assert.equal(retainedHistory.json().summary.deviceKey, device.id)
+
+    const presence = await app.inject({ method: 'POST', url: '/internal/v1/devices/presence', payload: {
+      identityHash, clientIdHash, maskedMac: 'EE:FF:00:••:••:01', board: 'ESP32-S3 N16R8', firmwareVersion: 'unlink-test', onlineState: 'online',
+    } })
+    assert.equal(presence.statusCode, 202)
+    assert.equal(presence.json().id, device.id)
+    assert.equal(presence.json().paired, false)
   } finally {
     await app.close()
   }
@@ -179,13 +332,23 @@ test('conversation history ingest is idempotent and respects transcript retentio
     const duplicate = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload })
     assert.equal(duplicate.statusCode, 202)
 
+    const conflictingSequence = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: { ...payload, turnId: 'turn-duplicate-sequence' } })
+    assert.equal(conflictingSequence.statusCode, 422)
+    const delayedTurn = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: {
+      ...payload,
+      turnId: 'turn-2', sequence: 2, conversationEndedAt: '2026-08-04T01:00:03.000Z',
+      startedAt: '2026-08-04T01:00:01.000Z', endedAt: '2026-08-04T01:00:03.000Z',
+    } })
+    assert.equal(delayedTurn.statusCode, 202)
+
     const list = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/conversations` })
     assert.equal(list.statusCode, 200)
     assert.equal(list.json().total, 1)
-    assert.equal(list.json().items[0].turnCount, 1)
+    assert.equal(list.json().items[0].turnCount, 2)
+    assert.equal(list.json().items[0].lastTurnAt, '2026-08-04T01:00:05.000Z')
     const detail = await app.inject({ method: 'GET', url: '/api/v1/conversations/11111111-1111-4111-8111-111111111111' })
     assert.equal(detail.statusCode, 200)
-    assert.equal(detail.json().turns.length, 1)
+    assert.equal(detail.json().turns.length, 2)
     assert.equal(detail.json().turns[0].transcript[0].text, 'Xin chào')
 
     const invalidAudio = await app.inject({ method: 'PATCH', url: '/api/v1/retention-policy', headers: { 'if-match': policy.headers.etag }, payload: { captureTranscript: true, transcriptDays: 30, captureAudio: true, audioDays: 1 } })
@@ -315,7 +478,7 @@ test('OpenAPI is generated from every registered route', async () => {
       '/api/v1/provider-configs', '/api/v1/provider-configs/{id}', '/api/v1/voices', '/api/v1/assistants',
       '/api/v1/assistants/{id}', '/api/v1/assistants/{id}/role-config', '/api/v1/assistants/{id}/model-memory',
       '/api/v1/assistants/{id}/model-memory/provider', '/api/v1/assistants/{id}/model-memory/memory',
-      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/internal/v1/devices/pairing-challenges', '/internal/v1/devices/presence', '/internal/v1/retention/purge',
+      '/api/v1/assistants/{id}/publish', '/api/v1/assistants/{id}/devices', '/api/v1/devices/pair', '/api/v1/devices/{id}/binding', '/internal/v1/devices/pairing-challenges', '/internal/v1/devices/presence', '/internal/v1/retention/purge',
       '/internal/v1/runtime-config',
     ]
     for (const path of requiredPaths) assert.ok(document.paths[path], `missing OpenAPI path ${path}`)

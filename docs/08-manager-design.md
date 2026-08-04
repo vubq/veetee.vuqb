@@ -263,6 +263,11 @@ Snapshot là contract immutable mà Voice Server tiêu thụ. Hình dạng tối
   "speech": { "voiceId": "uuid", "rate": 1, "pitch": 0, "style": "natural" },
   "progress": { "enabled": true, "acknowledgementId": "processing", "deadlineMs": 900 },
   "admission": { "maxActiveTurns": 1, "retryAfterMs": 250 },
+  "autoTurn": {
+    "enabled": false,
+    "noSpeechTimeoutMs": 5000,
+    "noSpeechAlert": { "status": "warning", "message": "<localized config text>", "emotion": "neutral" }
+  },
   "segmentation": { "minimumCharacters": 1, "maximumCharacters": 180 },
   "bargeIn": { "minSpeechFrames": 2 },
   "toolPolicy": { "maxRounds": 3, "timeoutMs": 30000 },
@@ -294,6 +299,13 @@ trong khoảng 1–8; `retryAfterMs` chỉ là hint cho client khi server trả
 `alert.code="SERVER_BUSY"`. Baseline local chọn một active turn để giữ VRAM/RAM
 an toàn; server không tự queue hoặc đổi provider. Mở rộng concurrency chỉ sau
 benchmark resource có revision/ADR riêng.
+
+`autoTurn` là policy additive khác. Khi `enabled=true`, `noSpeechTimeoutMs` bị
+giới hạn 1.000–60.000 ms và `noSpeechAlert` phải có status/message/emotion đầy đủ.
+Policy chỉ chờ speech đầu tiên sau wake word; nó không cắt một conversation đã
+bắt đầu. Khi hết hạn, Voice Server release lease, không gọi ASR/LLM/TTS và gửi
+`alert.code="NO_SPEECH_TIMEOUT"`; thiếu field `autoTurn` giữ behavior tương thích
+và không tạo watchdog.
 
 ### 4.4 Provider invariant: một lựa chọn, không fallback
 
@@ -504,7 +516,7 @@ chỉ liệt kê lỗi domain bổ sung.
 | `GET /assistants/{assistantId}` | User:R | none | `200 AssistantDetail` + `ETag` | `404` | Safe. |
 | `PATCH /assistants/{assistantId}` | User:W | `{name?}` | `200 Assistant` + new `ETag` | `409 REVISION_CONFLICT` hoặc `NAME_CONFLICT` | `IM` required; patch idempotent for same value. |
 | `DELETE /assistants/{assistantId}` | Owner | none | `204` | `409 DEVICES_STILL_LINKED` | `IM` required; repeat is `204`. |
-| `GET /assistants/{assistantId}/role-config` | User:R | none | `200 {locale,voice,basePrompt,personality,speech,progress,segmentation,bargeIn,toolPolicy,tools}` + `ETag` | `404` | Safe. |
+| `GET /assistants/{assistantId}/role-config` | User:R | none | `200 {locale,voice,basePrompt,personality,speech,progress,segmentation,bargeIn,toolPolicy,admission,autoTurn,tools}` + `ETag` | `404` | Safe. |
 | `PATCH /assistants/{assistantId}/role-config` | User:W | Partial role config; policy/tool fields are schema-validated JSON | `200 RoleConfig` + new `ETag` | `409`; `422 VOICE_UNSUPPORTED` hoặc `LOCALE_UNSUPPORTED` | `IM` required. |
 | `GET /assistants/{assistantId}/revisions` | User:R | `limit,cursor` | `200 Page<RevisionSummary>` | `404` | `C`. |
 | `GET /assistants/{assistantId}/revisions/{revision}` | User:R | none | `200 redacted snapshot` | `404` | Secret refs only. |

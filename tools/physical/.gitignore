@@ -1,5 +1,9 @@
 wake-test.local.json
 wake-test-*.local.json
+ptt-acceptance.local.json
+ptt-acceptance-*.local.json
+local-ptt-utterance-*.wav
+reports/
 *.wav
 *.ogg
 *.mp3

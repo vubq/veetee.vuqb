@@ -198,9 +198,13 @@ Reference decode một lần rồi đưa PCM vào ASR queue (`references/xiaozhi
 ### 7.2 Endpoint và ASR
 
 - `manual`: `listen.stop` là endpoint authority; VAD chỉ metrics/noise gate và không tự cắt PTT.
-- `auto`: Silero hysteresis + minimum speech + trailing silence tạo endpoint.
+- `auto`: Silero hysteresis + minimum speech + trailing silence tạo endpoint;
+  nếu snapshot bật `autoTurn.noSpeechTimeoutMs`, một watchdog bounded chỉ chờ
+  speech đầu tiên và gửi `alert.code="NO_SPEECH_TIMEOUT"` khi wake không có lời.
 - `realtime`: AEC-aware streaming vẫn nhận mic khi AI speaking; confirmed speech tạo barge-in.
 - Empty/non-speech/too-low-evidence turn emit typed `no_speech` và không gọi LLM.
+  No-speech watchdog chỉ áp dụng trước speech đầu tiên; không phải max duration
+  của một conversation đang chạy.
 - Baseline chỉ dùng **final** transcript cho LLM. Partial transcript gửi UI/debug optional nhưng không speculative answer.
 
 Reference manual mode đã bypass VAD endpoint (`references/xiaozhi-esp32-server/main/xiaozhi-server/core/providers/vad/silero.py:55-58`, `references/xiaozhi-esp32-server/main/xiaozhi-server/core/providers/asr/base.py:60-81`).
@@ -393,6 +397,12 @@ Sink có local spool bounded nếu Manager API unavailable. Khi full, ưu tiên 
   nhận typed `alert.code="SERVER_BUSY"`, không queue vô hạn và không provider
   fallback. Lease được release sau cancellation, error, intent exit hoặc normal
   `tts.stop`.
+- `snapshot.autoTurn` là policy additive, disabled nếu vắng mặt. Khi `enabled`
+  và không nhận được speech trong `noSpeechTimeoutMs` (1–60 giây), server không
+  finalize ASR hoặc gọi LLM/TTS; nó release turn lease, về `READY` và gửi
+  configurable `alert` với `code="NO_SPEECH_TIMEOUT"`. Watchdog sở hữu bởi
+  `(session_id, turn_id, generation)` và bị hủy khi có speech/abort/stop/endpoint/
+  disconnect/turn mới.
 - Disconnect luôn cancel task tree và join cleanup; soak test theo dõi live task count, file descriptor, RSS và VRAM.
 - Baseline long-answer soak dùng deterministic long-text fixture có checksum để
   drive segmenter → VieNeu → Opus → paced egress trong ≥ 30 phút audio. Nó không

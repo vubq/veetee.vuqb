@@ -183,6 +183,10 @@ class RuntimeConfigManager:
         candidate: ProviderRegistry | None = None
         async with self._lock:
             try:
+                # Validate additive interaction policy before allocating a
+                # provider generation. A malformed watchdog config must keep
+                # the last-known-good snapshot instead of failing mid-turn.
+                snapshot.auto_turn_policy()
                 candidate = ProviderRegistry(
                     snapshot,
                     secret_file=self.secret_file,

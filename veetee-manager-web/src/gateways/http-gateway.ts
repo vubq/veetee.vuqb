@@ -98,6 +98,11 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
       personality: { id: draft.personalityId, name: draft.personalityName },
       speech: { ...draft.speech },
       admission: { ...draft.admission },
+      autoTurn: {
+        enabled: draft.autoTurn.enabled,
+        noSpeechTimeoutMs: draft.autoTurn.noSpeechTimeoutMs,
+        noSpeechAlert: { ...draft.autoTurn.noSpeechAlert },
+      },
     }
     const result = await this.execute(() => this.client.PATCH('/api/v1/assistants/{id}/role-config', {
       params: { path: { id: assistantId } },
@@ -198,6 +203,15 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     return this.success(deviceCard(result.data))
   }
 
+  async unlinkDevice(deviceId: string, expectedEtag: string): Promise<GatewayResult<void, never>> {
+    const result = await this.execute(() => this.client.DELETE('/api/v1/devices/{id}/binding', {
+      params: { path: { id: deviceId } },
+      headers: { 'If-Match': expectedEtag },
+    }))
+    if (!result.response.ok) return this.failure(result)
+    return this.success(undefined)
+  }
+
   async getRetentionPolicy(): Promise<GatewayResult<RetentionPolicy, never>> {
     const result = await this.execute(() => this.client.GET('/api/v1/retention-policy'))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
@@ -255,9 +269,9 @@ function assistantCard(value: AssistantResource): AssistantCard {
     locale: typeof role.locale === 'string' ? role.locale : 'vi-VN',
     voiceName: typeof speech.voiceId === 'string' ? speech.voiceId : '',
     personalityName: typeof personality.name === 'string' ? personality.name : '',
-    onlineDeviceCount: 0,
-    deviceCount: 0,
-    lastConversationAt: null,
+    onlineDeviceCount: value.onlineDeviceCount,
+    deviceCount: value.deviceCount,
+    lastConversationAt: value.lastConversationAt,
     publishedRevision: value.publishedRevision,
     configurationState: value.publishedRevision ? 'published' : 'draft',
   }
@@ -282,6 +296,15 @@ function roleConfig(assistantId: string, value: Record<string, unknown>): RoleCo
       maxActiveTurns: isRecord(value.admission) && typeof value.admission.maxActiveTurns === 'number' ? value.admission.maxActiveTurns : 1,
       retryAfterMs: isRecord(value.admission) && typeof value.admission.retryAfterMs === 'number' ? value.admission.retryAfterMs : 250,
     },
+    autoTurn: {
+      enabled: isRecord(value.autoTurn) && value.autoTurn.enabled === true,
+      noSpeechTimeoutMs: isRecord(value.autoTurn) && typeof value.autoTurn.noSpeechTimeoutMs === 'number' ? value.autoTurn.noSpeechTimeoutMs : 5000,
+      noSpeechAlert: {
+        status: isRecord(value.autoTurn) && isRecord(value.autoTurn.noSpeechAlert) && typeof value.autoTurn.noSpeechAlert.status === 'string' ? value.autoTurn.noSpeechAlert.status : 'warning',
+        message: isRecord(value.autoTurn) && isRecord(value.autoTurn.noSpeechAlert) && typeof value.autoTurn.noSpeechAlert.message === 'string' ? value.autoTurn.noSpeechAlert.message : '',
+        emotion: isRecord(value.autoTurn) && isRecord(value.autoTurn.noSpeechAlert) && typeof value.autoTurn.noSpeechAlert.emotion === 'string' ? value.autoTurn.noSpeechAlert.emotion : 'neutral',
+      },
+    },
   }
 }
 
@@ -302,7 +325,7 @@ function modelMemory(value: ModelMemoryResource): ModelMemoryWorkspace {
 }
 
 function deviceCard(value: DeviceResource): DeviceCard {
-  return { id: value.id, assistantId: value.assistantId, displayName: value.displayName, maskedMac: value.maskedMac, firmwareVersion: value.firmwareVersion, board: value.board, onlineState: value.onlineState, lastSeenAt: value.lastSeenAt, lastConversationAt: value.lastConversationAt }
+  return { id: value.id, assistantId: value.assistantId, etag: value.etag, displayName: value.displayName, maskedMac: value.maskedMac, firmwareVersion: value.firmwareVersion, board: value.board, onlineState: value.onlineState, lastSeenAt: value.lastSeenAt, lastConversationAt: value.lastConversationAt }
 }
 
 function retentionPolicy(value: RetentionResource): RetentionPolicy {

@@ -9,6 +9,7 @@ export function createDeviceFixtures(): DeviceCard[] {
     {
       id: '71111111-1111-4111-8111-111111111111',
       assistantId: ASSISTANT_IDS.may,
+      etag: '"preview-device-1"',
       displayName: 'Veetee phòng làm việc',
       maskedMac: 'A4:CF:12:••:••:9D',
       firmwareVersion: '0.1.0-preview.3',
@@ -20,6 +21,7 @@ export function createDeviceFixtures(): DeviceCard[] {
     {
       id: '72222222-2222-4222-8222-222222222222',
       assistantId: ASSISTANT_IDS.may,
+      etag: '"preview-device-2"',
       displayName: 'Veetee phòng khách',
       maskedMac: 'A4:CF:12:••:••:2A',
       firmwareVersion: '0.1.0-preview.2',

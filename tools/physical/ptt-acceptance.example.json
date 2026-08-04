@@ -1,0 +1,64 @@
+{
+  "monitor": {
+    "command": ["idf.py"],
+    "projectDir": "../../veetee-firmware",
+    "serialPort": "/dev/ttyACM0",
+    "baud": 115200,
+    "healthUrl": "http://127.0.0.1:18100/health/ready",
+    "startupWaitSeconds": 1
+  },
+  "operator": {
+    "pttGpio": 0
+  },
+  "metrics": {
+    "url": "http://127.0.0.1:18100/metrics",
+    "timeoutSeconds": 5,
+    "requiredZeroAfter": ["active_turns"]
+  },
+  "audio": {
+    "command": ["pw-play", "{file}"],
+    "clip": "./local-ptt-utterance-vi.wav",
+    "timeoutSeconds": 60
+  },
+  "stages": [
+    {
+      "name": "ptt_start",
+      "semanticState": "listening",
+      "marker": "PTT start",
+      "timeoutSeconds": 45
+    },
+    {
+      "name": "thinking",
+      "semanticState": "thinking",
+      "marker": "state=thinking",
+      "timeoutSeconds": 90
+    },
+    {
+      "name": "ptt_stop",
+      "semanticState": "thinking",
+      "marker": "PTT stop result=ESP_OK",
+      "timeoutSeconds": 10
+    },
+    {
+      "name": "speaking",
+      "semanticState": "speaking",
+      "marker": "state=speaking",
+      "timeoutSeconds": 90
+    },
+    {
+      "name": "idle",
+      "semanticState": "idle",
+      "marker": "graceful tts drain complete state=idle",
+      "timeoutSeconds": 180
+    }
+  ],
+  "forbiddenMarkers": [
+    "Guru Meditation Error",
+    "stack overflow",
+    "abort() was called",
+    "Opus capture encode failed",
+    "Opus playback decode failed",
+    "playback queue backpressure",
+    "capture read failed"
+  ]
+}

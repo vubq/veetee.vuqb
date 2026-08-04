@@ -107,6 +107,7 @@ function deterministicUuid(namespace: 'assistant' | 'device', sequence: number):
 export class MockGateway implements ManagerGateway, PreviewControlGateway {
   private state: MockState
   private scenario: PreviewScenarioId
+  private readonly unlinkedDevices = new Map<string, DeviceCard>()
   private requestSequence = 0
   private readonly sleep: Sleep
   private readonly now: () => string
@@ -138,6 +139,7 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     const request = await this.begin('mutation')
     this.state = createInitialMockState()
     this.scenario = 'happy'
+    this.unlinkedDevices.clear()
 
     return this.success(
       {
@@ -635,6 +637,7 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     const device: DeviceCard = {
       id: deterministicUuid('device', sequence),
       assistantId: input.assistantId,
+      etag: etag(`device-${sequence}`, 1),
       displayName: input.displayName?.trim() || `Veetee mới ${sequence}`,
       maskedMac: `A4:CF:12:••:••:${sequence.toString(16).padStart(2, '0').toUpperCase()}`,
       firmwareVersion: '0.1.0-preview.3',
@@ -651,6 +654,44 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
       assistant.value.onlineDeviceCount += 1
     }
     return this.success(device, request)
+  }
+
+  async unlinkDevice(
+    deviceId: string,
+    expectedEtag: string,
+  ): Promise<GatewayResult<void, NotFoundProblem | OfflineProblem | RevisionConflictProblem<unknown, unknown>>> {
+    const request = await this.begin('mutation')
+    const current = this.state.devices.find((device) => device.id === deviceId)
+    if (!current) {
+      if (this.unlinkedDevices.has(deviceId)) return this.success(undefined, request)
+      return this.failure(this.notFound('device', deviceId, request.requestId), request)
+    }
+
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    if (current.etag !== expectedEtag) {
+      const conflict: RevisionConflictProblem<DeviceCard, unknown> = {
+        type: 'revision-conflict',
+        code: 'REVISION_CONFLICT',
+        messageKey: 'problem.revision.conflict',
+        requestId: request.requestId,
+        retryable: false,
+        currentRevision: 1,
+        currentEtag: current.etag,
+        current: clone(current),
+        localDraft: undefined,
+      }
+      return this.failure(conflict, request)
+    }
+
+    this.state.devices = this.state.devices.filter((device) => device.id !== deviceId)
+    this.unlinkedDevices.set(deviceId, clone(current))
+    const assistant = this.state.assistants[current.assistantId]
+    if (assistant) {
+      assistant.value.deviceCount = Math.max(0, assistant.value.deviceCount - 1)
+      if (current.onlineState === 'online') assistant.value.onlineDeviceCount = Math.max(0, assistant.value.onlineDeviceCount - 1)
+    }
+    return this.success(undefined, request)
   }
 
   async getRetentionPolicy(): Promise<GatewayResult<RetentionPolicy, never>> {

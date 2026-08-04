@@ -32,14 +32,20 @@ export interface Assistant {
   providerSelections: Record<string, Record<string, unknown>>
   draftRevision: number
   publishedRevision: number | null
+  deviceCount: number
+  onlineDeviceCount: number
+  lastConversationAt: string | null
   etag: string
   updatedAt: string
 }
+
+type AssistantRecord = Omit<Assistant, 'deviceCount' | 'onlineDeviceCount' | 'lastConversationAt'>
 
 export interface Device {
   id: string
   ownerId: string
   assistantId: string
+  etag: string
   displayName: string
   maskedMac: string
   firmwareVersion: string
@@ -167,7 +173,7 @@ export interface ConversationTurnInput {
   toolCalls: ToolCallRecord[]
 }
 
-interface DeviceRecord extends Device {
+interface DeviceRecord extends Omit<Device, 'etag'> {
   identityHash: string
   clientIdHash: string
 }
@@ -278,6 +284,7 @@ export interface Store {
   reportDevicePresence(value: DevicePresenceInput): Promise<DevicePresenceResult>
   createPairingChallenge(value: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string }): Promise<PairingChallenge>
   pairDevice(ownerId: string, value: { assistantId: string; verificationCode: string; displayName?: string }): Promise<Device>
+  unlinkDevice(ownerId: string, id: string, ifMatch: string): Promise<void>
   getRetentionPolicy(ownerId: string): Promise<RetentionPolicy>
   updateRetentionPolicy(ownerId: string, value: Pick<RetentionPolicy, 'captureTranscript' | 'transcriptDays' | 'captureAudio' | 'audioDays'>, ifMatch: string): Promise<RetentionPolicy>
   purgeExpiredConversations(now?: Date): Promise<RetentionPurgeResult>
@@ -290,7 +297,7 @@ export class InMemoryStore implements Store {
   private readonly installations: ProviderInstallation[]
   private readonly providerConfigs = new Map<string, ProviderConfig>()
   private readonly providerConfigSecretRefs = new Map<string, Set<string>>()
-  private readonly assistants = new Map<string, Assistant>()
+  private readonly assistants = new Map<string, AssistantRecord>()
   private readonly sessions = new Map<string, ManagerSession>()
   private readonly secretReferences = new Map<string, SecretReference>()
   private readonly devices = new Map<string, DeviceRecord>()
@@ -302,7 +309,7 @@ export class InMemoryStore implements Store {
   constructor(installations: ProviderInstallation[], initial?: RuntimeSnapshot) {
     this.installations = installations
     if (initial) {
-      const assistant: Assistant = {
+      const assistant: AssistantRecord = {
         id: initial.assistantId,
         ownerId: 'local-owner',
         name: 'Veetee',
@@ -365,26 +372,33 @@ export class InMemoryStore implements Store {
     return structuredClone(next)
   }
 
-  async listAssistants(ownerId: string): Promise<Assistant[]> { return [...this.assistants.values()].filter((item) => item.ownerId === ownerId).map((item) => structuredClone(item)) }
+  async listAssistants(ownerId: string): Promise<Assistant[]> {
+    await this.purgeExpiredConversations()
+    return [...this.assistants.values()]
+      .filter((item) => item.ownerId === ownerId)
+      .map((item) => this.withAssistantSummary(item))
+  }
   async getAssistant(ownerId: string, id: string): Promise<Assistant | undefined> {
+    await this.purgeExpiredConversations()
     const item = this.assistants.get(id)
-    return item && item.ownerId === ownerId ? structuredClone(item) : undefined
+    return item && item.ownerId === ownerId ? this.withAssistantSummary(item) : undefined
   }
 
   async createAssistant(ownerId: string, name: string): Promise<Assistant> {
     const now = new Date().toISOString()
-    const item: Assistant = { id: randomUUID(), ownerId, name, role: {}, providerSelections: {}, draftRevision: 1, publishedRevision: null, etag: etag({ name, revision: 1, role: {}, providerSelections: {} }), updatedAt: now }
+    const item: AssistantRecord = { id: randomUUID(), ownerId, name, role: {}, providerSelections: {}, draftRevision: 1, publishedRevision: null, etag: etag({ name, revision: 1, role: {}, providerSelections: {} }), updatedAt: now }
     this.assistants.set(item.id, item)
-    return structuredClone(item)
+    return this.withAssistantSummary(item)
   }
 
   async updateRole(ownerId: string, id: string, value: Record<string, unknown>, ifMatch: string): Promise<Assistant> {
+    await this.purgeExpiredConversations()
     const current = this.assistants.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Assistant not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Assistant changed', 409)
-    const next: Assistant = { ...current, role: structuredClone(value), draftRevision: current.draftRevision + 1, etag: etag({ ...value, revision: current.draftRevision + 1 }), updatedAt: new Date().toISOString() }
+    const next: AssistantRecord = { ...current, role: structuredClone(value), draftRevision: current.draftRevision + 1, etag: etag({ ...value, revision: current.draftRevision + 1 }), updatedAt: new Date().toISOString() }
     this.assistants.set(id, next)
-    return structuredClone(next)
+    return this.withAssistantSummary(next)
   }
 
   async getModelMemory(ownerId: string, id: string): Promise<ModelMemoryView> {
@@ -586,6 +600,21 @@ export class InMemoryStore implements Store {
     return publicDevice(device)
   }
 
+  async unlinkDevice(ownerId: string, id: string, ifMatch: string): Promise<void> {
+    const device = this.devices.get(id)
+    if (!device || device.ownerId !== ownerId) throw problem('NOT_FOUND', 'Device not found', 404)
+
+    /* Idempotent repeat: once the binding is gone, a retry must not resurrect
+       or delete the identity. It is still owner-scoped by the check above. */
+    if (!device.assistantId) return
+    if (deviceEtag(device) !== ifMatch) throw problem('REVISION_CONFLICT', 'Device binding changed', 409)
+
+    /* Keep the device row, identity and conversation history. A subsequent
+       presence event can update this same row and a new pairing challenge can
+       bind it again. */
+    device.assistantId = ''
+  }
+
   async getRetentionPolicy(ownerId: string): Promise<RetentionPolicy> {
     return structuredClone(this.retentionPolicies.get(ownerId) ?? defaultRetentionPolicy(ownerId))
   }
@@ -623,8 +652,17 @@ export class InMemoryStore implements Store {
     const policy = await this.getRetentionPolicy(assistant.ownerId)
     validateConversationTurn(value)
     const existing = this.conversations.get(value.conversationId)
-    if (existing && existing.ownerId !== assistant.ownerId) throw problem('NOT_FOUND', 'Conversation not found', 404)
-    if (existing?.turns.some((turn) => turn.turnId === value.turnId)) return this.conversationDetail(existing, policy)
+    if (existing && (existing.ownerId !== assistant.ownerId || existing.summary.assistantId !== value.assistantId)) {
+      throw problem('NOT_FOUND', 'Conversation not found', 404)
+    }
+    const duplicate = existing?.turns.find((turn) => turn.turnId === value.turnId)
+    if (duplicate && existing) {
+      if (duplicate.sequence !== value.sequence) throw problem('HISTORY_INVALID', 'conversation turn sequence conflicts with an existing turn', 422)
+      return this.conversationDetail(existing, policy)
+    }
+    if (existing?.turns.some((turn) => turn.sequence === value.sequence)) {
+      throw problem('HISTORY_INVALID', 'conversation turn sequence conflicts with an existing turn', 422)
+    }
     const transcript = policy.captureTranscript ? structuredClone(value.transcript) : []
     const turn: ConversationTurn = {
       id: value.turnId,
@@ -658,10 +696,14 @@ export class InMemoryStore implements Store {
       retentionUntil,
     }
     summary.turnCount += 1
-    summary.lastTurnAt = value.endedAt
-    summary.endedAt = value.conversationEndedAt ?? summary.endedAt
+    if (!summary.lastTurnAt || Date.parse(value.endedAt) > Date.parse(summary.lastTurnAt)) summary.lastTurnAt = value.endedAt
+    if (value.conversationEndedAt && (!summary.endedAt || Date.parse(value.conversationEndedAt) > Date.parse(summary.endedAt))) {
+      summary.endedAt = value.conversationEndedAt
+    }
     summary.status = status
-    summary.retentionUntil = retentionUntil ?? summary.retentionUntil
+    if (retentionUntil && (!summary.retentionUntil || Date.parse(retentionUntil) > Date.parse(summary.retentionUntil))) {
+      summary.retentionUntil = retentionUntil
+    }
     summary.aggregateTimings = { ...summary.aggregateTimings, ...value.timings }
     const record = existing ?? { ownerId: assistant.ownerId, summary, turns: [] }
     if (!existing) this.conversations.set(value.conversationId, record)
@@ -692,7 +734,23 @@ export class InMemoryStore implements Store {
 
   private kind(id: string): ProviderKind | undefined { return this.installations.find((item) => item.id === id)?.kind }
 
-  private modelMemory(current: Assistant): ModelMemoryView {
+  private withAssistantSummary(current: AssistantRecord): Assistant {
+    const devices = [...this.devices.values()].filter((device) => device.ownerId === current.ownerId && device.assistantId === current.id)
+    let lastConversationAt: string | null = null
+    for (const record of this.conversations.values()) {
+      if (record.ownerId !== current.ownerId || record.summary.assistantId !== current.id) continue
+      const candidate = record.summary.lastTurnAt ?? record.summary.endedAt ?? record.summary.startedAt
+      if (!lastConversationAt || Date.parse(candidate) > Date.parse(lastConversationAt)) lastConversationAt = candidate
+    }
+    return {
+      ...structuredClone(current),
+      deviceCount: devices.length,
+      onlineDeviceCount: devices.filter((device) => device.onlineState === 'online').length,
+      lastConversationAt,
+    }
+  }
+
+  private modelMemory(current: AssistantRecord | Assistant): ModelMemoryView {
     const kinds: ProviderKind[] = ['vad', 'asr', 'llm', 'tts', 'intent', 'memory']
     const selections = kinds.map((kind) => {
       const value = current.providerSelections[kind]
@@ -710,6 +768,10 @@ export class InMemoryStore implements Store {
 }
 
 export function etag(value: unknown): string { return `"${createHash('sha256').update(JSON.stringify(value)).digest('hex')}"` }
+
+export function deviceEtag(value: { id: string; ownerId: string | null; assistantId: string | null; displayName: string }): string {
+  return etag({ id: value.id, ownerId: value.ownerId ?? '', assistantId: value.assistantId ?? '', displayName: value.displayName })
+}
 
 export function parseCatalog(raw: unknown): ProviderInstallation[] {
   if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { installations?: unknown }).installations)) throw new Error('provider catalog must contain installations')
@@ -757,6 +819,7 @@ function publicDevice(value: DeviceRecord): Device {
     id: value.id,
     ownerId: value.ownerId,
     assistantId: value.assistantId,
+    etag: deviceEtag(value),
     displayName: value.displayName,
     maskedMac: value.maskedMac,
     firmwareVersion: value.firmwareVersion,

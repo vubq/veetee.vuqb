@@ -5144,6 +5144,9 @@
                           "providerSelections",
                           "draftRevision",
                           "publishedRevision",
+                          "deviceCount",
+                          "onlineDeviceCount",
+                          "lastConversationAt",
                           "etag",
                           "updatedAt"
                         ],
@@ -5175,6 +5178,20 @@
                             "type": [
                               "null",
                               "integer"
+                            ]
+                          },
+                          "deviceCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "onlineDeviceCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "lastConversationAt": {
+                            "type": [
+                              "null",
+                              "string"
                             ]
                           },
                           "etag": {
@@ -5574,6 +5591,9 @@
                     "providerSelections",
                     "draftRevision",
                     "publishedRevision",
+                    "deviceCount",
+                    "onlineDeviceCount",
+                    "lastConversationAt",
                     "etag",
                     "updatedAt"
                   ],
@@ -5605,6 +5625,20 @@
                       "type": [
                         "null",
                         "integer"
+                      ]
+                    },
+                    "deviceCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "onlineDeviceCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "lastConversationAt": {
+                      "type": [
+                        "null",
+                        "string"
                       ]
                     },
                     "etag": {
@@ -5994,6 +6028,9 @@
                     "providerSelections",
                     "draftRevision",
                     "publishedRevision",
+                    "deviceCount",
+                    "onlineDeviceCount",
+                    "lastConversationAt",
                     "etag",
                     "updatedAt"
                   ],
@@ -6025,6 +6062,20 @@
                       "type": [
                         "null",
                         "integer"
+                      ]
+                    },
+                    "deviceCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "onlineDeviceCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "lastConversationAt": {
+                      "type": [
+                        "null",
+                        "string"
                       ]
                     },
                     "etag": {
@@ -6457,6 +6508,35 @@
                         }
                       }
                     },
+                    "autoTurn": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "noSpeechTimeoutMs": {
+                          "type": "integer",
+                          "minimum": 1000,
+                          "maximum": 60000
+                        },
+                        "noSpeechAlert": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "status": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "emotion": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
                     "tools": {
                       "type": "array",
                       "items": {
@@ -6876,6 +6956,50 @@
                       }
                     }
                   },
+                  "autoTurn": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "enabled",
+                      "noSpeechTimeoutMs",
+                      "noSpeechAlert"
+                    ],
+                    "maxProperties": 3,
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "noSpeechTimeoutMs": {
+                        "type": "integer",
+                        "minimum": 1000,
+                        "maximum": 60000
+                      },
+                      "noSpeechAlert": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "status",
+                          "message",
+                          "emotion"
+                        ],
+                        "maxProperties": 3,
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "maxLength": 32
+                          },
+                          "message": {
+                            "type": "string",
+                            "maxLength": 512
+                          },
+                          "emotion": {
+                            "type": "string",
+                            "maxLength": 64
+                          }
+                        }
+                      }
+                    }
+                  },
                   "tools": {
                     "type": "array",
                     "maxItems": 128,
@@ -6965,6 +7089,35 @@
                           "type": "integer",
                           "minimum": 100,
                           "maximum": 10000
+                        }
+                      }
+                    },
+                    "autoTurn": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "noSpeechTimeoutMs": {
+                          "type": "integer",
+                          "minimum": 1000,
+                          "maximum": 60000
+                        },
+                        "noSpeechAlert": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "status": {
+                              "type": "string"
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "emotion": {
+                              "type": "string"
+                            }
+                          }
                         }
                       }
                     },
@@ -9508,6 +9661,7 @@
                           "id",
                           "ownerId",
                           "assistantId",
+                          "etag",
                           "displayName",
                           "maskedMac",
                           "firmwareVersion",
@@ -9524,6 +9678,9 @@
                             "type": "string"
                           },
                           "assistantId": {
+                            "type": "string"
+                          },
+                          "etag": {
                             "type": "string"
                           },
                           "displayName": {
@@ -9957,6 +10114,7 @@
                     "id",
                     "ownerId",
                     "assistantId",
+                    "etag",
                     "displayName",
                     "maskedMac",
                     "firmwareVersion",
@@ -9973,6 +10131,9 @@
                       "type": "string"
                     },
                     "assistantId": {
+                      "type": "string"
+                    },
+                    "etag": {
                       "type": "string"
                     },
                     "displayName": {
@@ -10007,6 +10168,370 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "code": "VALIDATION_ERROR",
+                      "detail": "Request validation failed"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Authentication required",
+                    "value": {
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication required"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Request forbidden",
+                    "value": {
+                      "code": "FORBIDDEN",
+                      "detail": "The authenticated principal is not allowed to perform this operation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Resource not found",
+                    "value": {
+                      "code": "NOT_FOUND",
+                      "detail": "The requested resource was not found"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "State conflict",
+                    "value": {
+                      "code": "REVISION_CONFLICT",
+                      "detail": "The resource changed; reload the current revision"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Domain validation failed",
+                    "value": {
+                      "code": "CONFIG_INVALID",
+                      "detail": "The supplied configuration is not valid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Precondition required",
+                    "value": {
+                      "code": "IF_MATCH_REQUIRED",
+                      "detail": "If-Match header is required"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Unexpected server error",
+                    "value": {
+                      "code": "INTERNAL_ERROR",
+                      "detail": "Unexpected server error"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Dependency unavailable",
+                    "value": {
+                      "code": "SERVICE_UNAVAILABLE",
+                      "detail": "A required dependency is unavailable"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{id}/binding": {
+      "delete": {
+        "operationId": "deleteApiV1DevicesByIdBinding",
+        "summary": "DELETE /api/v1/devices/:id/binding",
+        "tags": [
+          "devices"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "veeteeSession": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
           },
           "400": {
             "description": "Invalid request",

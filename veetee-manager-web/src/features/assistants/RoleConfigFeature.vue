@@ -51,6 +51,15 @@ function toDraft(config: RoleConfig): RoleConfigDraft {
       maxActiveTurns: config.admission?.maxActiveTurns ?? 1,
       retryAfterMs: config.admission?.retryAfterMs ?? 250,
     },
+    autoTurn: {
+      enabled: config.autoTurn?.enabled ?? false,
+      noSpeechTimeoutMs: config.autoTurn?.noSpeechTimeoutMs ?? 5000,
+      noSpeechAlert: {
+        status: config.autoTurn?.noSpeechAlert?.status ?? 'warning',
+        message: config.autoTurn?.noSpeechAlert?.message ?? '',
+        emotion: config.autoTurn?.noSpeechAlert?.emotion ?? 'neutral',
+      },
+    },
   }
 }
 
@@ -73,6 +82,15 @@ const retryAfterInvalid = computed(() => {
   return value === undefined || !Number.isInteger(value) || value < 100 || value > 10000
 })
 const admissionError = computed(() => maxActiveTurnsInvalid.value || retryAfterInvalid.value)
+const noSpeechTimeoutInvalid = computed(() => {
+  const value = draft.value?.autoTurn.noSpeechTimeoutMs
+  return value === undefined || !Number.isInteger(value) || value < 1000 || value > 60000
+})
+const noSpeechAlertInvalid = computed(() => {
+  const alert = draft.value?.autoTurn.noSpeechAlert
+  return !alert?.status.trim() || alert.status.length > 32 || !alert.message.trim() || alert.message.length > 512 || !alert.emotion.trim() || alert.emotion.length > 64
+})
+const autoTurnError = computed(() => Boolean(draft.value?.autoTurn.enabled && (noSpeechTimeoutInvalid.value || noSpeechAlertInvalid.value)))
 
 const voiceOptions = computed<VtSelectOption[]>(() => voices.value.map((voice) => ({ value: voice.id, label: voice.name, description: `${voice.providerName} · ${voice.description}`, disabled: !voice.available })))
 const localeOptions: VtSelectOption[] = [{ value: 'vi-VN', label: 'Tiếng Việt', description: 'Ưu tiên hiện tại' }, { value: 'en-US', label: 'English (US)', description: 'Kiến trúc đã sẵn sàng mở rộng' }]
@@ -148,6 +166,7 @@ async function save() {
         ...draft.value,
         speech: { ...draft.value.speech },
         admission: { ...draft.value.admission },
+        autoTurn: { ...draft.value.autoTurn, noSpeechAlert: { ...draft.value.autoTurn.noSpeechAlert } },
       },
       resource.value.etag,
     )
@@ -445,6 +464,81 @@ onMounted(load)
       </div>
     </FormSection>
 
+    <FormSection
+      title="Wake không có lời nói"
+      description="Tự giải phóng lượt auto sau khi wake word nhưng chưa có speech xác nhận. Không giới hạn các cuộc hội thoại đã bắt đầu."
+    >
+      <template #trailing>
+        <VtSwitch
+          v-model="draft.autoTurn.enabled"
+          label="Bật timeout"
+        />
+      </template>
+      <div class="two-columns">
+        <VtFormField
+          label="Chờ speech tối đa (ms)"
+          for-id="role-no-speech-timeout"
+          :error="draft.autoTurn.enabled && noSpeechTimeoutInvalid ? 'Chọn từ 1.000 đến 60.000 ms.' : undefined"
+          hint="Chỉ áp dụng trước speech đầu tiên của auto turn."
+        >
+          <VtInput
+            id="role-no-speech-timeout"
+            type="number"
+            min="1000"
+            max="60000"
+            step="100"
+            inputmode="numeric"
+            :model-value="String(draft.autoTurn.noSpeechTimeoutMs)"
+            :invalid="draft.autoTurn.enabled && noSpeechTimeoutInvalid"
+            :disabled="!draft.autoTurn.enabled"
+            aria-label="Chờ speech tối đa"
+            @update:model-value="draft.autoTurn.noSpeechTimeoutMs = Number($event)"
+          />
+        </VtFormField>
+        <VtFormField
+          label="Thông báo khi chưa nghe thấy"
+          for-id="role-no-speech-message"
+          :error="draft.autoTurn.enabled && noSpeechAlertInvalid ? 'Nhập thông báo và metadata alert hợp lệ.' : undefined"
+          hint="Nội dung đi từ i18n/config, không nằm trong server core."
+        >
+          <VtInput
+            id="role-no-speech-message"
+            :model-value="draft.autoTurn.noSpeechAlert.message"
+            :invalid="draft.autoTurn.enabled && noSpeechAlertInvalid"
+            :disabled="!draft.autoTurn.enabled"
+            aria-label="Thông báo khi chưa nghe thấy"
+            @update:model-value="draft.autoTurn.noSpeechAlert.message = $event"
+          />
+        </VtFormField>
+      </div>
+      <div class="two-columns">
+        <VtFormField
+          label="Alert status"
+          for-id="role-no-speech-status"
+          optional
+        >
+          <VtInput
+            id="role-no-speech-status"
+            v-model="draft.autoTurn.noSpeechAlert.status"
+            :disabled="!draft.autoTurn.enabled"
+            aria-label="Alert status"
+          />
+        </VtFormField>
+        <VtFormField
+          label="Emotion"
+          for-id="role-no-speech-emotion"
+          optional
+        >
+          <VtInput
+            id="role-no-speech-emotion"
+            v-model="draft.autoTurn.noSpeechAlert.emotion"
+            :disabled="!draft.autoTurn.enabled"
+            aria-label="Emotion"
+          />
+        </VtFormField>
+      </div>
+    </FormSection>
+
     <footer class="form-actions">
       <p
         v-if="actionError"
@@ -469,7 +563,7 @@ onMounted(load)
       <VtButton
         type="submit"
         variant="primary"
-        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError)"
+        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError) || autoTurnError"
         :loading="saving"
       >
         <template #leading>

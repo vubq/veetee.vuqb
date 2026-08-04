@@ -35,6 +35,7 @@ function toRoleDraft(role: RoleConfig): RoleConfigDraft {
     personalityName: role.personalityName,
     speech: structuredClone(role.speech),
     admission: structuredClone(role.admission),
+    autoTurn: structuredClone(role.autoTurn),
   }
 }
 
@@ -102,6 +103,21 @@ describe('MockGateway deterministic happy path', () => {
     )
     expect(saved.data.revision).toBe(current.data.revision + 1)
     expect(saved.data.value.basePrompt).toBe(roleDraft.basePrompt)
+  })
+
+  it('unlinks a device with its ETag without deleting the preview identity', async () => {
+    const gateway = immediateGateway()
+    const listed = requireSuccess(await gateway.listDevices(ASSISTANT_IDS.may))
+    const device = listed.data.items[0]
+    if (!device) throw new Error('Missing device fixture')
+
+    const removed = requireSuccess(await gateway.unlinkDevice(device.id, device.etag))
+    expect(removed.data).toBeUndefined()
+    const after = requireSuccess(await gateway.listDevices(ASSISTANT_IDS.may))
+    expect(after.data.items.some((item) => item.id === device.id)).toBe(false)
+
+    const repeated = requireSuccess(await gateway.unlinkDevice(device.id, device.etag))
+    expect(repeated.data).toBeUndefined()
   })
 })
 

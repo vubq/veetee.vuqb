@@ -70,6 +70,22 @@ function renderFeature(managerGateway: ManagerGateway) {
 afterEach(() => vi.restoreAllMocks())
 
 describe('AssistantIndexFeature data states', () => {
+  it('renders the derived device and online summary returned by the gateway', async () => {
+    const source = assistants[0]
+    if (!source) throw new Error('assistant fixture is missing')
+    const summary = {
+      ...source,
+      deviceCount: 33,
+      onlineDeviceCount: 7,
+      lastConversationAt: '2026-08-04T03:15:00.000Z',
+    }
+    const view = renderFeature(gateway({ listAssistants: vi.fn(async () => success({ items: [summary], total: 1 })) }))
+
+    expect(await view.findByRole('heading', { name: 'Mây' })).toBeTruthy()
+    expect(view.getByText('7 thiết bị trực tuyến')).toBeTruthy()
+    expect(view.getByRole('button', { name: 'Thiết bị (33)' })).toBeTruthy()
+  })
+
   it('shows a retryable error instead of a false empty assistant list', async () => {
     const view = renderFeature(gateway({ listAssistants: vi.fn(async () => failure()) }))
 

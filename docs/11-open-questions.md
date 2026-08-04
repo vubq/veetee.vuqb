@@ -278,6 +278,17 @@ Phương án C: encrypted remote object storage khi cho phép egress/chi phí.
 Chọn A: encrypted filesystem/ổ khác host, giữ 7 bản ngày + 4 bản tuần, target RPO
 24h/RTO 4h; audio off theo Q-009. Một bản cùng volume không được tính là backup.
 
+### Q-021 — Wake word nhưng người dùng không nói thì giải phóng turn thế nào?
+
+**Trạng thái: Resolved — server-owned first-speech watchdog.**
+
+Không dùng `minSilenceMs` để ép endpoint vì VAD chưa có speech evidence và sẽ làm
+pipeline gọi ASR/LLM với transcript rỗng. `autoTurn.enabled` cùng
+`noSpeechTimeoutMs` nằm trong assistant snapshot; hết hạn thì server release lease,
+không chạy ASR/LLM/TTS và gửi additive `alert.code="NO_SPEECH_TIMEOUT"` với text
+status/emotion từ config. Snapshot thiếu policy giữ compatibility và không timeout;
+đây không phải giới hạn độ dài conversation. Chi tiết ở [ADR-021](ADR/ADR-021-auto-turn-no-speech-watchdog.md).
+
 ## 6. Tài liệu chủ dự án đã hẹn cung cấp
 
 | ID | Tài liệu | Boundary đang giữ | Không được làm trước |

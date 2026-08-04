@@ -15,6 +15,16 @@ class ConfigurationError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class AutoTurnPolicy:
+    """Optional first-speech watchdog for an on-device wake turn."""
+
+    no_speech_timeout_ms: int
+    alert_status: str
+    alert_message: str
+    alert_emotion: str
+
+
+@dataclass(frozen=True, slots=True)
 class ServerConfig:
     host: str
     port: int
@@ -131,6 +141,35 @@ class RuntimeSnapshot:
             raise ConfigurationError(f"providerId missing: {kind}")
         return value
 
+    def auto_turn_policy(self) -> AutoTurnPolicy | None:
+        """Return the validated optional no-speech policy from this snapshot.
+
+        The policy is intentionally absent by default for wire compatibility and
+        to avoid imposing an arbitrary conversation timeout. A configured policy
+        only bounds the wait before the first confirmed speech frame.
+        """
+
+        raw = self.raw.get("autoTurn")
+        if raw is None:
+            return None
+        if not isinstance(raw, dict):
+            raise ConfigurationError("snapshot.autoTurn must be an object")
+        enabled = raw.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ConfigurationError("snapshot.autoTurn.enabled must be a boolean")
+        if not enabled:
+            return None
+        timeout = raw.get("noSpeechTimeoutMs")
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1_000 <= timeout <= 60_000:
+            raise ConfigurationError("snapshot.autoTurn.noSpeechTimeoutMs must be between 1000 and 60000")
+        alert = raw.get("noSpeechAlert")
+        if not isinstance(alert, dict):
+            raise ConfigurationError("snapshot.autoTurn.noSpeechAlert must be an object")
+        status = _required_bounded_string(alert, "status", 32, "snapshot.autoTurn.noSpeechAlert")
+        message = _required_bounded_string(alert, "message", 512, "snapshot.autoTurn.noSpeechAlert")
+        emotion = _required_bounded_string(alert, "emotion", 64, "snapshot.autoTurn.noSpeechAlert")
+        return AutoTurnPolicy(timeout, status, message, emotion)
+
 
 def load_snapshot(path: Path) -> RuntimeSnapshot:
     try:
@@ -191,3 +230,10 @@ def _required_string(value: dict[str, Any], name: str) -> str:
     if not isinstance(result, str) or not result.strip():
         raise ConfigurationError(f"snapshot.{name} must be a non-empty string")
     return result
+
+
+def _required_bounded_string(value: dict[str, Any], name: str, maximum: int, prefix: str) -> str:
+    result = value.get(name)
+    if not isinstance(result, str) or not result.strip() or len(result) > maximum:
+        raise ConfigurationError(f"{prefix}.{name} must be a non-empty string of at most {maximum} characters")
+    return result.strip()

@@ -78,6 +78,11 @@ export function createRoleConfigFixtures(): Record<
           maxActiveTurns: 1,
           retryAfterMs: 250,
         },
+        autoTurn: {
+          enabled: false,
+          noSpeechTimeoutMs: 5000,
+          noSpeechAlert: { status: 'warning', message: '', emotion: 'neutral' },
+        },
       },
       revision: 7,
       etag: '"role-may-rev-7"',
@@ -99,6 +104,11 @@ export function createRoleConfigFixtures(): Record<
         admission: {
           maxActiveTurns: 1,
           retryAfterMs: 250,
+        },
+        autoTurn: {
+          enabled: false,
+          noSpeechTimeoutMs: 5000,
+          noSpeechAlert: { status: 'warning', message: '', emotion: 'neutral' },
         },
       },
       revision: 2,

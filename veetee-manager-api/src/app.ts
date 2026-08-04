@@ -35,6 +35,24 @@ const roleBodySchema = {
         retryAfterMs: { type: 'integer', minimum: 100, maximum: 10000 },
       },
     },
+    autoTurn: {
+      type: 'object', additionalProperties: false, required: ['enabled', 'noSpeechTimeoutMs', 'noSpeechAlert'], maxProperties: 3,
+      properties: {
+        enabled: { type: 'boolean' },
+        noSpeechTimeoutMs: { type: 'integer', minimum: 1000, maximum: 60000 },
+        noSpeechAlert: {
+          type: 'object', additionalProperties: false, required: ['status', 'message', 'emotion'], maxProperties: 3,
+          properties: {
+            // Empty defaults are allowed while auto-turn is disabled. Runtime
+            // validation still requires non-empty localized values when the
+            // policy is enabled.
+            status: { type: 'string', maxLength: 32 },
+            message: { type: 'string', maxLength: 512 },
+            emotion: { type: 'string', maxLength: 64 },
+          },
+        },
+      },
+    },
     tools: { type: 'array', maxItems: 128, items: { type: 'object', additionalProperties: true } },
     memoryEnabled: { type: 'boolean' },
   },
@@ -55,6 +73,21 @@ const roleResponseSchema = {
       properties: {
         maxActiveTurns: { type: 'integer', minimum: 1, maximum: 8 },
         retryAfterMs: { type: 'integer', minimum: 100, maximum: 10000 },
+      },
+    },
+    autoTurn: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        enabled: { type: 'boolean' },
+        noSpeechTimeoutMs: { type: 'integer', minimum: 1000, maximum: 60000 },
+        noSpeechAlert: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            status: { type: 'string' },
+            message: { type: 'string' },
+            emotion: { type: 'string' },
+          },
+        },
       },
     },
     tools: { type: 'array', items: { type: 'object', additionalProperties: true } },
@@ -119,11 +152,11 @@ const providerConfigResponseSchema = {
   },
 } as const
 const assistantResponseSchema = {
-  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'name', 'role', 'providerSelections', 'draftRevision', 'publishedRevision', 'etag', 'updatedAt'],
+  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'name', 'role', 'providerSelections', 'draftRevision', 'publishedRevision', 'deviceCount', 'onlineDeviceCount', 'lastConversationAt', 'etag', 'updatedAt'],
   properties: {
     id: { type: 'string' }, ownerId: { type: 'string' }, name: { type: 'string' }, role: { type: 'object', additionalProperties: true },
     providerSelections: { type: 'object', additionalProperties: { type: 'object', additionalProperties: true } },
-    draftRevision: { type: 'integer' }, publishedRevision: { type: ['integer', 'null'] }, etag: { type: 'string' }, updatedAt: { type: 'string' },
+    draftRevision: { type: 'integer' }, publishedRevision: { type: ['integer', 'null'] }, deviceCount: { type: 'integer', minimum: 0 }, onlineDeviceCount: { type: 'integer', minimum: 0 }, lastConversationAt: { type: ['string', 'null'] }, etag: { type: 'string' }, updatedAt: { type: 'string' },
   },
 } as const
 const runtimeSnapshotResponseSchema = {
@@ -155,9 +188,9 @@ const voiceResponseSchema = {
   properties: { id: { type: 'string' }, name: { type: 'string' }, providerName: { type: 'string' }, locale: { type: 'string' }, description: { type: 'string' }, previewDurationMs: { type: 'integer' }, available: { type: 'boolean' } },
 } as const
 const deviceResponseSchema = {
-  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'assistantId', 'displayName', 'maskedMac', 'firmwareVersion', 'board', 'onlineState', 'lastSeenAt', 'lastConversationAt'],
+  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'assistantId', 'etag', 'displayName', 'maskedMac', 'firmwareVersion', 'board', 'onlineState', 'lastSeenAt', 'lastConversationAt'],
   properties: {
-    id: { type: 'string' }, ownerId: { type: 'string' }, assistantId: { type: 'string' }, displayName: { type: 'string' }, maskedMac: { type: 'string' },
+    id: { type: 'string' }, ownerId: { type: 'string' }, assistantId: { type: 'string' }, etag: { type: 'string' }, displayName: { type: 'string' }, maskedMac: { type: 'string' },
     firmwareVersion: { type: 'string' }, board: { type: 'string' }, onlineState: { type: 'string', enum: ['online', 'offline'] }, lastSeenAt: { type: 'string' }, lastConversationAt: { type: ['string', 'null'] },
   },
 } as const
@@ -553,6 +586,14 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     try {
       const device = await store.pairDevice(owner(request), request.body)
       return reply.code(201).send(device)
+    } catch (error) { return sendProblem(reply, error) }
+  })
+  app.delete<{ Params: { id: string } }>('/api/v1/devices/:id/binding', { schema: { params: resourceIdParamsSchema, response: { 204: { type: 'null' } } } }, async (request, reply) => {
+    const ifMatch = request.headers['if-match']
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
+    try {
+      await store.unlinkDevice(owner(request), request.params.id, ifMatch)
+      return reply.code(204).send()
     } catch (error) { return sendProblem(reply, error) }
   })
 

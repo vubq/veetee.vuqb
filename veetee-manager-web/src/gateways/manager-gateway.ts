@@ -124,6 +124,11 @@ export interface DeviceGateway {
   pairDevice(
     input: PairDeviceInput,
   ): Promise<GatewayResult<DeviceCard, PairDeviceProblem>>
+
+  unlinkDevice(
+    deviceId: string,
+    expectedEtag: string,
+  ): Promise<GatewayResult<void, NotFoundProblem | OfflineProblem | RevisionConflictProblem<unknown, unknown>>>
 }
 
 export interface HistoryGateway {

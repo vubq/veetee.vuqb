@@ -5,6 +5,93 @@ deliberately opt-in: it never starts an audio player without `--allow-audio`,
 starts the ESP-IDF monitor with `--no-reset`, and sends no commands to the
 board. The local WAV files are not tracked.
 
+## Manual M0 PTT acceptance
+
+`ptt_acceptance.py` is the physical acceptance harness for the M0 button path.
+It only observes an externally operated button: it does **not** inject GPIO,
+send serial commands, flash firmware, change Wi-Fi/NVS, or reset the board. The
+serial monitor is always started with `idf.py monitor --no-reset`.
+
+Create an ignored local scenario, then put the Vietnamese utterance WAV at the
+configured local path. The clip is deliberately not included in Git.
+
+```bash
+cp tools/physical/ptt-acceptance.example.json \
+  tools/physical/ptt-acceptance.local.json
+
+python3 tools/physical/ptt_acceptance.py \
+  --scenario tools/physical/ptt-acceptance.local.json \
+  --dry-run
+```
+
+The dry run does not open serial, call HTTP, start an audio player, or create a
+report. It verifies the scenario shape and prints the planned no-reset monitor
+command. The shipped example intentionally reports that its local WAV does not
+exist.
+
+For a real operator-run turn, activate ESP-IDF first. Keep GPIO0 pressed until
+the harness reports `PTT start`; it will either play the configured Vietnamese
+clip or ask the operator to speak, then asks for GPIO0 to be released. It waits
+for the source-log order `thinking → PTT stop → speaking → idle` and stops on a
+configured panic/codec/queue marker.
+
+```bash
+source /home/vubq/.espressif/v6.0.2/esp-idf/export.sh
+
+# Manual speech only: no host audio process is allowed to start.
+python3 tools/physical/ptt_acceptance.py \
+  --scenario tools/physical/ptt-acceptance.local.json
+
+# Only after the owner has explicitly approved host playback of the local clip.
+python3 tools/physical/ptt_acceptance.py \
+  --scenario tools/physical/ptt-acceptance.local.json \
+  --allow-audio
+```
+
+The current firmware logs `state=thinking` before its `PTT stop` log. For a
+manual turn it drains already queued TTS audio, then emits
+`graceful tts drain complete state=idle`; the scenario requires that exact
+post-drain marker for semantic `idle`. `PTT start` is the listening/capture
+marker. This makes the report prove the real M0 transition without asking the
+firmware to reboot merely to re-emit its boot-time idle/connect markers.
+
+By default the tool writes one redacted JSON report under the ignored
+`tools/physical/reports/` directory. It contains stage timing, numeric metrics
+before/after and their deltas, plus player exit/duration if audio was explicitly
+enabled. It never persists raw serial lines, raw microphone/clip data, player
+stderr, cookies, HTTP authorization data, provider secrets, or transcript text.
+Pass `--report /tmp/…json` to place the same redacted report elsewhere.
+
+### Optional Manager history phrase hash
+
+To verify the accepted Vietnamese phrase without putting a transcript in a
+report, add a `history` object only to the ignored local scenario. The harness
+performs GET requests only: it snapshots the conversation list before GPIO0 is
+pressed, waits for a changed conversation after the final ready marker, and
+hashes the final configured-speaker segments in memory. It records only SHA-256
+values and a match boolean.
+
+```json
+{
+  "history": {
+    "apiBaseUrl": "http://127.0.0.1:18101",
+    "assistantId": "replace-with-local-assistant-id",
+    "speaker": "user",
+    "expectedPhraseFile": "/private/path/veetee-m0-expected-phrase.txt",
+    "sessionCookieFile": "/private/path/veetee-manager-session-cookie",
+    "timeoutSeconds": 15,
+    "pollIntervalSeconds": 0.5
+  }
+}
+```
+
+`expectedPhraseFile` and `sessionCookieFile` must be owner-only (`0600` or
+stricter), are never copied into a report, and are optional when the Manager API
+is running with local auth disabled. Instead of an expected phrase file, an
+operator may supply `expectedPhraseSha256`; the normalisation is NFC + casefold
++ collapsed whitespace. The harness does not create sessions, modify history,
+or expose a Manager secret.
+
 ## Prepare a local scenario
 
 Copy `wake-test.example.json` to an ignored local file and replace the two WAV

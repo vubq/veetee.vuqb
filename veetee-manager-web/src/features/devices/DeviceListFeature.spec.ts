@@ -1,4 +1,4 @@
-import { fireEvent, render, within } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AssistantCard, DeviceCard, GatewayFailure, GatewaySuccess } from '@/domain'
@@ -23,6 +23,7 @@ const assistant: AssistantCard = {
 const device: DeviceCard = {
   id: 'device-test',
   assistantId: assistant.id,
+  etag: '"device-test-etag"',
   displayName: 'Veetee bàn học',
   maskedMac: 'AA:BB:••:••:12:34',
   firmwareVersion: '0.1.0',
@@ -58,6 +59,24 @@ function failure(offline = false): GatewayFailure<never> {
       ...(offline ? {} : { resource: 'assistant', resourceId: assistant.id }),
     } as never,
     meta: meta(offline),
+  }
+}
+
+function revisionConflict(): GatewayFailure<never> {
+  return {
+    ok: false,
+    problem: {
+      type: 'revision-conflict',
+      code: 'REVISION_CONFLICT',
+      messageKey: 'problem.revision.conflict',
+      requestId: 'request-device-test',
+      retryable: false,
+      currentRevision: 2,
+      currentEtag: '"device-new-etag"',
+      current: { ...device, etag: '"device-new-etag"' },
+      localDraft: undefined,
+    } as never,
+    meta: meta(),
   }
 }
 
@@ -127,5 +146,57 @@ describe('DeviceListFeature data states', () => {
     const emptyState = view.container.querySelector('.vt-empty')
     expect(emptyState).not.toBeNull()
     expect(within(emptyState as HTMLElement).getByRole('button', { name: 'Ghép nối thiết bị' })).toBeTruthy()
+  })
+
+  it('requires confirmation then unlinks with the device ETag and refreshes the list', async () => {
+    const listDevices = vi.fn()
+      .mockResolvedValueOnce(success({ items: [device], total: 1 }))
+      .mockResolvedValueOnce(success({ items: [], total: 0 }))
+    const unlinkDevice = vi.fn(async () => success(undefined))
+    const view = renderFeature(gateway({ listDevices, unlinkDevice }))
+
+    const action = await view.findByRole('button', { name: 'Bỏ liên kết: Veetee bàn học' })
+    await fireEvent.click(action)
+    const dialog = await screen.findByRole('dialog', { name: 'Bỏ liên kết thiết bị' })
+    expect(within(dialog).getByText('Veetee bàn học')).toBeTruthy()
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Bỏ liên kết' }))
+
+    await waitFor(() => expect(unlinkDevice).toHaveBeenCalledWith(device.id, device.etag))
+    await waitFor(() => expect(view.getByText('Chưa có thiết bị')).toBeTruthy())
+  })
+
+  it('keeps the confirmation open and exposes an inline offline error when unlink is blocked', async () => {
+    const unlinkDevice = vi.fn(async () => failure(true))
+    const view = renderFeature(gateway({ unlinkDevice }))
+
+    await fireEvent.click(await view.findByRole('button', { name: 'Bỏ liên kết: Veetee bàn học' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Bỏ liên kết thiết bị' })
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Bỏ liên kết' }))
+
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('Đang ngoại tuyến; chưa thể bỏ liên kết. Thiết bị vẫn giữ nguyên.')
+    expect(unlinkDevice).toHaveBeenCalledWith(device.id, device.etag)
+    expect(view.container.querySelector('.device-card')).not.toBeNull()
+  })
+
+  it('refreshes the confirmation target after a stale device ETag conflict', async () => {
+    const refreshed = { ...device, etag: '"device-new-etag"' }
+    const listDevices = vi.fn()
+      .mockResolvedValueOnce(success({ items: [device], total: 1 }))
+      .mockResolvedValueOnce(success({ items: [refreshed], total: 1 }))
+      .mockResolvedValueOnce(success({ items: [], total: 0 }))
+    const unlinkDevice = vi.fn()
+      .mockResolvedValueOnce(revisionConflict())
+      .mockResolvedValueOnce(success(undefined))
+    const view = renderFeature(gateway({ listDevices, unlinkDevice }))
+
+    await fireEvent.click(await view.findByRole('button', { name: 'Bỏ liên kết: Veetee bàn học' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Bỏ liên kết thiết bị' })
+    const confirm = within(dialog).getByRole('button', { name: 'Bỏ liên kết' })
+    await fireEvent.click(confirm)
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('Liên kết thiết bị đã thay đổi.')
+
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Bỏ liên kết' }))
+    await waitFor(() => expect(unlinkDevice).toHaveBeenNthCalledWith(2, device.id, refreshed.etag))
+    await waitFor(() => expect(view.getByText('Chưa có thiết bị')).toBeTruthy())
   })
 })

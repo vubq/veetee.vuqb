@@ -53,6 +53,18 @@ export interface AdmissionSettings {
   retryAfterMs: number
 }
 
+export interface AutoTurnAlertSettings {
+  status: string
+  message: string
+  emotion: string
+}
+
+export interface AutoTurnSettings {
+  enabled: boolean
+  noSpeechTimeoutMs: number
+  noSpeechAlert: AutoTurnAlertSettings
+}
+
 export interface RoleConfig {
   assistantId: string
   locale: string
@@ -61,6 +73,7 @@ export interface RoleConfig {
   personalityName: string
   speech: SpeechSettings
   admission: AdmissionSettings
+  autoTurn: AutoTurnSettings
 }
 
 export type RoleConfigDraft = Omit<RoleConfig, 'assistantId'>
@@ -161,6 +174,7 @@ export type DeviceOnlineState = 'online' | 'offline'
 export interface DeviceCard {
   id: string
   assistantId: string
+  etag: ETag
   displayName: string
   maskedMac: string
   firmwareVersion: string

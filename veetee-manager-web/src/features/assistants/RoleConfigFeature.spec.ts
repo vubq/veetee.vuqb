@@ -116,6 +116,29 @@ describe('RoleConfigFeature mutations', () => {
     expect(saveRoleConfig.mock.calls[0]?.[1].admission).toEqual({ maxActiveTurns: 2, retryAfterMs: 250 })
   })
 
+  it('configures the first-speech timeout and localized alert through the role form', async () => {
+    const saveRoleConfig = vi.fn(async (...args: [string, RoleConfigDraft]) => {
+      void args
+      return success(resource)
+    })
+    const view = renderFeature(gateway({ saveRoleConfig }))
+
+    const toggle = await view.findByRole('switch', { name: 'Bật timeout' })
+    await fireEvent.click(toggle)
+    const timeout = view.getByRole('spinbutton', { name: 'Chờ speech tối đa' })
+    const message = view.getByRole('textbox', { name: 'Thông báo khi chưa nghe thấy' })
+    await fireEvent.update(timeout, '7000')
+    await fireEvent.update(message, 'Mình chưa nghe thấy bạn.')
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
+
+    await waitFor(() => expect(saveRoleConfig).toHaveBeenCalledTimes(1))
+    expect(saveRoleConfig.mock.calls[0]?.[1].autoTurn).toEqual({
+      enabled: true,
+      noSpeechTimeoutMs: 7000,
+      noSpeechAlert: { status: 'warning', message: 'Mình chưa nghe thấy bạn.', emotion: 'neutral' },
+    })
+  })
+
   it('keeps the draft and exposes an offline save error', async () => {
     const view = renderFeature(gateway({ saveRoleConfig: vi.fn(async () => failure(true)) }))
     const prompt = await view.findByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })

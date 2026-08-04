@@ -22,6 +22,7 @@ class Turn:
     pcm_bytes: int = 0
     task: asyncio.Task[None] | None = None
     cancelled: asyncio.Event | None = None
+    speech_confirmed: asyncio.Event | None = None
     listen_stopped_at: float | None = None
     asr_finished_at: float | None = None
     llm_first_at: float | None = None

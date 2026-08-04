@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
@@ -146,6 +147,151 @@ test('PostgreSQL persists a paired device and consumes its challenge once', { sk
     assert.ok(listed.json().items.some((item: { id: string; displayName: string }) => item.id === deviceId && item.displayName === 'Postgres robot'))
     const reused = await restarted.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: code } })
     assert.equal(reused.statusCode, 422)
+  } finally { await restarted.close() }
+})
+
+test('PostgreSQL unlinks a device binding atomically and keeps identity for re-pairing', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8019, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
+  }
+  const suffix = Date.now().toString(16).slice(-8)
+  const identityHash = `${'c'.repeat(64 - suffix.length)}${suffix}`
+  const clientIdHash = `${'d'.repeat(64 - suffix.length)}${suffix}`
+  const app = await buildApp({ env })
+  await app.ready()
+  let assistantId = ''
+  let deviceId = ''
+  let deviceEtag = ''
+  try {
+    assistantId = (await app.inject({ method: 'GET', url: '/api/v1/assistants' })).json().items[0]?.id
+    const challenge = await app.inject({ method: 'POST', url: '/internal/v1/devices/pairing-challenges', payload: {
+      identityHash, clientIdHash, maskedMac: 'CC:DD:EE:••:••:19', board: 'ESP32-S3 N16R8', firmwareVersion: 'unlink-pg',
+    } })
+    assert.equal(challenge.statusCode, 201)
+    const paired = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: challenge.json().verificationCode, displayName: 'Postgres unlink robot' } })
+    assert.equal(paired.statusCode, 201)
+    deviceId = paired.json().id
+    deviceEtag = paired.json().etag
+  } finally { await app.close() }
+
+  const restarted = await buildApp({ env })
+  await restarted.ready()
+  try {
+    const listed = await restarted.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/devices` })
+    assert.equal(listed.statusCode, 200)
+    const persisted = listed.json().items.find((item: { id: string }) => item.id === deviceId) as { etag: string } | undefined
+    assert.ok(persisted)
+    assert.equal(persisted?.etag, deviceEtag)
+    const stale = await restarted.inject({ method: 'DELETE', url: `/api/v1/devices/${deviceId}/binding`, headers: { 'if-match': '"stale-device-etag"' } })
+    assert.equal(stale.statusCode, 409)
+    const removed = await restarted.inject({ method: 'DELETE', url: `/api/v1/devices/${deviceId}/binding`, headers: { 'if-match': deviceEtag } })
+    assert.equal(removed.statusCode, 204)
+    const repeated = await restarted.inject({ method: 'DELETE', url: `/api/v1/devices/${deviceId}/binding`, headers: { 'if-match': deviceEtag } })
+    assert.equal(repeated.statusCode, 204)
+  } finally { await restarted.close() }
+
+  const after = await buildApp({ env })
+  await after.ready()
+  try {
+    const listed = await after.inject({ method: 'GET', url: `/api/v1/assistants/${assistantId}/devices` })
+    assert.equal(listed.statusCode, 200)
+    assert.equal(listed.json().items.some((item: { id: string }) => item.id === deviceId), false)
+    const presence = await after.inject({ method: 'POST', url: '/internal/v1/devices/presence', payload: {
+      identityHash, clientIdHash, maskedMac: 'CC:DD:EE:••:••:19', board: 'ESP32-S3 N16R8', firmwareVersion: 'unlink-pg', onlineState: 'online',
+    } })
+    assert.equal(presence.statusCode, 202)
+    assert.equal(presence.json().id, deviceId)
+    assert.equal(presence.json().paired, false)
+  } finally { await after.close() }
+})
+
+test('PostgreSQL derives assistant dashboard summaries without exposing device identity', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8020, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
+  }
+  const entropy = randomUUID().replaceAll('-', '')
+  const hash = (prefix: string) => `${prefix.repeat(32)}${entropy}`
+  const earlierEndedAt = new Date(Date.now() - 120_000).toISOString()
+  const latestEndedAt = new Date(Date.now() - 60_000).toISOString()
+  const app = await buildApp({ env })
+  await app.ready()
+  let assistantId = ''
+  try {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/assistants', payload: { name: `PostgreSQL summary ${entropy.slice(0, 8)}` } })
+    assert.equal(created.statusCode, 201)
+    assistantId = created.json().id
+
+    const pair = async (identityHash: string, clientIdHash: string, maskedMac: string) => {
+      const challenge = await app.inject({ method: 'POST', url: '/internal/v1/devices/pairing-challenges', payload: { identityHash, clientIdHash, maskedMac, board: 'ESP32-S3 N16R8', firmwareVersion: 'summary-pg' } })
+      assert.equal(challenge.statusCode, 201)
+      const paired = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: challenge.json().verificationCode, displayName: `PostgreSQL summary ${maskedMac}` } })
+      assert.equal(paired.statusCode, 201)
+    }
+
+    const firstIdentity = hash('1')
+    const firstClient = hash('2')
+    await pair(firstIdentity, firstClient, 'AA:BB:CC:••:••:41')
+    await pair(hash('3'), hash('4'), 'AA:BB:CC:••:••:42')
+    assert.equal((await app.inject({ method: 'POST', url: '/internal/v1/devices/presence', payload: { identityHash: firstIdentity, clientIdHash: firstClient, maskedMac: 'AA:BB:CC:••:••:41', board: 'ESP32-S3 N16R8', firmwareVersion: 'summary-pg', onlineState: 'offline' } })).statusCode, 202)
+    assert.equal((await app.inject({ method: 'POST', url: '/internal/v1/devices/presence', payload: { identityHash: hash('5'), clientIdHash: hash('6'), maskedMac: 'AA:BB:CC:••:••:43', board: 'ESP32-S3 N16R8', firmwareVersion: 'summary-pg', onlineState: 'online' } })).statusCode, 202)
+
+    const firstConversation = randomUUID()
+    const conversationEvents: Array<[string, string]> = [[firstConversation, earlierEndedAt], [randomUUID(), latestEndedAt]]
+    for (const [conversationId, endedAt] of conversationEvents) {
+      const ingested = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: {
+        conversationId, assistantId, locale: 'vi-VN', configRevision: 1,
+        conversationStartedAt: new Date(Date.parse(endedAt) - 1_000).toISOString(), conversationEndedAt: endedAt, conversationStatus: 'completed',
+        turnId: `summary-pg-${conversationId}`, sequence: 1, state: 'completed', startedAt: new Date(Date.parse(endedAt) - 500).toISOString(), endedAt, finishReason: 'complete', timings: {}, transcript: [], toolCalls: [],
+      } })
+      assert.equal(ingested.statusCode, 202)
+    }
+
+    const duplicateEndedAt = new Date(Date.parse(earlierEndedAt) - 1_000).toISOString()
+    const duplicatePayload = {
+      conversationId: randomUUID(), assistantId, locale: 'vi-VN', configRevision: 1,
+      conversationStartedAt: new Date(Date.parse(duplicateEndedAt) - 1_000).toISOString(), conversationEndedAt: duplicateEndedAt, conversationStatus: 'completed' as const,
+      turnId: 'summary-pg-duplicate', sequence: 1, state: 'completed' as const, startedAt: new Date(Date.parse(duplicateEndedAt) - 500).toISOString(), endedAt: duplicateEndedAt, finishReason: 'complete', timings: {}, transcript: [], toolCalls: [],
+    }
+    const duplicateResponses = await Promise.all([
+      app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: duplicatePayload }),
+      app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: duplicatePayload }),
+    ])
+    for (const response of duplicateResponses) assert.equal(response.statusCode, 202)
+    const duplicateDetail = await app.inject({ method: 'GET', url: `/api/v1/conversations/${duplicatePayload.conversationId}` })
+    assert.equal(duplicateDetail.statusCode, 200)
+    assert.equal(duplicateDetail.json().summary.turnCount, 1)
+    assert.equal(duplicateDetail.json().turns.length, 1)
+    const sequenceConflict = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: { ...duplicatePayload, turnId: 'summary-pg-sequence-conflict' } })
+    assert.equal(sequenceConflict.statusCode, 422)
+
+    const otherAssistant = await app.inject({ method: 'POST', url: '/api/v1/assistants', payload: { name: `PostgreSQL ownership ${entropy.slice(0, 8)}` } })
+    assert.equal(otherAssistant.statusCode, 201)
+    const reassigned = await app.inject({ method: 'POST', url: '/internal/v1/conversations/turns', payload: {
+      conversationId: firstConversation, assistantId: otherAssistant.json().id, locale: 'vi-VN', configRevision: 1,
+      conversationStartedAt: new Date(Date.parse(latestEndedAt) - 1_000).toISOString(), conversationEndedAt: latestEndedAt, conversationStatus: 'completed',
+      turnId: 'summary-pg-reassigned', sequence: 2, state: 'completed', startedAt: new Date(Date.parse(latestEndedAt) - 500).toISOString(), endedAt: latestEndedAt, finishReason: 'complete', timings: {}, transcript: [], toolCalls: [],
+    } })
+    assert.equal(reassigned.statusCode, 404)
+  } finally { await app.close() }
+
+  const restarted = await buildApp({ env })
+  await restarted.ready()
+  try {
+    const listed = await restarted.inject({ method: 'GET', url: '/api/v1/assistants' })
+    assert.equal(listed.statusCode, 200)
+    const card = listed.json().items.find((item: { id: string }) => item.id === assistantId) as Record<string, unknown> | undefined
+    assert.ok(card)
+    assert.equal(card?.deviceCount, 2)
+    assert.equal(card?.onlineDeviceCount, 1)
+    assert.equal(card?.lastConversationAt, latestEndedAt)
+    assert.equal('identityHash' in (card ?? {}), false)
+    assert.equal('clientIdHash' in (card ?? {}), false)
   } finally { await restarted.close() }
 })
 

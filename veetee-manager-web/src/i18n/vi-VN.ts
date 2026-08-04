@@ -35,6 +35,22 @@ export default {
       generic: 'Đăng nhập chưa thành công. Hãy thử lại.',
     },
   },
+  devices: {
+    connectionInfo: 'Thông tin kết nối',
+    unlink: {
+      action: 'Bỏ liên kết',
+      title: 'Bỏ liên kết thiết bị',
+      description: 'Thiết bị “{name}” sẽ không còn thuộc trợ lý này.',
+      deviceLabel: 'Thiết bị',
+      addressLabel: 'Địa chỉ',
+      warning: 'Thao tác không xóa danh tính thiết bị hoặc lịch sử hội thoại. Bạn có thể ghép nối lại thiết bị sau.',
+      confirm: 'Bỏ liên kết',
+      offline: 'Đang ngoại tuyến; chưa thể bỏ liên kết. Thiết bị vẫn giữ nguyên.',
+      conflict: 'Liên kết thiết bị đã thay đổi. Danh sách đã được tải lại; hãy xác nhận lại nếu vẫn muốn tiếp tục.',
+      failed: 'Không thể bỏ liên kết thiết bị. Thiết bị vẫn giữ nguyên.',
+      success: 'Đã bỏ liên kết thiết bị',
+    },
+  },
   preview: {
     scenario: {
       happy: {

@@ -19,6 +19,7 @@ import { openDatabase, readDatabaseUrl, type DatabaseHandle } from './db/client.
 import {
   etag,
   defaultRetentionPolicy,
+  deviceEtag,
   hashPairingCode,
   problem,
   validateSecretBindings,
@@ -58,6 +59,7 @@ type DeviceRow = typeof deviceTable.$inferSelect
 type RetentionPolicyRow = typeof retentionPolicyTable.$inferSelect
 type ConversationRow = typeof conversationTable.$inferSelect
 type ConversationTurnRow = typeof conversationTurnTable.$inferSelect
+type AssistantSummary = Pick<Assistant, 'deviceCount' | 'onlineDeviceCount' | 'lastConversationAt'>
 
 export interface PostgresStoreOptions {
   catalog: ProviderInstallation[]
@@ -154,9 +156,10 @@ export class PostgresStore implements Store {
 
   async listAssistants(ownerId: string): Promise<Assistant[]> {
     const identities = await this.handle.db.select().from(assistantTable).where(eq(assistantTable.ownerId, ownerId)).orderBy(desc(assistantTable.updatedAt))
+    const summaries = await this.assistantSummaries(ownerId, identities.map((identity) => identity.id))
     const values = await Promise.all(identities.map(async (identity) => {
       const revision = await this.findAssistantRevision(identity.id, identity.draftRevision)
-      return revision ? this.mapAssistant(identity, revision) : undefined
+      return revision ? this.mapAssistant(identity, revision, summaries.get(identity.id) ?? emptyAssistantSummary()) : undefined
     }))
     return values.filter((value): value is Assistant => value !== undefined)
   }
@@ -164,8 +167,11 @@ export class PostgresStore implements Store {
   async getAssistant(ownerId: string, id: string): Promise<Assistant | undefined> {
     const identity = await this.findAssistantIdentity(ownerId, id)
     if (!identity) return undefined
-    const revision = await this.findAssistantRevision(id, identity.draftRevision)
-    return revision ? this.mapAssistant(identity, revision) : undefined
+    const [revision, summaries] = await Promise.all([
+      this.findAssistantRevision(id, identity.draftRevision),
+      this.assistantSummaries(ownerId, [id]),
+    ])
+    return revision ? this.mapAssistant(identity, revision, summaries.get(id) ?? emptyAssistantSummary()) : undefined
   }
 
   async createAssistant(ownerId: string, name: string): Promise<Assistant> {
@@ -445,6 +451,26 @@ export class PostgresStore implements Store {
     })
   }
 
+  async unlinkDevice(ownerId: string, id: string, ifMatch: string): Promise<void> {
+    await this.handle.db.transaction(async (tx) => {
+      const [device] = await tx.select().from(deviceTable).where(and(eq(deviceTable.id, id), eq(deviceTable.ownerId, ownerId))).limit(1)
+      if (!device) throw problem('NOT_FOUND', 'Device not found', 404)
+
+      /* A repeated unlink is intentionally a no-op. Keep the owner check above
+         so an unbound row cannot be used to probe another owner's identity. */
+      if (!device.assistantId) return
+      if (deviceEtag({ id: device.id, ownerId: device.ownerId, assistantId: device.assistantId, displayName: device.displayName }) !== ifMatch) {
+        throw problem('REVISION_CONFLICT', 'Device binding changed', 409)
+      }
+
+      const updated = await tx.update(deviceTable)
+        .set({ assistantId: null, updatedAt: new Date() })
+        .where(and(eq(deviceTable.id, id), eq(deviceTable.ownerId, ownerId), eq(deviceTable.assistantId, device.assistantId)))
+        .returning({ id: deviceTable.id })
+      if (!updated.length) throw problem('REVISION_CONFLICT', 'Device binding changed', 409)
+    })
+  }
+
   async getRetentionPolicy(ownerId: string): Promise<RetentionPolicy> {
     const [row] = await this.handle.db.select().from(retentionPolicyTable).where(eq(retentionPolicyTable.ownerId, ownerId)).limit(1)
     return row ? this.mapRetentionPolicy(row) : defaultRetentionPolicy(ownerId)
@@ -474,28 +500,46 @@ export class PostgresStore implements Store {
     const [assistant] = await this.handle.db.select({ id: assistantTable.id, ownerId: assistantTable.ownerId }).from(assistantTable).where(eq(assistantTable.id, value.assistantId)).limit(1)
     if (!assistant) throw problem('NOT_FOUND', 'Assistant not found', 404)
     const policy = await this.getRetentionPolicy(assistant.ownerId)
-    const existingTurn = await this.handle.db.select().from(conversationTurnTable).where(and(eq(conversationTurnTable.conversationId, value.conversationId), eq(conversationTurnTable.turnId, value.turnId))).limit(1)
-    if (existingTurn.length) {
-      const existing = await this.getConversation(assistant.ownerId, value.conversationId)
-      if (!existing) throw problem('NOT_FOUND', 'Conversation not found', 404)
-      return existing
-    }
     const transcript = policy.captureTranscript ? structuredClone(value.transcript) : []
     const status = value.conversationStatus ?? (value.state === 'completed' ? 'completed' : value.state === 'aborted' ? 'aborted' : 'error')
     const retentionUntil = policy.captureTranscript && policy.transcriptDays !== null && status !== 'active'
       ? new Date(Date.parse(value.conversationEndedAt ?? value.endedAt) + policy.transcriptDays * 86_400_000)
       : null
     await this.handle.db.transaction(async (tx) => {
+      await tx.insert(conversationTable).values({
+        id: value.conversationId, ownerId: assistant.ownerId, assistantId: value.assistantId, deviceKey: value.deviceKey ?? null,
+        startedAt: new Date(value.conversationStartedAt), endedAt: value.conversationEndedAt ? new Date(value.conversationEndedAt) : null,
+        locale: value.locale, configRevision: value.configRevision, status, turnCount: 0, lastTurnAt: null, aggregateTimings: {}, retentionUntil,
+      }).onConflictDoNothing()
       const [current] = await tx.select().from(conversationTable).where(eq(conversationTable.id, value.conversationId)).for('update').limit(1)
-      if (!current) {
-        await tx.insert(conversationTable).values({ id: value.conversationId, ownerId: assistant.ownerId, assistantId: value.assistantId, deviceKey: value.deviceKey ?? null, startedAt: new Date(value.conversationStartedAt), endedAt: value.conversationEndedAt ? new Date(value.conversationEndedAt) : null, locale: value.locale, configRevision: value.configRevision, status, turnCount: 0, lastTurnAt: null, aggregateTimings: {}, retentionUntil })
+      if (!current) throw new Error('conversation insert returned no row')
+      if (current && (current.ownerId !== assistant.ownerId || current.assistantId !== value.assistantId)) {
+        throw problem('NOT_FOUND', 'Conversation not found', 404)
       }
-      const [conversation] = await tx.select().from(conversationTable).where(eq(conversationTable.id, value.conversationId)).for('update').limit(1)
-      if (!conversation) throw new Error('conversation insert returned no row')
-      const aggregateTimings = { ...asJsonObject(conversation.aggregateTimings), ...value.timings }
+      const [duplicate] = await tx.select({ sequence: conversationTurnTable.sequence }).from(conversationTurnTable).where(and(eq(conversationTurnTable.conversationId, value.conversationId), eq(conversationTurnTable.turnId, value.turnId))).limit(1)
+      if (duplicate) {
+        if (duplicate.sequence !== value.sequence) throw problem('HISTORY_INVALID', 'conversation turn sequence conflicts with an existing turn', 422)
+        return
+      }
+      const [sequenceConflict] = await tx.select({ turnId: conversationTurnTable.turnId }).from(conversationTurnTable).where(and(eq(conversationTurnTable.conversationId, value.conversationId), eq(conversationTurnTable.sequence, value.sequence))).limit(1)
+      if (sequenceConflict) throw problem('HISTORY_INVALID', 'conversation turn sequence conflicts with an existing turn', 422)
+      const inserted = await tx.insert(conversationTurnTable).values({ id: randomUUID(), conversationId: value.conversationId, turnId: value.turnId, sequence: value.sequence, state: value.state, startedAt: new Date(value.startedAt), endedAt: new Date(value.endedAt), finishReason: value.finishReason, timings: structuredClone(value.timings), transcript, toolCalls: structuredClone(value.toolCalls) }).onConflictDoNothing().returning({ id: conversationTurnTable.id })
+      if (!inserted.length) {
+        const [concurrent] = await tx.select({ turnId: conversationTurnTable.turnId, sequence: conversationTurnTable.sequence }).from(conversationTurnTable).where(and(eq(conversationTurnTable.conversationId, value.conversationId), or(eq(conversationTurnTable.turnId, value.turnId), eq(conversationTurnTable.sequence, value.sequence)))).limit(1)
+        if (concurrent?.turnId === value.turnId && concurrent.sequence === value.sequence) return
+        throw problem('HISTORY_INVALID', 'conversation turn sequence conflicts with an existing turn', 422)
+      }
+      const aggregateTimings = { ...asJsonObject(current.aggregateTimings), ...value.timings }
       const nextStatus = status as ConversationStatus
-      await tx.insert(conversationTurnTable).values({ id: randomUUID(), conversationId: value.conversationId, turnId: value.turnId, sequence: value.sequence, state: value.state, startedAt: new Date(value.startedAt), endedAt: new Date(value.endedAt), finishReason: value.finishReason, timings: structuredClone(value.timings), transcript, toolCalls: structuredClone(value.toolCalls) }).onConflictDoNothing()
-      await tx.update(conversationTable).set({ deviceKey: value.deviceKey ?? conversation.deviceKey, endedAt: value.conversationEndedAt ? new Date(value.conversationEndedAt) : conversation.endedAt, status: nextStatus, turnCount: conversation.turnCount + 1, lastTurnAt: new Date(value.endedAt), aggregateTimings, retentionUntil: retentionUntil ?? conversation.retentionUntil }).where(eq(conversationTable.id, value.conversationId))
+      await tx.update(conversationTable).set({
+        deviceKey: value.deviceKey ?? current.deviceKey,
+        endedAt: laterDate(current.endedAt, value.conversationEndedAt ? new Date(value.conversationEndedAt) : null),
+        status: nextStatus,
+        turnCount: current.turnCount + 1,
+        lastTurnAt: laterDate(current.lastTurnAt, new Date(value.endedAt)),
+        aggregateTimings,
+        retentionUntil: laterDate(current.retentionUntil, retentionUntil),
+      }).where(eq(conversationTable.id, value.conversationId))
     })
     const detail = await this.getConversation(assistant.ownerId, value.conversationId)
     if (!detail) throw new Error('conversation ingest returned no row')
@@ -570,8 +614,48 @@ export class PostgresStore implements Store {
     return installation
   }
 
-  private mapAssistant(identity: AssistantRow, revision: AssistantRevisionRow): Assistant {
-    return { id: identity.id, ownerId: identity.ownerId, name: identity.name, role: asJsonObject(revision.role), providerSelections: asProviderSelections(revision.providerSelections), draftRevision: identity.draftRevision, publishedRevision: identity.publishedRevision ?? null, etag: revision.etag, updatedAt: revision.createdAt.toISOString() }
+  private async assistantSummaries(ownerId: string, assistantIds: readonly string[]): Promise<Map<string, AssistantSummary>> {
+    const summaries = new Map<string, AssistantSummary>(assistantIds.map((id) => [id, emptyAssistantSummary()]))
+    if (!assistantIds.length) return summaries
+
+    const [devices, conversations] = await Promise.all([
+      this.handle.db.select({
+        assistantId: deviceTable.assistantId,
+        deviceCount: sql<unknown>`count(${deviceTable.id})`,
+        onlineDeviceCount: sql<unknown>`count(${deviceTable.id}) filter (where ${deviceTable.onlineState} = 'online')`,
+      }).from(deviceTable)
+        .where(and(eq(deviceTable.ownerId, ownerId), inArray(deviceTable.assistantId, [...assistantIds])))
+        .groupBy(deviceTable.assistantId),
+      this.handle.db.select({
+        assistantId: conversationTable.assistantId,
+        lastConversationAt: sql<Date | string | null>`max(coalesce(${conversationTable.lastTurnAt}, ${conversationTable.endedAt}, ${conversationTable.startedAt}))`,
+      }).from(conversationTable)
+        .where(and(
+          eq(conversationTable.ownerId, ownerId),
+          inArray(conversationTable.assistantId, [...assistantIds]),
+          or(isNull(conversationTable.retentionUntil), gt(conversationTable.retentionUntil, new Date())),
+        ))
+        .groupBy(conversationTable.assistantId),
+    ])
+
+    for (const row of devices) {
+      if (!row.assistantId) continue
+      const current = summaries.get(row.assistantId) ?? emptyAssistantSummary()
+      summaries.set(row.assistantId, {
+        ...current,
+        deviceCount: asNonNegativeInteger(row.deviceCount),
+        onlineDeviceCount: asNonNegativeInteger(row.onlineDeviceCount),
+      })
+    }
+    for (const row of conversations) {
+      const current = summaries.get(row.assistantId) ?? emptyAssistantSummary()
+      summaries.set(row.assistantId, { ...current, lastConversationAt: asIsoTimestamp(row.lastConversationAt) })
+    }
+    return summaries
+  }
+
+  private mapAssistant(identity: AssistantRow, revision: AssistantRevisionRow, summary: AssistantSummary): Assistant {
+    return { id: identity.id, ownerId: identity.ownerId, name: identity.name, role: asJsonObject(revision.role), providerSelections: asProviderSelections(revision.providerSelections), draftRevision: identity.draftRevision, publishedRevision: identity.publishedRevision ?? null, ...summary, etag: revision.etag, updatedAt: revision.createdAt.toISOString() }
   }
 
   private mapProviderConfig(identity: ProviderConfigRow, revision: ProviderConfigRevisionRow): ProviderConfig {
@@ -588,7 +672,7 @@ export class PostgresStore implements Store {
 
   private mapDevice(row: DeviceRow): Device {
     if (!row.ownerId || !row.assistantId) throw new Error('paired device is missing owner or assistant')
-    return { id: row.id, ownerId: row.ownerId, assistantId: row.assistantId, displayName: row.displayName, maskedMac: row.maskedMac, firmwareVersion: row.firmwareVersion, board: row.board, onlineState: row.onlineState === 'online' ? 'online' : 'offline', lastSeenAt: row.lastSeenAt.toISOString(), lastConversationAt: row.lastConversationAt?.toISOString() ?? null }
+    return { id: row.id, ownerId: row.ownerId, assistantId: row.assistantId, etag: deviceEtag(row), displayName: row.displayName, maskedMac: row.maskedMac, firmwareVersion: row.firmwareVersion, board: row.board, onlineState: row.onlineState === 'online' ? 'online' : 'offline', lastSeenAt: row.lastSeenAt.toISOString(), lastConversationAt: row.lastConversationAt?.toISOString() ?? null }
   }
 
   private mapRetentionPolicy(row: RetentionPolicyRow): RetentionPolicy {
@@ -621,6 +705,27 @@ export class PostgresStore implements Store {
 
 export async function createPostgresStore(options: PostgresStoreOptions): Promise<Store & { close(): Promise<void> }> {
   return PostgresStore.open(options)
+}
+
+function emptyAssistantSummary(): AssistantSummary {
+  return { deviceCount: 0, onlineDeviceCount: 0, lastConversationAt: null }
+}
+
+function asNonNegativeInteger(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  return Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : 0
+}
+
+function asIsoTimestamp(value: Date | string | null): string | null {
+  if (value === null) return null
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+function laterDate(left: Date | null, right: Date | null): Date | null {
+  if (!left) return right
+  if (!right) return left
+  return left.getTime() >= right.getTime() ? left : right
 }
 
 function asJsonObject(value: unknown): JsonObject {

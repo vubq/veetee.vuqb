@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Cpu, Link2, Radio, RefreshCcw, Wifi, WifiOff } from '@lucide/vue'
+import { Cpu, Link2, Radio, RefreshCcw, Unlink2, Wifi, WifiOff } from '@lucide/vue'
 import { nextTick, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { requireInjection } from '@/app/requireInjection'
 import type { AssistantCard, DeviceCard } from '@/domain'
@@ -13,16 +14,23 @@ import VtEmptyState from '@/ui/primitives/VtEmptyState.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
 import VtSkeleton from '@/ui/primitives/VtSkeleton.vue'
 import VtStatus from '@/ui/primitives/VtStatus.vue'
+import { notify } from '@/ui/primitives/notifications'
 
 import PairDeviceDialog from './PairDeviceDialog.vue'
+import UnlinkDeviceDialog from './UnlinkDeviceDialog.vue'
 
 const props = defineProps<{ assistant: AssistantCard }>()
 const emit = defineEmits<{ changed: [] }>()
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
+const { t } = useI18n()
 
 const devices = ref<DeviceCard[]>([])
 const loading = ref(true)
 const pairOpen = ref(false)
+const unlinkOpen = ref(false)
+const unlinkTarget = ref<DeviceCard>()
+const unlinking = ref(false)
+const unlinkError = ref('')
 const loadState = ref<'loading' | 'ready' | 'empty' | 'error' | 'offline'>('loading')
 const loadError = ref('')
 const stateHeading = ref<HTMLElement | null>(null)
@@ -68,6 +76,61 @@ async function focusStateHeading() {
 async function onPaired() {
   await load()
   emit('changed')
+}
+
+function openUnlink(device: DeviceCard) {
+  unlinkTarget.value = device
+  unlinkError.value = ''
+  unlinkOpen.value = true
+}
+
+function updateUnlinkOpen(open: boolean) {
+  if (unlinking.value) return
+  unlinkOpen.value = open
+  if (!open) {
+    unlinkTarget.value = undefined
+    unlinkError.value = ''
+  }
+}
+
+async function confirmUnlink() {
+  const target = unlinkTarget.value
+  if (!target || unlinking.value) return
+  unlinking.value = true
+  unlinkError.value = ''
+  try {
+    const result = await gateway.unlinkDevice(target.id, target.etag)
+    if (result.ok) {
+      unlinkOpen.value = false
+      unlinkTarget.value = undefined
+      await load()
+      emit('changed')
+      notify(t('devices.unlink.success'), { tone: 'success', message: target.displayName })
+      return
+    }
+    if (result.meta.offline) {
+      unlinkError.value = t('devices.unlink.offline')
+      return
+    }
+    if (result.problem.code === 'REVISION_CONFLICT') {
+      await load()
+      const refreshed = devices.value.find((device) => device.id === target.id)
+      if (!refreshed) {
+        unlinkOpen.value = false
+        unlinkTarget.value = undefined
+        notify(t('devices.unlink.failed'), { tone: 'error', message: t('devices.unlink.conflict'), assertive: true })
+        return
+      }
+      unlinkTarget.value = refreshed
+      unlinkError.value = t('devices.unlink.conflict')
+      return
+    }
+    unlinkError.value = t('devices.unlink.failed')
+  } catch {
+    unlinkError.value = t('devices.unlink.offline')
+  } finally {
+    unlinking.value = false
+  }
 }
 
 onMounted(load)
@@ -202,7 +265,20 @@ onMounted(load)
           <span><VtIcon
             :icon="Radio"
             :size="13"
-          /> Trạng thái được mô phỏng</span>
+          /> {{ t('devices.connectionInfo') }}</span>
+          <VtButton
+            size="sm"
+            variant="ghost"
+            :aria-label="`${t('devices.unlink.action')}: ${device.displayName}`"
+            @click="openUnlink(device)"
+          >
+            <template #leading>
+              <VtIcon
+                :icon="Unlink2"
+                :size="13"
+              />
+            </template>{{ t('devices.unlink.action') }}
+          </VtButton>
         </footer>
       </VtCard>
     </div>
@@ -211,6 +287,14 @@ onMounted(load)
       :assistants="[assistant]"
       :assistant-id="assistant.id"
       @paired="onPaired"
+    />
+    <UnlinkDeviceDialog
+      :open="unlinkOpen"
+      :device="unlinkTarget"
+      :loading="unlinking"
+      :error="unlinkError"
+      @update:open="updateUnlinkOpen"
+      @confirm="confirmUnlink"
     />
   </section>
 </template>
@@ -238,7 +322,7 @@ onMounted(load)
 .device-details div:nth-child(n+3) { border-top: 1px solid var(--vt-border); }
 .device-details dt { color: var(--vt-text-muted); font-size: 9px; }
 .device-details dd { margin: 3px 0 0; overflow: hidden; color: var(--vt-text-soft); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.device-card footer { display: flex; justify-content: flex-end; margin-top: 10px; color: var(--vt-text-faint); font-size: 9px; }
+.device-card footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--vt-text-faint); font-size: 9px; }
 .device-card footer span { display: inline-flex; align-items: center; gap: 5px; }
 .device-skeleton { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; }
 .device-skeleton > div { display: grid; gap: 8px; }
