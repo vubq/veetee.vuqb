@@ -19,6 +19,7 @@ import VtTextArea from '@/ui/primitives/VtTextArea.vue'
 import { notify } from '@/ui/primitives/notifications'
 
 import RevisionConflictDialog from './RevisionConflictDialog.vue'
+import { deriveLocaleOptions } from './locale-options'
 
 const props = defineProps<{ assistantId: string }>()
 const emit = defineEmits<{ revision: [revision: number, dirty: boolean] }>()
@@ -107,24 +108,7 @@ const noSpeechAlertInvalid = computed(() => {
 const autoTurnError = computed(() => Boolean(draft.value?.autoTurn.enabled && (noSpeechTimeoutInvalid.value || noSpeechAlertInvalid.value)))
 
 const voiceOptions = computed<VtSelectOption[]>(() => voices.value.map((voice) => ({ value: voice.id, label: voice.name, description: `${voice.providerName} · ${voice.description}`, disabled: !voice.available })))
-const localeOptions = computed<VtSelectOption[]>(() => {
-  const locales = new Set<string>()
-  if (draft.value?.locale) locales.add(draft.value.locale)
-  installations.value
-    .filter((installation) => installation.kind === 'tts')
-    .forEach((installation) => {
-      const values = installation.manifest.locales
-      if (!Array.isArray(values)) return
-      values.forEach((value) => {
-        if (typeof value === 'string' && value.trim() && value !== '*') locales.add(value.trim())
-      })
-    })
-  return [...locales].sort((left, right) => left.localeCompare(right)).map((locale) => ({
-    value: locale,
-    label: locale,
-    description: locale === draft.value?.locale ? 'Ngôn ngữ hiện tại' : 'Từ catalog provider',
-  }))
-})
+const localeOptions = computed(() => deriveLocaleOptions(installations.value, draft.value?.locale))
 const personalityOptions: VtSelectOption[] = [{ value: '41111111-1111-4111-8111-111111111111', label: 'Người bạn đồng hành', description: 'Tự nhiên, thân thiện và biết hỏi lại' }, { value: '42222222-2222-4222-8222-222222222222', label: 'Trợ lý tập trung', description: 'Ngắn gọn, ưu tiên hành động' }, { value: 'custom', label: 'Tính cách tùy chỉnh', description: 'Prompt quyết định hành vi' }]
 const styleOptions: VtSelectOption[] = [{ value: 'concise', label: 'Ngắn gọn' }, { value: 'natural', label: 'Tự nhiên' }, { value: 'detailed', label: 'Chi tiết' }]
 const rateOptions: VtSelectOption[] = [{ value: '0.9', label: 'Chậm · 0,9×' }, { value: '1', label: 'Tự nhiên · 1,0×' }, { value: '1.05', label: 'Nhanh nhẹ · 1,05×' }, { value: '1.1', label: 'Nhanh · 1,1×' }]

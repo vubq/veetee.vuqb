@@ -102,6 +102,7 @@ describe('RoleConfigFeature read states', () => {
     expect(await view.findByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })).toBeTruthy()
     expect(getRoleConfig).toHaveBeenCalledTimes(2)
   })
+
 })
 
 describe('RoleConfigFeature mutations', () => {

@@ -816,6 +816,6 @@
 - Provider catalog/read lỗi làm form fail-closed; voice request chuyển locale
   có loading/error handling, không giữ danh sách voice stale như trạng thái live.
   Locale wildcard không bị biến thành giá trị `*` để publish.
-- Manager Web unit **92/92**, E2E **11/11**, typecheck/lint/build pass. Không
+- Manager Web unit **93/93**, E2E **11/11**, typecheck/lint/build pass. Không
   đổi API/wire/provider fallback, không restart runtime, không phát audio/mở
   microphone/speaker, không flash/reset ESP32, không đổi Wi-Fi/Tailscale.
