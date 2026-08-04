@@ -336,6 +336,15 @@
 - Đây chỉ là synchronous text smoke; chưa đủ để promote model theo streaming
   TTFA, WER, tool-following hoặc VRAM. Production không dùng key pool fallback.
 
+### Groq SSE first-text probe (test-only, 2026-08-05)
+
+- `tools/groq_probe.py --stream` parse SSE fail-closed và chỉ đo first
+  meaningful text; tool-call delta/`[DONE]` không được tính là token đầu.
+- `llama-3.3-70b-versatile`: 4/4 HTTP 200, first text **269–339 ms**, 5 chunks.
+- `llama-3.1-8b-instant`: 4/4 HTTP 200, first text **260–359 ms**, 5 chunks.
+- Regression parser mới **3 passed**; probe chỉ là Internet text smoke, chưa
+  phải E2E TTFA/WER/tool-following/VRAM promotion và không đổi production config.
+
 ### PostgreSQL test isolation and acoustic-test pause (2026-08-04)
 
 - Test harness Manager API nay fail-closed nếu `VEETEE_TEST_DATABASE_URL_FILE`
