@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { History, RefreshCcw } from '@lucide/vue'
+import { History, RefreshCcw, WifiOff } from '@lucide/vue'
 import { nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
@@ -25,6 +25,7 @@ const retentionSaveError = ref('')
 const selected = ref<ConversationDetail>()
 const selectedItem = ref<ConversationSummary>()
 const loading = ref(true)
+const stale = ref(false)
 const detailLoading = ref(false)
 const loadState = ref<'loading' | 'ready' | 'empty' | 'error' | 'offline'>('loading')
 const loadError = ref('')
@@ -48,6 +49,7 @@ async function load() {
   const generation = ++loadGeneration
   detailGeneration += 1
   loading.value = true
+  stale.value = false
   detailLoading.value = false
   selected.value = undefined
   selectedItem.value = undefined
@@ -73,10 +75,12 @@ async function load() {
     }
     conversations.value = history.data.items
     retention.value = policy.data
+    stale.value = history.meta.freshness === 'stale' || policy.meta.freshness === 'stale' || history.meta.offline || policy.meta.offline
     loadState.value = conversations.value.length > 0 ? 'ready' : 'empty'
   } catch {
     if (generation !== loadGeneration) return
     loadState.value = 'offline'
+    stale.value = false
     loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
     await focusListState()
   } finally {
@@ -175,6 +179,17 @@ onMounted(load)
           />
         </template>Làm mới
       </VtButton>
+    </div>
+    <div
+      v-if="stale"
+      class="offline-banner"
+      role="status"
+    >
+      <VtIcon
+        :icon="WifiOff"
+        :size="15"
+      />
+      <span><strong>Dữ liệu ngoại tuyến</strong> — đang xem snapshot retention/lịch sử cũ; thay đổi sẽ bị chặn cho tới khi đồng bộ lại.</span>
     </div>
 
     <RetentionPolicyPanel
@@ -304,6 +319,7 @@ onMounted(load)
 .history-feature { display: grid; gap: 12px; }
 .history-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-section); background: var(--vt-surface); padding: 10px 12px; }
 .history-toolbar strong { display: block; font-size: 12px; }.history-toolbar span { color: var(--vt-text-muted); font-size: 9px; }
+.offline-banner { display: flex; align-items: center; gap: 8px; border: 1px solid #efd39e; border-radius: var(--vt-radius-section); background: var(--vt-warning-soft); color: var(--vt-warning); padding: 9px 11px; font-size: 10px; line-height: 1.45; }.offline-banner strong { font-weight: 700; }
 .history-layout { display: grid; grid-template-columns: minmax(220px, .75fr) minmax(0, 1.25fr); gap: 12px; }.history-list { display: grid; gap: 8px; }.history-item { cursor: pointer; padding: 12px; }.history-item.selected { border-color: var(--vt-primary); box-shadow: 0 0 0 3px var(--vt-focus); }.history-item header, .history-detail header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }.history-item header div, .history-detail header div { display: grid; gap: 3px; }.history-item strong, .history-detail strong { font-size: 11px; }.history-item span, .history-detail span { color: var(--vt-text-muted); font-size: 9px; }.history-item p { margin: 9px 0 0; color: var(--vt-text-soft); font-size: 9px; }.history-detail { min-height: 270px; padding: 14px; }.transcript { display: grid; gap: 9px; margin: 16px 0 0; padding: 0; list-style: none; }.transcript li { border: 1px solid var(--vt-border); border-radius: 7px; background: var(--vt-surface-subtle); padding: 9px 10px; }.transcript li.user { background: #f1f6fb; }.transcript span { font-size: 9px; font-weight: 700; }.transcript p { margin: 4px 0 0; color: var(--vt-text-soft); font-size: 10px; line-height: 1.5; }.history-skeleton { display: grid; gap: 8px; padding: 13px; }.detail-loading { margin-top: 16px; }
 .history-state { display: grid; justify-items: center; gap: 4px; color: var(--vt-text-muted); padding: 24px; text-align: center; }
 .history-state h2 { margin: 0; color: var(--vt-text); font-size: 14px; }

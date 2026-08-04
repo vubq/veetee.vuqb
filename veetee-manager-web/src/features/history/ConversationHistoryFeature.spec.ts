@@ -122,6 +122,14 @@ describe('ConversationHistoryFeature list states', () => {
     expect(within(emptyState as HTMLElement).queryByRole('button')).toBeNull()
   })
 
+  it('marks a valid stale snapshot without presenting it as live data', async () => {
+    const view = renderFeature(gateway({ getRetentionPolicy: vi.fn(async () => success(retention, true)) }))
+
+    expect(await view.findByText('Dữ liệu ngoại tuyến')).toBeTruthy()
+    expect(view.getByText(/snapshot retention\/lịch sử cũ/)).toBeTruthy()
+    expect(view.getByRole('button', { name: 'Lưu retention policy' })).toBeTruthy()
+  })
+
   it('retries a transient list failure and restores the history item', async () => {
     const listConversations = vi.fn()
       .mockResolvedValueOnce(failure())

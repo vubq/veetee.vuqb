@@ -574,6 +574,9 @@
 - Offline, stale revision và validation không làm mất draft; lỗi được focus,
   announce bằng `role=alert` và toast. Preview `MockGateway` lưu policy/revision
   riêng, không chạm API/database thật.
+- History cũng hiển thị banner khi một trong hai read (`conversations` hoặc
+  `retention-policy`) là snapshot stale/offline có dữ liệu, nên operator không
+  nhầm dữ liệu cũ với trạng thái live.
 - Web verification: typecheck, lint, production build, unit **79/79** và
   Chromium E2E **9/9**; axe serious/critical gate pass. Không gọi Groq, không
   phát audio, không mở microphone/speaker, không flash/reset firmware, không đổi
