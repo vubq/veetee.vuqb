@@ -495,3 +495,15 @@
   để phát audio.
 - Runtime tools: **20/20** pass. Đây là host/network evidence; M0/M1 physical
   speaker/LCD/PTT/wake/AEC acceptance vẫn chờ quyền audio của operator.
+
+### Idle resource observation (2026-08-05, non-audio)
+
+- Runtime snapshot revision `87` đang chọn PhoWhisper CUDA `int8_float16`, Silero
+  VAD CPU và VieNeu ONNX INT8. Đo read-only trên đúng Voice process trong 10 mẫu
+  cách nhau 1 giây: RSS ổn định khoảng **1086 MiB**, CUDA process memory ổn định
+  **344 MiB** trên GTX 1650Ti 4 GiB.
+- Đây chỉ là measured warm/idle observation của generation đang chạy; chưa đo
+  candidate peak delta, standalone candidate peak hoặc BLUE_GREEN activation.
+  Vì vậy chưa publish `resourceBudget` và chưa coi provider/VRAM promotion gate
+  đạt. Không phát audio, không gọi Groq, không load generation thứ hai và không
+  mutate runtime/database/network.
