@@ -1095,3 +1095,19 @@
 - Targeted UDP **18 passed**; full Voice Server **134 passed**, Ruff và
   compileall pass. Không mở broker/socket/carrier, không decode/play audio,
   không flash/reset ESP32 và không đổi Wi‑Fi/Tailscale.
+
+### Local provider dependency repair và Voice recovery (2026-08-05)
+
+- Restart Voice sau commit `8b20176` ban đầu fail vì môi trường `.venv` thiếu
+  `onnxruntime`, `faster-whisper` và `vieneu`; lock cũ còn chọn `numba 0.53.1`
+  không chạy trên Python 3.12. Đã regenerate `veetee-server/uv.lock` sang
+  `numba 0.66.0`/`llvmlite 0.48.0`/`numpy 2.4.6` và sync đủ extras test + local.
+- Import smoke và `_prepare_registry()` với Manager snapshot revision `87`
+  pass; Voice transient `veetee-voice-18100.service` đã active lại. Readiness
+  hiện tại: Voice `18100` revision `87`, Manager API `18101` revision `87`, Web
+  `18181` HTTP `200`; `activationFailures=0`, `activeTurns=0`, metrics idle
+  `protocol_errors=0`. `activeConnections` có thể thay đổi khi board tự
+  reconnect và không phải physical audio acceptance.
+- Voice Server regression **139 passed**, Ruff/compileall pass. Đây chỉ là
+  host/runtime evidence; M0/M1 physical gates vẫn mở. Theo operator lock từ
+  đây không phát audio hoặc mở serial audio cho tới khi được cấp quyền mới.
