@@ -430,6 +430,13 @@ static void capture_task(void *context) {
 #endif
             continue;
         }
+        esp_err_t process_result = vt_audio_process_capture(&app->audio, samples, sample_count);
+        if (process_result != ESP_OK) {
+#if CONFIG_VEETEE_AUDIO_DIAGNOSTICS
+            ESP_LOGW(TAG, "capture noise processing skipped result=%s", esp_err_to_name(process_result));
+#endif
+            continue;
+        }
 #if CONFIG_VEETEE_AUDIO_DIAGNOSTICS
         TickType_t now = xTaskGetTickCount();
         if ((int32_t)(now - next_level_log) >= 0) {

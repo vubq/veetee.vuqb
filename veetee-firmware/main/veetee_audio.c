@@ -7,6 +7,7 @@
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_ns.h"
 #include "freertos/FreeRTOS.h"
 #include "encoder/impl/esp_opus_enc.h"
 #include "decoder/impl/esp_opus_dec.h"
@@ -15,6 +16,16 @@
 #define VT_AUDIO_DMA_DESC_NUM 8
 #define VT_AUDIO_DMA_FRAME_NUM 240
 #define VT_AUDIO_PCM_SHIFT 12
+
+#ifndef CONFIG_VEETEE_NOISE_SUPPRESSION_ENABLED
+#define CONFIG_VEETEE_NOISE_SUPPRESSION_ENABLED 0
+#endif
+#ifndef CONFIG_VEETEE_NOISE_SUPPRESSION_MODE
+#define CONFIG_VEETEE_NOISE_SUPPRESSION_MODE 1
+#endif
+#define VT_NOISE_SAMPLE_RATE 16000
+#define VT_NOISE_FRAME_MS 10
+#define VT_NOISE_FRAME_SAMPLES (VT_NOISE_SAMPLE_RATE * VT_NOISE_FRAME_MS / 1000)
 
 static int frame_duration_to_encoder(int duration_ms) {
     switch (duration_ms) {
@@ -83,6 +94,12 @@ void vt_audio_deinit(vt_audio_t *audio) {
         (void)esp_opus_dec_close(audio->decoder);
         audio->decoder = NULL;
     }
+#if CONFIG_VEETEE_NOISE_SUPPRESSION_ENABLED
+    if (audio->noise_suppressor != NULL) {
+        ns_destroy(audio->noise_suppressor);
+        audio->noise_suppressor = NULL;
+    }
+#endif
     if (audio->input_raw != NULL) {
         heap_caps_free(audio->input_raw);
         audio->input_raw = NULL;
@@ -103,6 +120,11 @@ void vt_audio_deinit(vt_audio_t *audio) {
         heap_caps_free(audio->output_pcm);
         audio->output_pcm = NULL;
     }
+    if (audio->noise_frame != NULL) {
+        heap_caps_free(audio->noise_frame);
+        audio->noise_frame = NULL;
+    }
+    audio->noise_frame_samples = 0;
     audio->started = false;
 }
 
@@ -115,6 +137,29 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
     audio->input_frame_bytes = audio->input_frame_samples * (int)sizeof(int16_t);
     audio->output_frame_bytes = audio->output_frame_samples * (int)sizeof(int16_t);
     if (audio->input_frame_samples <= 0 || audio->output_frame_samples <= 0) return ESP_ERR_INVALID_SIZE;
+#if CONFIG_VEETEE_NOISE_SUPPRESSION_ENABLED
+    if (config->input_sample_rate != VT_NOISE_SAMPLE_RATE) {
+        ESP_LOGE(TAG, "noise suppression requires input sample rate=%d, got=%d", VT_NOISE_SAMPLE_RATE,
+                 config->input_sample_rate);
+        return ESP_ERR_INVALID_ARG;
+    }
+    audio->noise_frame_samples = VT_NOISE_FRAME_SAMPLES;
+    audio->noise_frame = heap_caps_calloc(audio->noise_frame_samples, sizeof(*audio->noise_frame),
+                                           MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (audio->noise_frame == NULL) {
+        vt_audio_deinit(audio);
+        return ESP_ERR_NO_MEM;
+    }
+    audio->noise_suppressor = ns_pro_create(VT_NOISE_FRAME_MS, CONFIG_VEETEE_NOISE_SUPPRESSION_MODE,
+                                             VT_NOISE_SAMPLE_RATE);
+    if (audio->noise_suppressor == NULL) {
+        ESP_LOGE(TAG, "noise suppression init failed mode=%d", CONFIG_VEETEE_NOISE_SUPPRESSION_MODE);
+        vt_audio_deinit(audio);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    ESP_LOGI(TAG, "noise suppression enabled mode=%d frame_samples=%u", CONFIG_VEETEE_NOISE_SUPPRESSION_MODE,
+             (unsigned)audio->noise_frame_samples);
+#endif
     audio->input_raw = heap_caps_calloc((size_t)audio->input_frame_samples, sizeof(*audio->input_raw),
                                         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (audio->input_raw == NULL) {
@@ -250,6 +295,23 @@ int vt_audio_read_pcm(vt_audio_t *audio, int16_t *samples, size_t sample_capacit
         samples[index] = (int16_t)value;
     }
     *sample_count = count;
+    return ESP_OK;
+}
+
+int vt_audio_process_capture(vt_audio_t *audio, int16_t *samples, size_t sample_count) {
+    if (audio == NULL || samples == NULL || sample_count == 0U) return ESP_ERR_INVALID_ARG;
+#if CONFIG_VEETEE_NOISE_SUPPRESSION_ENABLED
+    if (audio->noise_suppressor == NULL || audio->noise_frame == NULL || audio->noise_frame_samples == 0U) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (sample_count % audio->noise_frame_samples != 0U) return ESP_ERR_INVALID_SIZE;
+    for (size_t offset = 0; offset < sample_count; offset += audio->noise_frame_samples) {
+        ns_process(audio->noise_suppressor, samples + offset, audio->noise_frame);
+        memcpy(samples + offset, audio->noise_frame, audio->noise_frame_samples * sizeof(*samples));
+    }
+#else
+    (void)sample_count;
+#endif
     return ESP_OK;
 }
 

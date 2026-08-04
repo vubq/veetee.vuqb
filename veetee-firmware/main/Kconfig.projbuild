@@ -156,6 +156,25 @@ config VEETEE_AUDIO_FRAME_DURATION_MS
     range 20 120
     default 60
 
+config VEETEE_NOISE_SUPPRESSION_ENABLED
+    bool "Enable on-device noise suppression"
+    default n
+    depends on VEETEE_ENABLE_HARDWARE
+    help
+        Run the ESP-SR single-microphone noise suppressor before WakeNet and
+        uplink encoding. The current board is simplex I2S, so this option does
+        not provide acoustic echo cancellation; AEC requires a verified
+        playback-reference channel and remains a separate promotion gate.
+
+config VEETEE_NOISE_SUPPRESSION_MODE
+    int "Noise suppression strength"
+    range 0 2
+    default 1
+    depends on VEETEE_NOISE_SUPPRESSION_ENABLED
+    help
+        ESP-SR mode: 0 mild, 1 medium, 2 aggressive. Keep this in the board
+        configuration so model/strength changes do not require source edits.
+
 config VEETEE_PLAYBACK_QUEUE_DEPTH
     int "Downlink Opus playback queue depth"
     range 4 64

@@ -28,6 +28,9 @@ typedef struct {
     int32_t *input_raw;
     int16_t *decode_pcm;
     int32_t *output_pcm;
+    void *noise_suppressor;
+    int16_t *noise_frame;
+    size_t noise_frame_samples;
     int input_frame_bytes;
     int output_frame_bytes;
     int input_frame_samples;
@@ -41,6 +44,7 @@ int vt_audio_start(vt_audio_t *audio);
 int vt_audio_stop(vt_audio_t *audio);
 void vt_audio_deinit(vt_audio_t *audio);
 int vt_audio_read_pcm(vt_audio_t *audio, int16_t *samples, size_t sample_capacity, size_t *sample_count);
+int vt_audio_process_capture(vt_audio_t *audio, int16_t *samples, size_t sample_count);
 int vt_audio_encode(vt_audio_t *audio, const int16_t *samples, size_t sample_count, uint8_t *opus, size_t opus_capacity, size_t *opus_size);
 int vt_audio_decode_and_play(vt_audio_t *audio, const uint8_t *opus, size_t opus_size);
 int vt_audio_play_tone(vt_audio_t *audio, int frequency_hz, int duration_ms, int amplitude);
