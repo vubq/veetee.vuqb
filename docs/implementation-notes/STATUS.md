@@ -197,3 +197,8 @@
 - TLS/HTML/WebSocket từ hostname cần được xác nhận trên một peer khác trong
   tailnet; userspace Tailscale trên chính host không được coi là self-route
   evidence.
+- Sau commit `68243d6`, Voice unit `veetee-voice-18100` đã được restart đúng
+  source mới; VieNeu prewarm hoàn tất, health revision `87` ready và board đã
+  reconnect (`activeConnections=1`, `activeTurns=0`). Server regression là
+  **62 passed**; probe Web root/API/OpenAPI đều `200`, WebSocket route trả `400`
+  khi thiếu hello như contract, không phải lỗi proxy.
