@@ -492,9 +492,9 @@
   thái pending cho đến khi operator cấp quyền lại.
 - Regression sau commit `0ac28a7`: Voice Server **81/81**; Manager API với
   dedicated PostgreSQL `veetee_vubq_test` **36/36**; Manager Web typecheck,
-  lint, build và unit **68/68**; Chromium E2E chưa chạy lại trong mốc này vì
-  không có thay đổi UI behavior, bằng chứng gần nhất vẫn **9/9**; firmware host
-  CTest **1/1**; runtime tools **20/20**.
+  lint, build và unit **68/68**; Chromium E2E **9/9** (bao gồm provider
+  revision/conflict, history keyboard, mobile overflow và serious/critical a11y);
+  firmware host CTest **1/1**; runtime tools **20/20**.
 - Readiness read-only không restart service: Voice `18100`, API `18101`, Web
   `18181` đều trả `200`; Voice `activeConnections=1`, `activeTurns=0`,
   `protocol_errors=0`. Không gọi Groq, không load provider generation mới và
