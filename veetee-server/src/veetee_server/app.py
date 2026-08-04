@@ -46,6 +46,7 @@ class VoiceApplication:
             "session_releases": 0,
             "session_handovers": 0,
             "session_handover_cleanup_errors": 0,
+            "turn_disconnect_aborts": 0,
             "active_turns": 0,
             "turn_admissions": 0,
             "turn_rejections": 0,
@@ -251,25 +252,44 @@ class VoiceSession:
             self.app.metrics["protocol_errors"] += 1
             await self.close(1002, "protocol error")
         finally:
-            try:
-                if self._mcp_discovery_task is not None and not self._mcp_discovery_task.done():
-                    self._mcp_discovery_task.cancel()
-                    await asyncio.gather(self._mcp_discovery_task, return_exceptions=True)
-                if self.mcp is not None:
-                    self.mcp.cancel_all()
-                # Presence enqueue is intentionally synchronous and best-effort;
-                # the reporter owns delivery in its background worker.  Awaiting
-                # this boolean return would raise during every normal disconnect.
-                self._report_presence("offline")
-                await self._abort(reason="disconnect", send_stop=False)
-            finally:
-                if self.view is not None:
-                    await self.app.runtime.release_view(self.view)
-                    self.view = None
-                if self._admitted:
-                    await self.app.release_session(self)
-                    self._admitted = False
-                self._finished.set()
+            # aiohttp may cancel the request task while a peer is closing. Run
+            # turn/session cleanup in a shielded child so cancellation cannot
+            # strand the lease or let a reconnect inherit stale ownership.
+            if self._closed:
+                await self._cleanup()
+            else:
+                cleanup = asyncio.create_task(self._cleanup(), name=f"session-cleanup-{self.session_id}")
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    await cleanup
+                    # A deliberate server close (for example session handover)
+                    # already has a close code on the wire; do not turn it into
+                    # an abnormal 1006 while still propagating unexpected
+                    # cancels.
+                    if not self._closed:
+                        raise
+
+    async def _cleanup(self) -> None:
+        try:
+            if self._mcp_discovery_task is not None and not self._mcp_discovery_task.done():
+                self._mcp_discovery_task.cancel()
+                await asyncio.gather(self._mcp_discovery_task, return_exceptions=True)
+            if self.mcp is not None:
+                self.mcp.cancel_all()
+            # Presence enqueue is intentionally synchronous and best-effort;
+            # the reporter owns delivery in its background worker.  Awaiting
+            # this boolean return would raise during every normal disconnect.
+            self._report_presence("offline")
+            await self._abort(reason="disconnect", send_stop=False)
+        finally:
+            if self.view is not None:
+                await self.app.runtime.release_view(self.view)
+                self.view = None
+            if self._admitted:
+                await self.app.release_session(self)
+                self._admitted = False
+            self._finished.set()
 
     async def _hello(self, message: dict[str, Any]) -> None:
         if message.get("type") != "hello":
@@ -556,6 +576,8 @@ class VoiceSession:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
         if turn is not None:
+            if reason == "disconnect":
+                self.app.metrics["turn_disconnect_aborts"] += 1
             turn.state = "aborted"
             turn.finish_reason = reason
             turn.conversation_status = "aborted" if reason == "disconnect" else "active"

@@ -437,6 +437,8 @@ text marker để không tính whitespace/tool delta như speech-ready text.
 - TTS first-chunk/RTF, resample/encode cost.
 - Queue age/depth/drop và event-loop lag.
 - Session/task/fd count, CPU/RSS/VRAM/model state.
+- Session handover/release và số turn bị abort khi transport disconnect; reconnect
+  không được để lại model lease hoặc stale output.
 - Barge-in time-to-silence và stale-frame rejection.
 
 Không dùng raw `session_id`, `device_id`, prompt hoặc transcript làm metric label.

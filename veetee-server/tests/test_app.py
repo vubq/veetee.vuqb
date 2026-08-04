@@ -61,6 +61,80 @@ async def test_websocket_v3_handshake_and_turn(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_disconnect_aborts_active_turn_and_releases_lease(monkeypatch):
+    """A transport drop must cancel the provider task before the next session."""
+
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    llm_started = asyncio.Event()
+
+    class FastASR:
+        def reset(self) -> None:
+            pass
+
+        async def accept(self, pcm: bytes, sample_rate: int) -> None:
+            del pcm, sample_rate
+
+        async def finish(self, locale: str) -> str:
+            del locale
+            return "xin chao"
+
+    class SlowLLM:
+        async def stream(self, *, prompt: str, locale: str, tools: list[dict[str, object]]):
+            del prompt, locale, tools
+            llm_started.set()
+            await asyncio.sleep(30)
+            yield LLMDelta(text="khong nen phat", final=True)
+
+    registry = runtime.view.registry
+    registry.asr = FastASR()
+    registry.llm = SlowLLM()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    websocket = None
+    try:
+        websocket = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "disconnect-test", "Client-Id": "disconnect-client", "Protocol-Version": "3"},
+        )
+        await websocket.send_json({
+            "type": "hello",
+            "version": 3,
+            "transport": "websocket",
+            "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+        })
+        hello = await websocket.receive_json()
+        from veetee_server.protocol import AudioFrame, encode_audio
+
+        encoder = __import__("opuslib").Encoder(16000, 1, __import__("opuslib").APPLICATION_AUDIO)
+        frame = encode_audio(AudioFrame("ws-v3", encoder.encode(b"\0" * 1920, 960)))
+        await websocket.send_json({"type": "listen", "state": "start", "mode": "manual", "session_id": hello["session_id"]})
+        await websocket.send_bytes(frame)
+        await websocket.send_json({"type": "listen", "state": "stop", "session_id": hello["session_id"]})
+        await asyncio.wait_for(llm_started.wait(), timeout=2)
+        await websocket.close()
+        for _ in range(100):
+            if service.metrics["session_releases"] == 1:
+                break
+            await asyncio.sleep(0.01)
+        assert service.metrics["active_turns"] == 0
+        assert service.metrics["session_releases"] == 1
+        assert service.metrics["turn_disconnect_aborts"] == 1
+        assert service.metrics["turn_releases"] == 1
+    finally:
+        if websocket is not None:
+            await websocket.close()
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_health_reports_last_activation_error_type_without_detail(monkeypatch):
     fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
     monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
