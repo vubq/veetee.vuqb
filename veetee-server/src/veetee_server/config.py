@@ -31,6 +31,7 @@ class BargeInPolicy:
     enabled: bool
     device_duplex: bool
     min_speech_frames: int
+    cooldown_ms: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,7 +196,7 @@ class RuntimeSnapshot:
 
         raw = self.raw.get("bargeIn")
         if raw is None:
-            return BargeInPolicy(enabled=True, device_duplex=False, min_speech_frames=2)
+            return BargeInPolicy(enabled=True, device_duplex=False, min_speech_frames=2, cooldown_ms=0)
         if not isinstance(raw, dict):
             raise ConfigurationError("snapshot.bargeIn must be an object")
         enabled = raw.get("enabled", True)
@@ -207,7 +208,16 @@ class RuntimeSnapshot:
         minimum = raw.get("minSpeechFrames", 2)
         if isinstance(minimum, bool) or not isinstance(minimum, int) or not 1 <= minimum <= 32:
             raise ConfigurationError("snapshot.bargeIn.minSpeechFrames must be between 1 and 32")
-        return BargeInPolicy(enabled=enabled, device_duplex=device_duplex, min_speech_frames=minimum)
+        default_cooldown = 2_000 if device_duplex else 0
+        cooldown = raw.get("cooldownMs", default_cooldown)
+        if isinstance(cooldown, bool) or not isinstance(cooldown, int) or not 0 <= cooldown <= 5_000:
+            raise ConfigurationError("snapshot.bargeIn.cooldownMs must be between 0 and 5000")
+        return BargeInPolicy(
+            enabled=enabled,
+            device_duplex=device_duplex,
+            min_speech_frames=minimum,
+            cooldown_ms=cooldown,
+        )
 
 
 def load_snapshot(path: Path) -> RuntimeSnapshot:

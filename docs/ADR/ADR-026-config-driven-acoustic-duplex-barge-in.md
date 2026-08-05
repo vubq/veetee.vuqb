@@ -94,3 +94,4 @@ Chọn **Option C**.
 - [ADR-006 — Streaming turn cancellation](ADR-006-streaming-turn-cancellation.md)
 - [ADR-020 — Device AEC adapter](ADR-020-device-aec-adapter.md)
 - [ADR-023 — Firmware stale `tts/stop` barrier](ADR-023-firmware-stale-tts-stop-barrier.md)
+- [ADR-027 — Acoustic barge-in rearm cooldown](ADR-027-acoustic-barge-in-rearm-cooldown.md)

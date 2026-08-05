@@ -277,7 +277,8 @@ Snapshot là contract immutable mà Voice Server tiêu thụ. Hình dạng tối
   "bargeIn": {
     "enabled": true,
     "deviceDuplex": false,
-    "minSpeechFrames": 2
+    "minSpeechFrames": 2,
+    "cooldownMs": 2000
   },
   "toolPolicy": { "maxRounds": 3, "timeoutMs": 30000 },
   "tools": [],
@@ -306,8 +307,10 @@ Không hardcode câu “đợi chút” vào pipeline hoặc UI.
 `bargeIn.deviceDuplex` là owner-configured opt-in. Khi `false` hoặc field vắng,
 firmware giữ half-duplex trong lúc TTS phát; khi `true`, server thêm metadata
 `tts/start.barge_in` và firmware chỉ bật uplink nếu AEC ready. `minSpeechFrames`
-được validate trong khoảng `1..32`; promotion acoustic vẫn cần corpus/latency
-evidence riêng và không được bật mặc định chỉ vì role form lưu được field.
+được validate trong khoảng `1..32`; `cooldownMs` được validate trong khoảng
+`0..5000` và dùng để chặn residual-echo retrigger ngay sau một commit. Promotion
+acoustic vẫn cần corpus/latency evidence riêng và không được bật mặc định chỉ vì
+role form lưu được field.
 
 `admission` cũng là policy additive của snapshot. `maxActiveTurns` bị giới hạn
 trong khoảng 1–8; `retryAfterMs` chỉ là hint cho client khi server trả

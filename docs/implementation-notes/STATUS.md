@@ -1551,3 +1551,46 @@
   Voice/API/Web ready, board `activeConnections=1`, `activeTurns=0`,
   `protocol_errors=0`. M0/M1 physical PTT/LCD/loa, acoustic time-to-silence,
   false accept/reject và 100-repetition vẫn mở.
+
+### Acoustic rearm cooldown guard (2026-08-05)
+
+- `bargeIn.cooldownMs` đã được implement additive ở server/config, API/OpenAPI,
+  Manager Web và `tts/start.barge_in.cooldown_ms`; bounded `0..5000`, default
+  half-duplex `0`, duplex `2000`. ADR: [`ADR-027`](../ADR/ADR-027-acoustic-barge-in-rearm-cooldown.md).
+- Regression: Voice **172 passed**, Manager API **45 (33 pass/12 PostgreSQL
+  skip)** + OpenAPI check, Web **96 unit** + typecheck/lint/build pass.
+- Physical A/B cooldown `2000 ms` chạy control markers và sau 25 giây đạt
+  `barge_in_count=2`, `turn_admissions=3`, `turn_releases=3`,
+  `active_turns=0`; baseline trước guard đã loop `10/11/10`, active turn `1`.
+  Report `/tmp/veetee-acoustic-duplex-cooldown-20260805.json`. A/B `5000 ms`
+  inconclusive vì wake false-reject trước stage barge.
+- Production revision `87` đã restore, board `activeConnections=1`, health
+  Voice/API/Web `200`, không DB/network/NVS mutation. Guard giảm loop nhưng
+  acoustic voice-onset, false accept/reject, time-to-silence và production
+  promotion vẫn **mở**.
+
+### Audio permission — direct physical verification and Groq test pool (2026-08-05)
+
+- Production audio smoke `/tmp/veetee-wake-audio-20260805.json` đã phát wake và
+  utterance tới `state=speaking`; fail cuối chỉ do scenario cũ chờ marker
+  `wake capture complete` thay vì marker hiện tại `wake detector armed`.
+- Scenario drain-aware production `/tmp/veetee-wake-normal-audio-20260805.json`
+  hoàn tất lượt 1, còn lượt 2 dừng trước `state=speaking` với
+  `provider_error_LLM_RATE_LIMITED=1`; đây là single-secret quota evidence,
+  không phải board/audio crash.
+- Snapshot fixture ngoài Git revision `9001` với Silero VAD local, ASR/TTS
+  deterministic và `VEETEE_TEST_GROQ_KEYS_FILE=secrets/groq.keys` được chạy
+  physical **2/2** tại cùng port. Report
+  `/tmp/veetee-wake-groq-pool-silero-20260805.json`: đầy đủ wake/capture/TTS/
+  drain/re-arm, player exit `0`, không forbidden marker. Voice log xác nhận
+  key ordinal `1` rồi `2` thành công; metrics cuối `turn_admissions=2`,
+  `turn_releases=2`, `active_turns=0`, `protocol_errors=0`,
+  `last_ttfa_ms=276` (fixture tone, không dùng làm TTFA p95).
+- Một fixture thử Energy VAD trước đó giữ turn lease vì không endpoint trong
+  cửa sổ harness; đã dừng và thay bằng Silero cho bài kiểm tra key-pool. Không
+  sửa production snapshot/DB, không commit snapshot/key/raw audio; production
+  Manager-source revision `87` đã restore và board `activeConnections=1`.
+- Kiểm tra sau cleanup: Voice full suite **172 passed**, Manager Web Chromium
+  E2E **11 passed**, firmware host CTest **8/8 passed**. Các gate acoustic
+  echo-only/voice-onset, time-to-silence, false accept/reject, 100 repetition,
+  PTT/LCD/loa physical và TTFA p95 vẫn chưa đóng.

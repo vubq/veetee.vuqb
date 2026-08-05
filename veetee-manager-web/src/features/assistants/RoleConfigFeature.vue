@@ -87,6 +87,7 @@ function bargeInDraft(value: RoleConfig['bargeIn']): NonNullable<RoleConfig['bar
     enabled: typeof source.enabled === 'boolean' ? source.enabled : true,
     deviceDuplex: typeof source.deviceDuplex === 'boolean' ? source.deviceDuplex : false,
     minSpeechFrames: typeof source.minSpeechFrames === 'number' ? source.minSpeechFrames : 2,
+    cooldownMs: typeof source.cooldownMs === 'number' ? source.cooldownMs : 2000,
   }
 }
 
@@ -121,6 +122,10 @@ const autoTurnError = computed(() => Boolean(draft.value?.autoTurn.enabled && (n
 const bargeInError = computed(() => {
   const value = draft.value?.bargeIn?.minSpeechFrames
   return value === undefined || !Number.isInteger(value) || value < 1 || value > 32
+})
+const bargeInCooldownError = computed(() => {
+  const value = draft.value?.bargeIn?.cooldownMs
+  return value === undefined || !Number.isInteger(value) || value < 0 || value > 5000
 })
 
 const voiceOptions = computed<VtSelectOption[]>(() => voices.value.map((voice) => ({ value: voice.id, label: voice.name, description: `${voice.providerName} · ${voice.description}`, disabled: !voice.available })))
@@ -673,6 +678,28 @@ onMounted(load)
           @update:model-value="draft!.bargeIn!.minSpeechFrames = Number($event)"
         />
       </VtFormField>
+      <VtFormField
+        label="Khoảng khóa sau khi ngắt (ms)"
+        for-id="role-barge-in-cooldown-ms"
+        :error="bargeInCooldownError ? 'Chọn từ 0 đến 5000 ms.' : undefined"
+        hint="Bỏ qua đuôi echo/clip trong thời gian ngắn để tránh retrigger; không đổi provider."
+      >
+        <VtInput
+          id="role-barge-in-cooldown-ms"
+          type="number"
+          autocomplete="off"
+          min="0"
+          max="5000"
+          step="100"
+          inputmode="numeric"
+          :model-value="String(draft.bargeIn?.cooldownMs ?? 2000)"
+          name="barge-in-cooldown-ms"
+          :invalid="bargeInCooldownError"
+          :disabled="draft.bargeIn?.enabled !== true"
+          aria-label="Khoảng khóa sau khi ngắt"
+          @update:model-value="draft!.bargeIn!.cooldownMs = Number($event)"
+        />
+      </VtFormField>
     </FormSection>
 
     <ProgressAcknowledgementSection
@@ -705,7 +732,7 @@ onMounted(load)
       <VtButton
         type="submit"
         variant="primary"
-        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError) || autoTurnError || bargeInError || !progressValid"
+        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError) || autoTurnError || bargeInError || bargeInCooldownError || !progressValid"
         :loading="saving"
       >
         <template #leading>

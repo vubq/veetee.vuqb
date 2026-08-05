@@ -398,10 +398,13 @@ Sink có local spool bounded nếu Manager API unavailable. Khi full, ưu tiên 
 - Metrics/log writer rotate; tool result và prompt có size limit trước LLM call.
 - Session có admission lease; khi host thiếu resource, connection mới nhận `server_busy`, không làm OOM session đang chạy.
 - `snapshot.bargeIn` là policy additive: `deviceDuplex` mặc định `false`,
-  `minSpeechFrames` nằm trong `1..32`. Khi bật duplex, `tts/start` thêm
-  `barge_in:{enabled:true,mode:"acoustic"}`; server yêu cầu đủ speech frame trước
-  khi gửi `tts/stop(reason:"barge_in")`. Policy sai làm activation fail-closed,
-  không provider fallback hoặc silent downgrade.
+  `minSpeechFrames` nằm trong `1..32`, `cooldownMs` nằm trong `0..5000`. Khi bật
+  duplex, `tts/start` thêm `barge_in:{enabled:true,mode:"acoustic",cooldown_ms}`;
+  server yêu cầu đủ speech frame trước khi gửi `tts/stop(reason:"barge_in")`.
+  Sau commit, uplink trong cooldown bị bỏ qua khi phase vẫn `speaking` để chống
+  residual-echo retrigger; metric `barge_in_suppressed_cooldown` phải được ghi.
+  Policy sai làm activation fail-closed, không provider fallback hoặc silent
+  downgrade.
 - Turn admission đọc `snapshot.admission.maxActiveTurns` (baseline `1`) và
   `retryAfterMs`; session vẫn được giữ alive nhưng `listen/start` vượt capacity
   nhận typed `alert.code="SERVER_BUSY"`, không queue vô hạn và không provider

@@ -298,14 +298,20 @@ late result của tool không cancellable.
 
 - `realtime` giữ mic path chạy khi speaker phát; `auto` chỉ làm vậy khi published
   snapshot có `bargeIn.deviceDuplex=true`.
-- Server gửi `tts/start.barge_in={enabled:true,mode:"acoustic"}` như capability
-  additive. Device fail-closed về half-duplex nếu field thiếu hoặc AEC chưa ready.
+- Server gửi `tts/start.barge_in={enabled:true,mode:"acoustic",cooldown_ms:N}` như
+  capability additive. Device fail-closed về half-duplex nếu field thiếu hoặc
+  AEC chưa ready; peer cũ bỏ qua `cooldown_ms`.
 - Device AEC loại echo; VAD evidence gửi uplink theo frame 60 ms. Server gate cần
   `minSpeechFrames` liên tiếp (bounded 1..32) trước khi commit, không trigger chỉ
   vì speaker leakage.
 - Khi confirmed, server hủy generation cũ, gửi `tts/stop(reason:"barge_in")`
   và tạo turn `auto` mới; firmware flush playback/decoder/AEC reference tại
   barrier nhưng giữ capture.
+- Sau commit, server bỏ qua uplink trong `bargeIn.cooldownMs` bounded `0..5000`
+  khi vẫn đang `speaking` để không đưa đuôi interrupt/residual echo vào pipeline;
+  metric `barge_in_suppressed_cooldown` phải được theo dõi cùng false-reject.
+  Mặc định là `0` khi policy không bật duplex và `2000 ms` khi duplex bật nhưng
+  field vắng. Đây là guard retrigger, không phải bằng chứng AEC/time-to-silence.
 - Nếu detection hóa ra false start, policy không được tự phát lại audio cũ đã hủy; session quay về listen/idle rõ ràng.
 
 Thiếu `bargeIn` trong snapshot giữ behavior tương thích: WakeNet vẫn có thể chạy

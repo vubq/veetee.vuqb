@@ -42,7 +42,7 @@ test('manager API publishes config through immutable ETag flow', async () => {
       personality: { name: 'focused', prompt: 'Use the configured style.' },
       progress: { enabled: true, acknowledgementId: 'processing', deadlineMs: 900, acknowledgements: { processing: 'Mình đang xử lý.' } },
       segmentation: { minimumCharacters: 2, maximumCharacters: 120 },
-      bargeIn: { minSpeechFrames: 2 },
+      bargeIn: { minSpeechFrames: 2, cooldownMs: 1200 },
       toolPolicy: { maxRounds: 2, timeoutMs: 5000 },
       admission: { maxActiveTurns: 1, retryAfterMs: 250 },
       autoTurn: {
@@ -64,6 +64,7 @@ test('manager API publishes config through immutable ETag flow', async () => {
     assert.equal(runtime.json().progress.acknowledgements.processing, 'Mình đang xử lý.')
     assert.equal(runtime.json().segmentation.maximumCharacters, 120)
     assert.equal(runtime.json().bargeIn.minSpeechFrames, 2)
+    assert.equal(runtime.json().bargeIn.cooldownMs, 1200)
     assert.equal(runtime.json().toolPolicy.maxRounds, 2)
     assert.equal(runtime.json().admission.maxActiveTurns, 1)
     assert.equal(runtime.json().admission.retryAfterMs, 250)
@@ -98,6 +99,8 @@ test('role config OpenAPI response documents known policy fields while keeping a
       assert.ok(schema?.properties?.autoTurn)
       assert.ok(schema?.properties?.tools)
       assert.ok(schema?.properties?.progress)
+      const bargeIn = schema?.properties?.bargeIn as { properties?: Record<string, unknown> } | undefined
+      assert.ok(bargeIn?.properties?.cooldownMs)
     }
   } finally {
     await app.close()
@@ -154,6 +157,26 @@ test('assistant search is validated and filtered by the API contract', async () 
     assert.ok(body.items.every((item) => item.name.toLocaleLowerCase().includes('vee')))
 
     const invalid = await app.inject({ method: 'GET', url: `/api/v1/assistants?search=${'x'.repeat(121)}` })
+    assert.equal(invalid.statusCode, 400)
+  } finally {
+    await app.close()
+  }
+})
+
+test('role config bounds the additive acoustic barge-in cooldown', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistants = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    const assistant = assistants.json().items[0] as { id: string; etag: string }
+    const role = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistant.id}/role-config` })
+    const roleBody = role.json() as Record<string, unknown>
+    const invalid = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/assistants/${assistant.id}/role-config`,
+      headers: { 'if-match': role.headers.etag },
+      payload: { ...roleBody, bargeIn: { enabled: true, deviceDuplex: true, minSpeechFrames: 2, cooldownMs: 5001 } },
+    })
     assert.equal(invalid.statusCode, 400)
   } finally {
     await app.close()

@@ -40,9 +40,24 @@ def test_barge_in_policy_defaults_to_legacy_realtime_only(monkeypatch):
     assert policy.enabled is True
     assert policy.device_duplex is False
     assert policy.min_speech_frames == 2
+    assert policy.cooldown_ms == 0
 
 
-@pytest.mark.parametrize("field,value", [("enabled", "bad"), ("deviceDuplex", 1), ("minSpeechFrames", 0), ("minSpeechFrames", 33)])
+def test_barge_in_policy_defaults_cooldown_for_device_duplex(tmp_path):
+    import json
+    from veetee_server.config import load_snapshot
+
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    raw["bargeIn"] = {"deviceDuplex": True}
+    path = tmp_path / "device-duplex-barge.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    policy = load_snapshot(path).barge_in_policy()
+
+    assert policy.cooldown_ms == 2_000
+
+
+@pytest.mark.parametrize("field,value", [("enabled", "bad"), ("deviceDuplex", 1), ("minSpeechFrames", 0), ("minSpeechFrames", 33), ("cooldownMs", -1), ("cooldownMs", 5001)])
 def test_barge_in_policy_rejects_invalid_values(tmp_path, field, value):
     import json
     from veetee_server.config import load_snapshot

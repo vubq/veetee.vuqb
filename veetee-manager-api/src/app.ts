@@ -37,7 +37,15 @@ const roleBodySchema = {
       },
     },
     segmentation: { type: 'object', additionalProperties: true, maxProperties: 32 },
-    bargeIn: { type: 'object', additionalProperties: true, maxProperties: 32 },
+    bargeIn: {
+      type: 'object', additionalProperties: true, maxProperties: 32,
+      properties: {
+        enabled: { type: 'boolean' },
+        deviceDuplex: { type: 'boolean' },
+        minSpeechFrames: { type: 'integer', minimum: 1, maximum: 32 },
+        cooldownMs: { type: 'integer', minimum: 0, maximum: 5000 },
+      },
+    },
     toolPolicy: { type: 'object', additionalProperties: true, maxProperties: 32 },
     admission: {
       type: 'object', additionalProperties: false, maxProperties: 4,
@@ -85,7 +93,15 @@ const roleResponseSchema = {
       },
     },
     segmentation: { type: 'object', additionalProperties: true },
-    bargeIn: { type: 'object', additionalProperties: true },
+    bargeIn: {
+      type: 'object', additionalProperties: true,
+      properties: {
+        enabled: { type: 'boolean' },
+        deviceDuplex: { type: 'boolean' },
+        minSpeechFrames: { type: 'integer', minimum: 1, maximum: 32 },
+        cooldownMs: { type: 'integer', minimum: 0, maximum: 5000 },
+      },
+    },
     toolPolicy: { type: 'object', additionalProperties: true },
     admission: {
       type: 'object', additionalProperties: false,

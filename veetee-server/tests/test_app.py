@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+import time
 
 import pytest
 from aiohttp import WSMsgType
@@ -622,7 +623,7 @@ async def test_auto_device_duplex_policy_cancels_old_turn_and_restarts_auto(monk
 
     fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
     snapshot = json.loads(fixture.read_text(encoding="utf-8"))
-    snapshot["bargeIn"] = {"deviceDuplex": True, "minSpeechFrames": 2}
+    snapshot["bargeIn"] = {"deviceDuplex": True, "minSpeechFrames": 2, "cooldownMs": 2000}
     configured = tmp_path / "device-duplex.json"
     configured.write_text(json.dumps(snapshot), encoding="utf-8")
     monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
@@ -681,7 +682,7 @@ async def test_auto_device_duplex_policy_cancels_old_turn_and_restarts_auto(monk
             event = await ws.receive_json(timeout=2)
             if event.get("type") == "tts" and event.get("state") == "start":
                 start = event
-        assert start["barge_in"] == {"enabled": True, "mode": "acoustic"}
+        assert start["barge_in"] == {"enabled": True, "mode": "acoustic", "cooldown_ms": 2000}
 
         await ws.send_bytes(loud)
         await ws.send_bytes(loud)
@@ -698,6 +699,14 @@ async def test_auto_device_duplex_policy_cancels_old_turn_and_restarts_auto(monk
         assert stale_binary == 0
         assert service.metrics["barge_in_count"] == 1
         assert service.metrics["active_turns"] == 1
+        session = next(iter(service._sessions))
+        assert session.turn is not None
+        session.phase = "speaking"
+        session._barge_in_cooldown_until = time.perf_counter() + 0.5
+        await ws.send_bytes(loud)
+        await asyncio.sleep(0.05)
+        assert service.metrics["barge_in_count"] == 1
+        assert service.metrics["barge_in_suppressed_cooldown"] >= 1
         await ws.close()
     finally:
         await client.close()

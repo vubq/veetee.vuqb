@@ -3068,6 +3068,11 @@ export interface operations {
                             [key: string]: unknown;
                         };
                         bargeIn?: {
+                            enabled?: boolean;
+                            deviceDuplex?: boolean;
+                            minSpeechFrames?: number;
+                            cooldownMs?: number;
+                        } & {
                             [key: string]: unknown;
                         };
                         toolPolicy?: {
@@ -3257,6 +3262,11 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     bargeIn?: {
+                        enabled?: boolean;
+                        deviceDuplex?: boolean;
+                        minSpeechFrames?: number;
+                        cooldownMs?: number;
+                    } & {
                         [key: string]: unknown;
                     };
                     toolPolicy?: {
@@ -3312,6 +3322,11 @@ export interface operations {
                             [key: string]: unknown;
                         };
                         bargeIn?: {
+                            enabled?: boolean;
+                            deviceDuplex?: boolean;
+                            minSpeechFrames?: number;
+                            cooldownMs?: number;
+                        } & {
                             [key: string]: unknown;
                         };
                         toolPolicy?: {

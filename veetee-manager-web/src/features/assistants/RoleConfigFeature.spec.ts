@@ -140,7 +140,7 @@ describe('RoleConfigFeature mutations', () => {
     const draft = saveRoleConfig.mock.calls[0]?.[1]
     expect(draft?.progress).toEqual({ enabled: true, acknowledgementId: 'processing', deadlineMs: 900 })
     expect(draft?.segmentation).toEqual({ minimumCharacters: 2, maximumCharacters: 120 })
-    expect(draft?.bargeIn).toEqual({ enabled: true, deviceDuplex: false, minSpeechFrames: 2 })
+    expect(draft?.bargeIn).toEqual({ enabled: true, deviceDuplex: false, minSpeechFrames: 2, cooldownMs: 2000 })
     expect(draft?.toolPolicy).toEqual({ maxRounds: 2, timeoutMs: 5000 })
     expect(draft?.tools).toEqual([{ name: 'device.led.set', description: 'Set the RGB LED.' }])
   })
@@ -155,10 +155,11 @@ describe('RoleConfigFeature mutations', () => {
     const duplex = await view.findByRole('switch', { name: 'Duplex acoustic khi AI nói' })
     await fireEvent.click(duplex)
     await fireEvent.update(view.getByRole('spinbutton', { name: 'Số frame speech để xác nhận' }), '4')
+    await fireEvent.update(view.getByRole('spinbutton', { name: 'Khoảng khóa sau khi ngắt' }), '1200')
     await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
 
     await waitFor(() => expect(saveRoleConfig).toHaveBeenCalledTimes(1))
-    expect(saveRoleConfig.mock.calls[0]?.[1].bargeIn).toEqual({ enabled: true, deviceDuplex: true, minSpeechFrames: 4 })
+    expect(saveRoleConfig.mock.calls[0]?.[1].bargeIn).toEqual({ enabled: true, deviceDuplex: true, minSpeechFrames: 4, cooldownMs: 1200 })
   })
 
   it('configures the first-speech timeout and localized alert through the role form', async () => {

@@ -83,6 +83,7 @@ export interface BargeInSettings extends RolePolicyObject {
   enabled?: boolean
   deviceDuplex?: boolean
   minSpeechFrames?: number
+  cooldownMs?: number
 }
 
 export interface RoleConfig {

@@ -48,6 +48,7 @@ class VoiceApplication:
             "session_handover_cleanup_errors": 0,
             "turn_disconnect_aborts": 0,
             "barge_in_count": 0,
+            "barge_in_suppressed_cooldown": 0,
             "last_barge_in_control_ms": 0,
             "active_turns": 0,
             "turn_admissions": 0,
@@ -215,6 +216,7 @@ class VoiceSession:
         self.view: RuntimeView | None = None
         self.phase = "ready_idle"
         self._speech_frames = 0
+        self._barge_in_cooldown_until = 0.0
         self._closed = False
         self._admitted = False
         self._turn_started_once = False
@@ -444,6 +446,7 @@ class VoiceSession:
 
     async def _start_turn(self, mode: str) -> None:
         await self._abort(reason="new_turn", send_stop=False)
+        self._barge_in_cooldown_until = 0.0
         self.generation += 1
         now = _utc_now()
         if self.conversation_started_at is None:
@@ -605,6 +608,15 @@ class VoiceSession:
         ):
             self.app.metrics["audio_frames_ignored"] = self.app.metrics.get("audio_frames_ignored", 0) + 1
             return
+        if acoustic_barge and time.perf_counter() < self._barge_in_cooldown_until:
+            # Do not feed residual interrupt/echo audio into the new pipeline
+            # while the device flushes its decoder and AEC reference. A user
+            # who starts speaking during this bounded window can retry after
+            # the cooldown; dropping these frames is safer than recursively
+            # admitting the speaker output as a new turn.
+            self.app.metrics["audio_frames_ignored"] = self.app.metrics.get("audio_frames_ignored", 0) + 1
+            self.app.metrics["barge_in_suppressed_cooldown"] = self.app.metrics.get("barge_in_suppressed_cooldown", 0) + 1
+            return
         frame = decode_audio(self.profile, raw)  # type: ignore[arg-type]
         pcm = self.codec.decode_uplink(frame.payload, int(view.snapshot.raw.get("wire", {}).get("uplinkSampleRate", 16000)) * 60 // 1000)
         self.app.metrics["audio_frames_in"] += 1
@@ -624,6 +636,7 @@ class VoiceSession:
                 self.app.metrics["barge_in_count"] += 1
                 self.app.metrics["last_barge_in_control_ms"] = round((time.perf_counter() - barge_started) * 1000)
                 await self._start_turn("realtime" if turn.mode == "realtime" else "auto")
+                self._barge_in_cooldown_until = time.perf_counter() + (barge_policy.cooldown_ms / 1000)
                 pipeline = self.pipeline
                 turn = self.turn
                 if pipeline is None or turn is None:

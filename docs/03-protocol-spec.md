@@ -773,9 +773,14 @@ qua và tiếp tục half-duplex):
   "state": "start",
   "session_id": "<session>",
   "turn_id": "<turn>",
-  "barge_in": {"enabled": true, "mode": "acoustic"}
+  "barge_in": {"enabled": true, "mode": "acoustic", "cooldown_ms": 2000}
 }
 ```
+
+`cooldown_ms` là field optional, bounded bởi policy snapshot `bargeIn.cooldownMs`;
+peer cũ bỏ qua field này. Nó chỉ là capability hint cho firmware/AEC tương lai;
+server vẫn là owner của cancellation gate và có thể bỏ qua uplink trong cửa sổ
+cooldown.
 
 Firmware chỉ giữ mic uplink trong `speaking` nếu metadata này hợp lệ, interaction
 hiện tại là `auto`, và AEC đã sẵn sàng. Thiếu hoặc sai metadata không phải lỗi

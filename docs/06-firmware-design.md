@@ -416,6 +416,10 @@ Khi commit, server gửi `tts/stop(reason:"barge_in")`; firmware flush decoder,
 playback queue và AEC reference tại barrier, chuyển sang `listening` và giữ
 capture cho auto turn mới. Không gửi thêm `listen/start` từ firmware cho barrier
 này vì turn ownership do server tạo lại.
+`barge_in.cooldown_ms` là field additive; firmware hiện chỉ cần bảo toàn wire
+compatibility, còn server bỏ qua uplink trong cửa sổ này để tránh đuôi echo/clip
+được nhận thành turn mới. Physical promotion vẫn phải đo false-reject trong
+cooldown và time-to-silence ngoài cooldown.
 
 Reference giữ mic processing trong speaking ở realtime mode
 (`references/xiaozhi-esp32/main/application.cc:951-960`) và dùng default realtime
