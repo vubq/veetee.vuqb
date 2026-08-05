@@ -20,11 +20,14 @@ the two implementations from silently drifting while keeping reference repos
 read-only. The additional `mqtt_udp_wire` CTest validates the 16-byte UDP v3
 header and bounded 1.400-byte payload without opening a socket or doing AES; the
 Python crypto/session fixtures cover the encrypted host-side path. The MCP
-registry, wire serializer and cJSON dispatcher tests are also host-only and do
-not call a transport or hardware owner task. The dispatcher test is included
+registry, wire serializer, cJSON dispatcher and shared cross-conformance tests
+are also host-only and do not call a transport or hardware owner task. The
+dispatcher/conformance tests are included
 only after the managed ESP-IDF cJSON source has been resolved; CMake skips that
-single target otherwise. These tests validate framing/round-trip bytes, not a
-full peer-server conformance run.
+single group otherwise. `mcp_conformance` reads
+`tests/fixtures/mcp_conformance.json`, the same oracle used by the Python Voice
+Server test. These tests validate framing/round-trip and contract semantics, not
+a live socket or physical peer-server conformance run.
 
 `mqtt_udp_crypto` is the firmware-side AES-128/CTR parity test. Its host build
 uses the system OpenSSL provider only as a deterministic oracle; the ESP-IDF

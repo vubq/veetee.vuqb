@@ -43,6 +43,19 @@ if(EXISTS "${VT_CJSON_ROOT}/cJSON.c" AND EXISTS "${VT_CJSON_ROOT}/cJSON.h")
     target_include_directories(veetee_firmware_mcp_dispatch_tests PRIVATE ../main "${VT_CJSON_ROOT}")
     target_compile_options(veetee_firmware_mcp_dispatch_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
     add_test(NAME mcp_dispatch COMMAND veetee_firmware_mcp_dispatch_tests)
+
+    set(VT_MCP_CONFORMANCE_FIXTURE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../tests/fixtures/mcp_conformance.json")
+    add_executable(veetee_firmware_mcp_conformance_tests
+        test_mcp_conformance.c
+        ../main/veetee_mcp.c
+        ../main/veetee_mcp_wire.c
+        ../main/veetee_mcp_dispatch.c
+        "${VT_CJSON_ROOT}/cJSON.c")
+    target_include_directories(veetee_firmware_mcp_conformance_tests PRIVATE ../main "${VT_CJSON_ROOT}")
+    target_compile_definitions(veetee_firmware_mcp_conformance_tests PRIVATE
+        VT_MCP_CONFORMANCE_FIXTURE_PATH="${VT_MCP_CONFORMANCE_FIXTURE_PATH}")
+    target_compile_options(veetee_firmware_mcp_conformance_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
+    add_test(NAME mcp_conformance COMMAND veetee_firmware_mcp_conformance_tests)
 else()
     message(STATUS "Skipping mcp_dispatch host test: ESP-IDF cJSON source is not resolved")
 endif()

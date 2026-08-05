@@ -1354,6 +1354,12 @@ Fixture: `reference_server_ws_v1`. Đây là profile test, không phải default
 
 ### 11.3 Veetee-to-Veetee default
 
+Host-only executable oracle: `tests/fixtures/mcp_conformance.json` chứa cùng
+descriptor/schema, request và response cho `initialize`, `tools/list`,
+`tools/call` và unknown method. C firmware dispatcher và Python
+`DeviceMcpBridge` MUST chạy qua fixture này trước khi mở cross-peer socket test;
+đây là contract-semantic evidence, không thay thế board/transport acceptance.
+
 - [ ] Config mặc định mới là `ws-v3`; v1 không xuất hiện nếu không chọn fixture.
 - [ ] Header version, hello version và parser version bằng nhau.
 - [ ] Mọi example JSON trong tài liệu pass schema/golden test.

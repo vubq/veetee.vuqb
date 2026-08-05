@@ -1,0 +1,213 @@
+{
+  "session_id": "cross-session",
+  "server_name": "veetee-firmware",
+  "server_version": "0.1.0",
+  "protocol_version": "2024-11-05",
+  "tools": [
+    {
+      "name": "device.status.get",
+      "description": "Read current device status",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "device.led.set",
+      "description": "Set RGB output",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "red": {"type": "integer", "minimum": 0, "maximum": 255},
+          "green": {"type": "integer", "minimum": 0, "maximum": 255},
+          "blue": {"type": "integer", "minimum": 0, "maximum": 255}
+        },
+        "required": ["red", "green", "blue"],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "firmware_cases": [
+    {
+      "request": {
+        "type": "mcp",
+        "session_id": "cross-session",
+        "payload": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {}
+        }
+      },
+      "response": {
+        "session_id": "cross-session",
+        "type": "mcp",
+        "payload": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "veetee-firmware", "version": "0.1.0"}
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "type": "mcp",
+        "session_id": "cross-session",
+        "payload": {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "tools/list",
+          "params": {}
+        }
+      },
+      "response": {
+        "session_id": "cross-session",
+        "type": "mcp",
+        "payload": {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "result": {
+            "tools": [
+              {
+                "name": "device.status.get",
+                "description": "Read current device status",
+                "inputSchema": {"type": "object", "properties": {}}
+              },
+              {
+                "name": "device.led.set",
+                "description": "Set RGB output",
+                "inputSchema": {
+                  "type": "object",
+                  "properties": {
+                    "red": {"type": "integer", "minimum": 0, "maximum": 255},
+                    "green": {"type": "integer", "minimum": 0, "maximum": 255},
+                    "blue": {"type": "integer", "minimum": 0, "maximum": 255}
+                  },
+                  "required": ["red", "green", "blue"],
+                  "additionalProperties": false
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "type": "mcp",
+        "session_id": "cross-session",
+        "payload": {
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "tools/call",
+          "params": {
+            "name": "device.led.set",
+            "arguments": {"red": 16, "green": 80, "blue": 255}
+          }
+        }
+      },
+      "response": {
+        "session_id": "cross-session",
+        "type": "mcp",
+        "payload": {
+          "jsonrpc": "2.0",
+          "id": 3,
+          "result": {
+            "content": [{"type": "text", "text": "fixture-ok"}],
+            "isError": false
+          }
+        }
+      }
+    },
+    {
+      "request": {
+        "type": "mcp",
+        "session_id": "cross-session",
+        "payload": {
+          "jsonrpc": "2.0",
+          "id": 4,
+          "method": "unsupported/method",
+          "params": {}
+        }
+      },
+      "response": {
+        "session_id": "cross-session",
+        "type": "mcp",
+        "payload": {
+          "jsonrpc": "2.0",
+          "id": 4,
+          "error": {"message": "method not found"}
+        }
+      }
+    }
+  ],
+  "server_cases": [
+    {
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2024-11-05",
+        "capabilities": {},
+        "clientInfo": {"name": "veetee-server", "version": "0.1.0"}
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "protocolVersion": "2024-11-05",
+          "capabilities": {"tools": {}},
+          "serverInfo": {"name": "veetee-firmware", "version": "0.1.0"}
+        }
+      }
+    },
+    {
+      "method": "tools/list",
+      "params": {},
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "tools": [
+            {
+              "name": "device.status.get",
+              "description": "Read current device status",
+              "inputSchema": {"type": "object", "properties": {}}
+            },
+            {
+              "name": "device.led.set",
+              "description": "Set RGB output",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "red": {"type": "integer", "minimum": 0, "maximum": 255},
+                  "green": {"type": "integer", "minimum": 0, "maximum": 255},
+                  "blue": {"type": "integer", "minimum": 0, "maximum": 255}
+                },
+                "required": ["red", "green", "blue"],
+                "additionalProperties": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "tools/call",
+      "params": {
+        "name": "device.led.set",
+        "arguments": {"red": 16, "green": 80, "blue": 255}
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+          "content": [{"type": "text", "text": "fixture-ok"}],
+          "isError": false
+        }
+      }
+    }
+  ]
+}
