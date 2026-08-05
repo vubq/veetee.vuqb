@@ -1236,6 +1236,26 @@
   không flash/reset/erase ESP32, không đổi Wi-Fi/Tailscale và không mutate
   production `veetee_vubq`.
 
+### Audio permission reopened — bounded physical wake and interrupt checks (2026-08-05)
+
+- Chủ dự án đã cấp lại quyền phát audio trực tiếp. Chỉ chạy hai scenario bounded,
+  không flash/reset/erase và không thay đổi Wi-Fi/NVS/Tailscale:
+  `wake-test.example.json` (một lượt normal) và `wake-barge-in.example.json`
+  (một lượt interrupt bằng wake word).
+- Normal pass: `wake detected → wake start → state=speaking → wake detector armed`;
+  wake/utterance player đều exit `0`. Sau khoảng một giây Voice Server release turn;
+  metrics cuối lượt `turn_admissions=1`, `turn_releases=1`, `protocol_errors=0`.
+- Interrupt pass ở firmware: `wake detected → state=listening → wake interrupt →
+  wake start`; player interrupt exit `0`, không có forbidden marker. Metrics cuối
+  lượt `active_turns=0`, `turn_releases=3`, `protocol_errors=0`; lượt sau interrupt
+  không có utterance nên `auto_no_speech_timeouts` tăng đúng theo policy.
+- `barge_in_count=0` là expected cho scenario này: đó là counter server-side của
+  acoustic voice-onset detector, còn evidence trên là wake-word interrupt từ
+  firmware. Chưa dùng kết quả này để đóng acoustic AEC/time-to-silence gate.
+- Report đã redact chỉ lưu ngoài repository tại `/tmp/veetee-wake-permission-recheck-20260805.json`
+  và `/tmp/veetee-wake-barge-in-permission-20260805.json`; không lưu raw audio,
+  microphone capture, transcript, serial dump hay credential.
+
 ### Voice runtime reload after host-only fix (2026-08-05)
 
 - Đã kiểm tra unit `veetee-voice-18100.service` đúng checkout mới, `activeTurns=0`
