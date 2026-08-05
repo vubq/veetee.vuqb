@@ -42,6 +42,17 @@ test('custom voice select và lưu revision', async ({ page }) => {
   await expect(page.getByText('Đã lưu', { exact: true })).toBeVisible()
 })
 
+test('tạo personality tùy chỉnh và lưu chỉ dẫn riêng', async ({ page }) => {
+  await page.goto(`/assistants/${assistantId}/config/role`)
+  await page.getByRole('switch', { name: 'Tùy chỉnh' }).click()
+  await page.getByRole('textbox', { name: 'Tên tính cách' }).fill('Người hướng dẫn kiên nhẫn')
+  await page.getByRole('textbox', { name: 'Chỉ dẫn tính cách' }).fill('Giải thích từng bước và hỏi lại khi yêu cầu chưa đủ dữ kiện.')
+  await page.getByRole('button', { name: 'Lưu bản nháp' }).click()
+  await expect(page.getByText('Bạn có thể áp dụng thay đổi này cho robot bất cứ lúc nào.').first()).toBeVisible()
+  await expect(page.getByRole('switch', { name: 'Tùy chỉnh' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('textbox', { name: 'Tên tính cách' })).toHaveValue('Người hướng dẫn kiên nhẫn')
+})
+
 test('pair device kiểm tra lỗi rồi hoàn thành', async ({ page }) => {
   await page.goto(`/assistants/${assistantId}/devices`)
   await page.getByRole('button', { name: 'Ghép nối thiết bị' }).click()

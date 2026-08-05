@@ -98,6 +98,8 @@ export interface RoleConfig {
   basePrompt: string
   personalityId: string
   personalityName: string
+  /** Optional owner-authored instructions for a custom personality profile. */
+  personalityPrompt?: string
   speech: SpeechSettings
   admission: AdmissionSettings
   autoTurn: AutoTurnSettings

@@ -3919,6 +3919,10 @@ export interface operations {
                         locale: string;
                         basePrompt: string;
                         personality?: {
+                            id?: string;
+                            name?: string;
+                            prompt?: string;
+                        } & {
                             [key: string]: unknown;
                         };
                         speech?: {
@@ -4122,6 +4126,10 @@ export interface operations {
                     locale: string;
                     basePrompt: string;
                     personality?: {
+                        id?: string;
+                        name?: string;
+                        prompt?: string;
+                    } & {
                         [key: string]: unknown;
                     };
                     speech?: {
@@ -4191,6 +4199,10 @@ export interface operations {
                         locale: string;
                         basePrompt: string;
                         personality?: {
+                            id?: string;
+                            name?: string;
+                            prompt?: string;
+                        } & {
                             [key: string]: unknown;
                         };
                         speech?: {

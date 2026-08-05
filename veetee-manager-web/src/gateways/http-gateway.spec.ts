@@ -103,7 +103,7 @@ describe('HTTP gateway read failure metadata', () => {
     const role = {
       locale: 'vi-VN',
       basePrompt: 'Trợ lý có policy additive.',
-      personality: { id: 'personality', name: 'Focused' },
+      personality: { id: 'personality', name: 'Focused', prompt: 'Giải thích từng bước.' },
       speech: { voiceId: 'voice', rate: 1, pitch: 0, style: 'natural' },
       progress: { enabled: true, acknowledgementId: 'processing', deadlineMs: 900 },
       segmentation: { minimumCharacters: 2, maximumCharacters: 120 },
@@ -127,11 +127,13 @@ describe('HTTP gateway read failure metadata', () => {
     const loaded = await gateway.getRoleConfig('assistant-test')
     expect(loaded.ok).toBe(true)
     if (!loaded.ok) return
+    expect(loaded.data.value.personalityPrompt).toBe('Giải thích từng bước.')
     const saved = await gateway.saveRoleConfig('assistant-test', {
       locale: loaded.data.value.locale,
       basePrompt: loaded.data.value.basePrompt,
       personalityId: loaded.data.value.personalityId,
       personalityName: loaded.data.value.personalityName,
+      personalityPrompt: loaded.data.value.personalityPrompt,
       speech: loaded.data.value.speech,
       admission: loaded.data.value.admission,
       autoTurn: loaded.data.value.autoTurn,
@@ -151,6 +153,7 @@ describe('HTTP gateway read failure metadata', () => {
     expect(patchCall).toBeDefined()
     const body = JSON.parse(patchCall?.input instanceof Request ? await patchCall.input.clone().text() : String(patchCall?.init?.body))
     expect(body.progress).toEqual(role.progress)
+    expect(body.personality).toEqual(role.personality)
     expect(body.segmentation).toEqual(role.segmentation)
     expect(body.bargeIn).toEqual(role.bargeIn)
     expect(body.toolPolicy).toEqual(role.toolPolicy)

@@ -36,7 +36,6 @@ const loading = ref(true)
 const voiceLoading = ref(false)
 const saving = ref(false)
 const publishing = ref(false)
-const customRole = ref(true)
 const conflict = ref<RevisionConflictProblem<RoleConfig, RoleConfigDraft>>()
 const copying = ref(false)
 const loadState = ref<'loading' | 'ready' | 'error' | 'offline'>('loading')
@@ -49,12 +48,28 @@ const advancedSectionsOpen = reactive({ limits: false, autoTurn: false, conversa
 let loadGeneration = 0
 let voiceGeneration = 0
 
+const personalityPresets = [
+  {
+    value: '41111111-1111-4111-8111-111111111111',
+    label: 'Người bạn đồng hành',
+    description: 'Tự nhiên, thân thiện và biết hỏi lại',
+    prompt: 'Tự nhiên, thân thiện và biết hỏi lại khi yêu cầu chưa đủ thông tin.',
+  },
+  {
+    value: '42222222-2222-4222-8222-222222222222',
+    label: 'Trợ lý tập trung',
+    description: 'Ngắn gọn, ưu tiên hành động',
+    prompt: 'Ưu tiên hành động, sắp xếp thông tin theo mức độ quan trọng và trả lời ngắn gọn.',
+  },
+] as const
+
 function toDraft(config: RoleConfig): RoleConfigDraft {
   return {
     locale: config.locale,
     basePrompt: config.basePrompt,
     personalityId: config.personalityId,
     personalityName: config.personalityName,
+    personalityPrompt: config.personalityPrompt ?? '',
     speech: { ...config.speech },
     admission: {
       maxActiveTurns: config.admission?.maxActiveTurns ?? 1,
@@ -114,6 +129,34 @@ function setAllowDeviceDiscovery(enabled: boolean) {
   markDirty()
 }
 
+function setPersonality(id: string) {
+  if (!draft.value) return
+  const preset = personalityPresets.find((item) => item.value === id)
+  if (preset) {
+    draft.value.personalityId = preset.value
+    draft.value.personalityName = preset.label
+    draft.value.personalityPrompt = preset.prompt
+  } else {
+    draft.value.personalityId = 'custom'
+    draft.value.personalityName = draft.value.personalityName || 'Tính cách tùy chỉnh'
+    draft.value.personalityPrompt = draft.value.personalityPrompt ?? ''
+  }
+  markDirty()
+}
+
+function setCustomPersonality(enabled: boolean) {
+  if (!draft.value) return
+  if (enabled) {
+    setPersonality('custom')
+    return
+  }
+  const preset = personalityPresets[0]
+  draft.value.personalityId = preset.value
+  draft.value.personalityName = preset.label
+  draft.value.personalityPrompt = preset.prompt
+  markDirty()
+}
+
 function toRoleConfig(config: RoleConfig): RoleConfig {
   return { assistantId: config.assistantId, ...toDraft(config) }
 }
@@ -163,10 +206,24 @@ const bargeInCooldownError = computed(() => {
 
 const voiceOptions = computed<VtSelectOption[]>(() => voices.value.map((voice) => ({ value: voice.id, label: voice.name, description: `${voice.providerName} · ${voice.description}`, disabled: !voice.available })))
 const localeOptions = computed(() => deriveLocaleOptions(installations.value, draft.value?.locale))
-const personalityOptions: VtSelectOption[] = [{ value: '41111111-1111-4111-8111-111111111111', label: 'Người bạn đồng hành', description: 'Tự nhiên, thân thiện và biết hỏi lại' }, { value: '42222222-2222-4222-8222-222222222222', label: 'Trợ lý tập trung', description: 'Ngắn gọn, ưu tiên hành động' }, { value: 'custom', label: 'Tính cách tùy chỉnh', description: 'Prompt quyết định hành vi' }]
+const personalityOptions: VtSelectOption[] = [
+  ...personalityPresets.map(({ value, label, description }) => ({ value, label, description })),
+  { value: 'custom', label: 'Tính cách tùy chỉnh', description: 'Bạn tự đặt tên và chỉ dẫn' },
+]
 const styleOptions: VtSelectOption[] = [{ value: 'concise', label: 'Ngắn gọn' }, { value: 'natural', label: 'Tự nhiên' }, { value: 'detailed', label: 'Chi tiết' }]
 const rateOptions: VtSelectOption[] = [{ value: '0.9', label: 'Chậm · 0,9×' }, { value: '1', label: 'Tự nhiên · 1,0×' }, { value: '1.05', label: 'Nhanh nhẹ · 1,05×' }, { value: '1.1', label: 'Nhanh · 1,1×' }]
 const pitchOptions: VtSelectOption[] = [{ value: '-1', label: 'Trầm nhẹ' }, { value: '0', label: 'Tự nhiên' }, { value: '1', label: 'Cao nhẹ' }]
+
+const isCustomPersonality = computed(() => {
+  const id = draft.value?.personalityId
+  return Boolean(id && (id === 'custom' || !personalityPresets.some((preset) => preset.value === id)))
+})
+const personalityError = computed(() => {
+  if (!isCustomPersonality.value || !draft.value) return false
+  const name = draft.value.personalityName.trim()
+  const prompt = (draft.value.personalityPrompt ?? '').trim()
+  return name.length < 1 || name.length > 80 || prompt.length < 1 || prompt.length > 4000
+})
 
 async function load() {
   const generation = ++loadGeneration
@@ -403,12 +460,6 @@ onMounted(load)
       title="Vai trò giọng nói"
       description="Ngôn ngữ hội thoại và giọng nói được cấu hình riêng."
     >
-      <template #trailing>
-        <VtSwitch
-          v-model="customRole"
-          label="Tùy chỉnh"
-        />
-      </template>
       <div class="two-columns">
         <VtFormField
           label="Ngôn ngữ"
@@ -454,18 +505,65 @@ onMounted(load)
       title="Tính cách"
       description="Có thể thêm profile mới mà không sửa component."
     >
+      <template #trailing>
+        <VtSwitch
+          :model-value="isCustomPersonality"
+          label="Tùy chỉnh"
+          @update:model-value="setCustomPersonality"
+        />
+      </template>
       <VtFormField
         label="Profile tính cách"
         for-id="role-personality"
       >
         <VtSelect
           id="role-personality"
-          v-model="draft.personalityId"
+          :model-value="isCustomPersonality ? 'custom' : draft.personalityId"
           label="Profile tính cách"
           :options="personalityOptions"
-          @update:model-value="draft!.personalityName = personalityOptions.find((item) => item.value === $event)?.label ?? 'Tùy chỉnh'"
+          @update:model-value="setPersonality"
         />
       </VtFormField>
+      <div
+        v-if="isCustomPersonality"
+        class="personality-custom"
+      >
+        <VtFormField
+          label="Tên tính cách"
+          for-id="role-personality-name"
+          :error="personalityError && (!draft.personalityName.trim() || draft.personalityName.length > 80) ? 'Nhập tên từ 1 đến 80 ký tự.' : undefined"
+          hint="Tên này giúp bạn nhận ra profile trong danh sách trợ lý."
+        >
+          <VtInput
+            id="role-personality-name"
+            v-model="draft.personalityName"
+            name="personality-name"
+            autocomplete="off"
+            maxlength="80"
+            :invalid="personalityError && (!draft.personalityName.trim() || draft.personalityName.length > 80)"
+            aria-label="Tên tính cách"
+          />
+        </VtFormField>
+        <VtFormField
+          label="Chỉ dẫn tính cách"
+          for-id="role-personality-prompt"
+          :error="personalityError && (!(draft.personalityPrompt ?? '').trim() || (draft.personalityPrompt ?? '').length > 4000) ? 'Nhập chỉ dẫn từ 1 đến 4.000 ký tự.' : undefined"
+          hint="Mô tả cách AI nên suy nghĩ, giao tiếp và xử lý tình huống."
+        >
+          <template #default="{ describedby }">
+            <VtTextArea
+              id="role-personality-prompt"
+              v-model="draft.personalityPrompt"
+              name="personality-prompt"
+              autocomplete="off"
+              :rows="5"
+              maxlength="4000"
+              :invalid="personalityError && (!(draft.personalityPrompt ?? '').trim() || (draft.personalityPrompt ?? '').length > 4000)"
+              :aria-describedby="describedby"
+            />
+          </template>
+        </VtFormField>
+      </div>
     </FormSection>
 
     <FormSection
@@ -850,7 +948,7 @@ onMounted(load)
       <VtButton
         type="submit"
         variant="primary"
-        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError) || autoTurnError || conversationError || bargeInError || bargeInCooldownError || !progressValid"
+        :disabled="!dirty || draft.basePrompt.length > 2000 || personalityError || Boolean(admissionError) || autoTurnError || conversationError || bargeInError || bargeInCooldownError || !progressValid"
         :loading="saving"
       >
         <template #leading>
@@ -896,6 +994,7 @@ onMounted(load)
 .role-state h2:focus-visible, .action-error:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--vt-focus); border-radius: 3px; }
 .two-columns { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr); gap: 10px; }
 .three-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.personality-custom { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 10px; margin-top: 11px; border-top: 1px solid var(--vt-border); padding-top: 11px; }
 .policy-switches { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px; }
 .policy-note { margin: 10px 0 0; color: var(--vt-text-muted); font-size: 10px; line-height: 1.5; }
 .voice-preview { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; border-top: 1px solid var(--vt-border); padding-top: 11px; }
@@ -904,5 +1003,5 @@ onMounted(load)
 .dirty-status { margin-right: auto; color: var(--vt-success); font-size: 10px; }
 .dirty-status.dirty { color: var(--vt-warning); }
 .action-error { flex: 1; margin: 0; color: var(--vt-danger); font-size: 10px; line-height: 1.45; }
-@media (max-width: 660px) { .two-columns, .three-columns { grid-template-columns: 1fr; } .form-actions { flex-wrap: wrap; } .dirty-status { width: 100%; } }
+@media (max-width: 660px) { .two-columns, .three-columns, .personality-custom { grid-template-columns: 1fr; } .form-actions { flex-wrap: wrap; } .dirty-status { width: 100%; } }
 </style>

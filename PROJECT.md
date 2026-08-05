@@ -31,8 +31,8 @@ và các service port `18xxx`).
 - Visual approval không thay cho full primitive-state inventory, keyboard-only
   core flows, demo/catalog cleanup hoặc snapshot matrix mọi surface/viewport;
   các gate này vẫn cần evidence riêng trước production promotion.
-- Evidence hiện tại của Web: typecheck/lint/production build pass, **97 unit
-  tests** và **15 Chromium E2E** pass; gồm history keyboard, responsive overflow,
+- Evidence hiện tại của Web: typecheck/lint/production build pass, **101 unit
+  tests** và **16 Chromium E2E** pass; gồm history keyboard, responsive overflow,
   provider schema flow và axe scan không có violation `serious`/`critical` trên
   critical surfaces. Preview/API mode vẫn phải tách rõ khi đọc report.
 - Lượt vận hành hiện tại khóa physical audio test: không phát clip, không mở

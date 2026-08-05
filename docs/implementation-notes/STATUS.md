@@ -1,5 +1,17 @@
 # Trạng thái thực thi hiện tại
 
+## Custom personality configuration — host-only continuation (2026-08-06)
+
+- Manager Web cấu hình vai trò hiện đã có boundary đầy đủ cho personality tùy
+  chỉnh: chọn preset vẫn giữ prompt preset; chọn “Tùy chỉnh” cho phép nhập tên
+  và chỉ dẫn riêng, validate 1–80/1–4.000 ký tự và gửi qua ETag draft/publish.
+- HTTP gateway ánh xạ `personality.prompt` thành field typed
+  `personalityPrompt`; snapshot cũ thiếu prompt vẫn đọc được và không làm mất
+  các policy additive khác.
+- Unit targeted: **24/24 pass**; typecheck/lint pass. Không phát audio, không
+  mở microphone/loa, không flash/reset ESP32, không đổi Wi-Fi/Tailscale và
+  không mutate database production.
+
 ## Provider screens và firmware display model — host-only continuation
 
 - Manager Web đã tách entry route `/providers` thành overview sáu module; mỗi
@@ -15,7 +27,7 @@
   resource bundle/config boundary; không có provider/wake phrase literal trong
   renderer.
 - Verification host-only: Manager API 38 pass + 13 skip có chủ đích; Manager Web
-  100 unit, Chromium E2E pass, typecheck/lint/build pass; firmware CTest 9/9 và
+  101 unit, Chromium E2E pass, typecheck/lint/build pass; firmware CTest 9/9 và
   ESP-IDF 6.0.2 build pass. Không flash/reset, không mở microphone/loa và không
   phát audio trong lát cắt này.
 
@@ -32,7 +44,7 @@
 - Manager API hiện **51/51 passed** khi dùng dedicated PostgreSQL test database
   `veetee_vubq_test`; InMemory subset **38 passed / 13 skip có chủ đích** khi không
   truyền DSN. Lint/build/OpenAPI export/check pass.
-- Manager Web hiện **100/100 unit** và **15/15 Chromium E2E**; typecheck/lint/build
+- Manager Web hiện **101/101 unit** và **16/16 Chromium E2E**; typecheck/lint/build
   pass. Route-level code splitting giảm entry JS từ khoảng 516 kB xuống 172 kB.
 - QA cloud Browser Use không chạy trong lượt này vì `browser-harness` yêu cầu
   `browser-harness auth login`; không tự mượn credential hoặc mở local Chrome.

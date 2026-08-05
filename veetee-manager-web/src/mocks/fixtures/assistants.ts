@@ -68,6 +68,7 @@ export function createRoleConfigFixtures(): Record<
           'Bạn là Mây, một trợ lý tiếng Việt điềm tĩnh, rõ ràng và luôn hỏi lại khi yêu cầu chưa đủ thông tin.',
         personalityId: PERSONALITY_IDS.companion,
         personalityName: 'Người bạn đồng hành',
+        personalityPrompt: 'Tự nhiên, thân thiện và biết hỏi lại khi yêu cầu chưa đủ thông tin.',
         speech: {
           voiceId: VOICE_IDS.anNhien,
           rate: 1,
@@ -105,6 +106,7 @@ export function createRoleConfigFixtures(): Record<
           'Bạn là Bình Minh, trợ lý giúp sắp xếp công việc theo thứ tự ưu tiên và trả lời ngắn gọn.',
         personalityId: PERSONALITY_IDS.focused,
         personalityName: 'Trợ lý tập trung',
+        personalityPrompt: 'Ưu tiên hành động, sắp xếp thông tin theo mức độ quan trọng và trả lời ngắn gọn.',
         speech: {
           voiceId: VOICE_IDS.minhChau,
           rate: 1.05,

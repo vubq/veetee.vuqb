@@ -110,6 +110,26 @@ describe('RoleConfigFeature read states', () => {
 })
 
 describe('RoleConfigFeature mutations', () => {
+  it('lets the owner create and save a custom personality profile', async () => {
+    const saveRoleConfig = vi.fn(async (...args: [string, RoleConfigDraft]) => {
+      void args
+      return success(resource)
+    })
+    const view = renderFeature(gateway({ saveRoleConfig }))
+
+    await fireEvent.click(await view.findByRole('switch', { name: 'Tùy chỉnh' }))
+    const name = await view.findByRole('textbox', { name: 'Tên tính cách' })
+    const prompt = view.getByRole('textbox', { name: 'Chỉ dẫn tính cách' })
+    await fireEvent.update(name, 'Người hướng dẫn kiên nhẫn')
+    await fireEvent.update(prompt, 'Giải thích từng bước, hỏi lại khi thiếu dữ kiện và luôn nêu rõ điều chưa chắc chắn.')
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
+
+    await waitFor(() => expect(saveRoleConfig).toHaveBeenCalledTimes(1))
+    expect(saveRoleConfig.mock.calls[0]?.[1].personalityId).toBe('custom')
+    expect(saveRoleConfig.mock.calls[0]?.[1].personalityName).toBe('Người hướng dẫn kiên nhẫn')
+    expect(saveRoleConfig.mock.calls[0]?.[1].personalityPrompt).toBe('Giải thích từng bước, hỏi lại khi thiếu dữ kiện và luôn nêu rõ điều chưa chắc chắn.')
+  })
+
   it('exposes resource admission settings and preserves them on save', async () => {
     const saveRoleConfig = vi.fn(async (...args: [string, RoleConfigDraft]) => {
       void args

@@ -146,6 +146,35 @@ test('role config validates progress acknowledgement shape while preserving addi
   }
 })
 
+test('role config bounds owner-authored personality instructions', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistants = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    const assistant = assistants.json().items[0] as { id: string }
+    const role = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistant.id}/role-config` })
+    const roleBody = role.json() as Record<string, unknown>
+    const invalid = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/assistants/${assistant.id}/role-config`,
+      headers: { 'if-match': role.headers.etag },
+      payload: { ...roleBody, personality: { id: 'custom', name: 'Tính cách', prompt: 'x'.repeat(4001) } },
+    })
+    assert.equal(invalid.statusCode, 400)
+
+    const valid = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/assistants/${assistant.id}/role-config`,
+      headers: { 'if-match': role.headers.etag },
+      payload: { ...roleBody, personality: { id: 'custom', name: 'Tính cách', prompt: 'Giải thích từng bước.' } },
+    })
+    assert.equal(valid.statusCode, 200)
+    assert.equal(valid.json().personality.prompt, 'Giải thích từng bước.')
+  } finally {
+    await app.close()
+  }
+})
+
 test('assistant search is validated and filtered by the API contract', async () => {
   const app = await buildApp({ env })
   await app.ready()

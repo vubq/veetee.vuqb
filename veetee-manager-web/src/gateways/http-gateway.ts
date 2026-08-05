@@ -117,7 +117,11 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     const payload: RoleConfigRequest = {
       locale: draft.locale,
       basePrompt: draft.basePrompt,
-      personality: { id: draft.personalityId, name: draft.personalityName },
+      personality: {
+        id: draft.personalityId,
+        name: draft.personalityName,
+        ...(draft.personalityPrompt !== undefined ? { prompt: draft.personalityPrompt } : {}),
+      },
       speech: { ...draft.speech },
       admission: { ...draft.admission },
       autoTurn: {
@@ -420,6 +424,7 @@ function roleConfig(assistantId: string, value: Record<string, unknown>): RoleCo
     basePrompt: typeof value.basePrompt === 'string' ? value.basePrompt : '',
     personalityId: typeof personality.id === 'string' ? personality.id : '',
     personalityName: typeof personality.name === 'string' ? personality.name : '',
+    personalityPrompt: typeof personality.prompt === 'string' ? personality.prompt : '',
     speech: {
       voiceId: typeof speech.voiceId === 'string' ? speech.voiceId : '',
       rate: typeof speech.rate === 'number' ? speech.rate : 1,

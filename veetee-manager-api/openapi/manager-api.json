@@ -8672,7 +8672,22 @@
                     },
                     "personality": {
                       "type": "object",
-                      "additionalProperties": true
+                      "additionalProperties": true,
+                      "maxProperties": 16,
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "maxLength": 128
+                        },
+                        "name": {
+                          "type": "string",
+                          "maxLength": 80
+                        },
+                        "prompt": {
+                          "type": "string",
+                          "maxLength": 4000
+                        }
+                      }
                     },
                     "speech": {
                       "type": "object",
@@ -9189,7 +9204,24 @@
                   },
                   "personality": {
                     "type": "object",
-                    "additionalProperties": true
+                    "additionalProperties": true,
+                    "maxProperties": 16,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 128
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "prompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      }
+                    }
                   },
                   "speech": {
                     "type": "object",
@@ -9405,7 +9437,22 @@
                     },
                     "personality": {
                       "type": "object",
-                      "additionalProperties": true
+                      "additionalProperties": true,
+                      "maxProperties": 16,
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "maxLength": 128
+                        },
+                        "name": {
+                          "type": "string",
+                          "maxLength": 80
+                        },
+                        "prompt": {
+                          "type": "string",
+                          "maxLength": 4000
+                        }
+                      }
                     },
                     "speech": {
                       "type": "object",

@@ -22,7 +22,14 @@ const roleBodySchema = {
   properties: {
     locale: { type: 'string', minLength: 2, maxLength: 35 },
     basePrompt: { type: 'string', minLength: 1, maxLength: 16000 },
-    personality: { type: 'object', additionalProperties: true },
+    personality: {
+      type: 'object', additionalProperties: true, maxProperties: 16,
+      properties: {
+        id: { type: 'string', maxLength: 128 },
+        name: { type: 'string', minLength: 1, maxLength: 80 },
+        prompt: { type: 'string', minLength: 1, maxLength: 4000 },
+      },
+    },
     speech: { type: 'object', additionalProperties: true },
     // These policy objects are intentionally additive: provider/firmware
     // capabilities can add fields without the Manager route dropping them.
@@ -96,7 +103,14 @@ const roleResponseSchema = {
   properties: {
     locale: { type: 'string' },
     basePrompt: { type: 'string' },
-    personality: { type: 'object', additionalProperties: true },
+    personality: {
+      type: 'object', additionalProperties: true, maxProperties: 16,
+      properties: {
+        id: { type: 'string', maxLength: 128 },
+        name: { type: 'string', maxLength: 80 },
+        prompt: { type: 'string', maxLength: 4000 },
+      },
+    },
     speech: { type: 'object', additionalProperties: true },
     progress: {
       type: 'object', additionalProperties: true,
