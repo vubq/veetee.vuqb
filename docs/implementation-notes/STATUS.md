@@ -1,5 +1,20 @@
 # Trạng thái thực thi hiện tại
 
+## MQTT/UDP gateway composition — host-only continuation (2026-08-06)
+
+- `veetee_server.mqtt_gateway.MqttUdpGateway` đã ghép MQTT control carrier,
+  UDP datagram carrier và `MqttUdpSession` thành một session explicit; server
+  hello quyết định endpoint/key/nonce, local bind/queue/timeout vẫn phải đến từ
+  config caller. Không tự activate trong Voice runtime và không có transport
+  fallback.
+- Host loopback test đã đi đủ client hello → server hello → UDP bind → encrypted
+  uplink/downlink bytes → `tts/start` barrier → cleanup khi đóng/cancel. Không
+  decode/play audio, không mở mic/loa, không broker thật, không đổi Wi-Fi,
+  NetworkManager, route, firewall hoặc Tailscale.
+- Voice Server **191 passed**, Ruff và compileall pass. M3 vẫn chưa đóng DoD:
+  firmware carrier, broker/network loss-latency evidence, transport promotion,
+  physical MCP/OTA và acceptance vật lý còn mở.
+
 ## Custom personality configuration — host-only continuation (2026-08-06)
 
 - Manager Web cấu hình vai trò hiện đã có boundary đầy đủ cho personality tùy
@@ -239,7 +254,7 @@
 | M1 — realtime conversation | Đang làm, **chưa đóng DoD** | Streaming/cancellation/tool loop, v1/v2/v3 fixture, WakeNet, noise suppression, multi-key fixture 10/10, AEC lifecycle/resource 10/10; stale `tts/stop` barrier đã sửa; normal wake 2 lượt, wake-word interrupt lifecycle physical, policy acoustic-duplex control lifecycle và corpus smoke 1 negative/1 positive; host TTFA warm p95 `1481,4 ms` pass. | Acoustic echo-only, false accept/reject corpus đủ lớn, voice-onset quality/time-to-silence p95, 100 repetition, provider promotion và cross-peer physical conformance. Các lần timeout AEC/bypass trước guard vẫn là diagnostic history, không coi là acoustic verdict. Xem [`M1.md`](M1.md). |
 | Groq multi-key | Hoàn tất cho **test harness** | `VEETEE_TEST_GROQ_KEYS_FILE` chỉ với fixture; round-robin; chỉ retry `429` trước delta đầu; không replay partial stream; firmware không chứa key. | Không phải production fallback/key rotation; nhiều key vẫn có thể cùng dính quota account/org/model/IP. |
 | M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary, TTL freshness, privacy export, async conversation delete/tombstone và host regression. | Promotion provider/model/VRAM, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
-| M3 — transport/hardware/OTA | Đang mở ở host/build slice; MCP hardware đã nối capability đầu tiên | MQTT control/bridge/session, firmware UDP header/crypto codec, UDP v3 AES/reorder/barrier, deterministic loss/soak, firmware MCP registry/wire/JSON-RPC dispatcher, shared MCP cross-conformance fixture, bounded owner-task queue, BoardHal manifest và config-driven WS2812 LED/lamp descriptors đã có host/ESP-IDF evidence. Server discovery merge có allow-list/policy; Manager Web có công tắc owner. | MQTT client/gateway/socket, firmware encrypted carrier, physical MCP LED/lamp round-trip, real-peer/real-network comparison, exact BOM cho OLED/IR/mmWave/MQTT/HA, assets/OTA và transport-promotion cần mở sau. |
+| M3 — transport/hardware/OTA | Đang mở ở host/build slice; MCP hardware đã nối capability đầu tiên | MQTT control/bridge/session, explicit host-only gateway composition, firmware UDP header/crypto codec, UDP v3 AES/reorder/barrier, deterministic loss/soak, firmware MCP registry/wire/JSON-RPC dispatcher, shared MCP cross-conformance fixture, bounded owner-task queue, BoardHal manifest và config-driven WS2812 LED/lamp descriptors đã có host/ESP-IDF evidence. Server discovery merge có allow-list/policy; Manager Web có công tắc owner. | broker/firmware encrypted carrier live wiring, physical MCP LED/lamp round-trip, real-peer/real-network comparison, exact BOM cho OLED/IR/mmWave/MQTT/HA, assets/OTA và transport-promotion cần mở sau. |
 | M4 — hardening/multilingual | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | Capacity, backup/restore, security, locale thứ hai và soak dài. |
 
 ## Nơi xem trực tiếp

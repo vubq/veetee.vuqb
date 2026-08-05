@@ -115,10 +115,17 @@ nguyên vô hạn. Các metric `ws_send_failures`, `ws_send_timeouts` và
 `veetee_server.udp_carrier` hiện cung cấp boundary asyncio UDP có bind/peer
 config tường minh, packet ceiling và queue bounded; nó chỉ đưa datagram bytes
 cho coordinator, không decode Opus, không tự mở khi Voice runtime khởi động và
-không thay transport mặc định. Direct WebSocket v3 vẫn là default. Chạy test
-core bằng `uv run pytest -q` trong checkout này. Broker/gateway wiring,
-loss/latency promotion và transport activation chỉ được bật sau golden/loss/soak
-evidence tương ứng.
+không thay transport mặc định. `veetee_server.mqtt_gateway` ghép ba boundary
+thành một session explicit: publish client hello, chờ server hello, mở UDP theo
+endpoint đã cấp, rồi phát sự kiện control/audio đã validate. Gateway chỉ được
+caller tạo và start; Voice runtime không tự activate, không có silent fallback
+và không đổi direct WebSocket v3 mặc định.
+
+Composition host-only được kiểm tra bằng MQTT fake client và UDP loopback với
+payload bytes nhỏ (không phải Opus/audio thiết bị). Broker production, firmware
+carrier, loss/latency promotion và transport activation chỉ được bật sau
+golden/loss/soak evidence tương ứng; chạy test bằng `uv run pytest -q` trong
+checkout này.
 
 ## Test
 

@@ -372,8 +372,11 @@ MUST tăng playback generation và xóa ngay packet/PCM cũ.
 ### 5.1 Trạng thái triển khai
 
 Profile này là normative ở device boundary nhưng được staged sau `ws-v3`. Lý do:
-firmware snapshot cho biết chính xác MQTT hello, UDP datagram và crypto; backend
-snapshot không terminate MQTT/UDP và yêu cầu gateway ngoài repo
+firmware snapshot cho biết chính xác MQTT hello, UDP datagram và crypto; Voice
+runtime không tự terminate MQTT/UDP trong critical path. Repo có
+`veetee_server.mqtt_gateway` làm composition host-only, nhưng caller phải
+explicit start và broker/firmware carrier thật vẫn là promotion gate; trước đó
+integration yêu cầu gateway ngoài repo
 (`references/xiaozhi-esp32-server/docs/mqtt-gateway-integration.md:3-10`,
 `references/xiaozhi-esp32-server/docs/mqtt-gateway-integration.md:50-80`). Không
 được suy ra topic routing hay key issuance của gateway ngoài từ Python bridge.
@@ -1502,6 +1505,7 @@ descriptor/schema, request và response cho `initialize`, `tools/list`,
 | `WIRE-MQTT-001` | opaque topic/config, 8 KiB control JSON, client/server hello | exact topic/session gate, bounded UTF-8 object và credential redaction |
 | `WIRE-MQTT-002` | internal gateway bridge 16-byte header + Opus payload | bridge type/reserved/length/sequence/timestamp round-trip; không nhầm UDP AES header |
 | `WIRE-MQTT-003` | client hello → server hello → encrypted UDP/control barrier → goodbye | session state, key cleanup, explicit abort và no-I/O composition |
+| `WIRE-MQTT-004` | explicit host gateway handshake + UDP loopback control/audio bytes | MQTT client hello/server hello, endpoint-bound UDP, encrypted send/receive và carrier cleanup; không tự activate Voice runtime |
 | `WIRE-UDP-005` | firmware C codec serialize/parse 16-byte UDP header | exact type/flags/length/SSRC/timestamp/sequence round-trip, payload ceiling 1.400 byte |
 | `WIRE-UDP-001` | fixed key/nonce/plaintext | deterministic header/ciphertext fixture |
 | `WIRE-UDP-002` | `N+1` đến trước `N` trong 120 ms | release đúng `N`, `N+1`; duplicate drop |

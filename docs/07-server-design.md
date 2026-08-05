@@ -23,7 +23,7 @@ veetee_server/
 ├── bootstrap/                 process config, lifecycle, health
 ├── transports/
 │   ├── websocket/             HTTP upgrade, text/binary I/O
-│   └── mqtt_udp/              MQTT control + encrypted UDP audio
+│   └── mqtt_udp/              MQTT control + encrypted UDP audio + explicit gateway composition
 ├── protocol/                  hello/message schemas, v1/v2/v3 framing, fixtures
 ├── sessions/                  SessionScope, registry, liveness
 ├── turns/                     TurnScope, coordinator, cancellation, progress
@@ -39,6 +39,8 @@ Ranh giới import bắt buộc:
 
 - `protocol` không import providers, manager client hoặc hardware tool.
 - `transports` chỉ biết `WireEvent`/`EncodedAudioFrame`, không gọi ASR/TTS.
+- `mqtt_udp` có thể được caller tạo như một composition boundary host-only;
+  Voice runtime không tự mở broker/UDP và không được fallback từ WebSocket.
 - Provider package chỉ implement SDK contract; không nhận raw connection object.
 - `history` nhận redacted immutable events; không giữ reference tới session queue.
 - `turns` phụ thuộc interface của provider/tool, không dynamic-import implementation trực tiếp.
