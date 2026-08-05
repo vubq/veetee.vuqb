@@ -97,14 +97,15 @@ Health:
 
 ### Staged MQTT/UDP v3 core
 
-`veetee_server.mqtt_udp` hiện chỉ cung cấp parser/crypto/reorder primitives cho
-profile M3. Nó không mở MQTT broker, UDP socket hoặc tự chuyển transport; direct
-WebSocket v3 vẫn là default. `veetee_server.mqtt_carrier` là adapter MQTT control
-tùy chọn dùng `aiomqtt`; nó chỉ connect/subscribe/publish payload đã validate và
-trả `(topic, payload)` cho `MqttUdpSession`, không tự decode JSON, mở UDP socket
-hay thay transport runtime. Chạy test core bằng `uv run pytest -q` trong
-checkout này. Gateway, stream barrier và transport promotion chỉ được bật sau
-golden/loss/soak evidence tương ứng.
+`veetee_server.mqtt_udp` cung cấp parser/crypto/reorder primitives cho profile M3;
+`veetee_server.mqtt_carrier` là adapter MQTT control tùy chọn dùng `aiomqtt`.
+`veetee_server.udp_carrier` hiện cung cấp boundary asyncio UDP có bind/peer
+config tường minh, packet ceiling và queue bounded; nó chỉ đưa datagram bytes
+cho coordinator, không decode Opus, không tự mở khi Voice runtime khởi động và
+không thay transport mặc định. Direct WebSocket v3 vẫn là default. Chạy test
+core bằng `uv run pytest -q` trong checkout này. Broker/gateway wiring,
+loss/latency promotion và transport activation chỉ được bật sau golden/loss/soak
+evidence tương ứng.
 
 ## Test
 

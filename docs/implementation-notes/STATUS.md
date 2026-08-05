@@ -1249,3 +1249,18 @@
 - Không phát audio/wake harness, không mở microphone/speaker/serial audio,
   không flash/reset/erase ESP32, không đổi Wi-Fi/Tailscale và không mutate
   production `veetee_vubq`.
+
+### UDP datagram carrier boundary — host-only (2026-08-05)
+
+- `veetee_server.udp_carrier.UdpDatagramCarrier` đã thêm asyncio UDP boundary
+  có bind/peer config tường minh, packet ceiling theo UDP v3, queue bounded và
+  lifecycle đóng/mở idempotent. Full encrypted/session/reorder semantics vẫn
+  thuộc `mqtt_session`/`mqtt_udp`; Voice runtime không tự activate carrier và
+  WebSocket v3 vẫn là default.
+- Loopback test dùng byte giả lập để chứng minh send/receive, queue overflow,
+  close sentinel và config fail-closed: carrier targeted **4/4** (lặp 5 lần),
+  Voice Server **154 passed**, Ruff/compileall/`uv lock --check` pass.
+- Không phát/thu audio, không mở microphone/speaker/serial audio, không flash/
+  reset/erase ESP32, không đổi Wi-Fi/route/Tailscale, không mở broker và không
+  mutate production database `veetee_vubq`. M3 live gateway, firmware carrier,
+  real-network loss/latency và transport promotion vẫn mở.
