@@ -6,7 +6,9 @@
 
 #include "veetee_mcp.h"
 
-/* A manifest is copied into this fixed-size store; it never allocates heap. */
+/* A manifest is copied into this fixed-size store; it never allocates heap.
+ * Activation owns the two logical ID strings so a parsed source buffer may be
+ * released after the snapshot swap. */
 #define VT_BOARD_HAL_MAX_CAPABILITIES VT_MCP_MAX_TOOLS
 #define VT_BOARD_HAL_MAX_CAPABILITY_ID_BYTES 64U
 #define VT_BOARD_HAL_MAX_OWNER_ID_BYTES 32U
@@ -33,13 +35,22 @@ typedef struct {
     uint16_t timeout_ms;
     uint8_t safety_class;
     bool enabled;
-} vt_board_capability_t;
+} vt_board_capability_descriptor_t;
 
 typedef struct {
     uint32_t capability_revision;
-    const vt_board_capability_t *capabilities;
+    const vt_board_capability_descriptor_t *capabilities;
     size_t capability_count;
 } vt_board_manifest_t;
+
+typedef struct {
+    char capability_id[VT_BOARD_HAL_MAX_CAPABILITY_ID_BYTES];
+    char owner_id[VT_BOARD_HAL_MAX_OWNER_ID_BYTES];
+    const vt_mcp_tool_t *tool;
+    uint16_t timeout_ms;
+    uint8_t safety_class;
+    bool enabled;
+} vt_board_capability_t;
 
 typedef struct {
     uint32_t capability_revision;

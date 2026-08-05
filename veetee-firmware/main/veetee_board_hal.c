@@ -7,7 +7,7 @@ static bool bounded_nonempty(const char *value, size_t capacity) {
 }
 
 static bool duplicate_capability_id(
-    const vt_board_capability_t *capabilities,
+    const vt_board_capability_descriptor_t *capabilities,
     size_t end,
     const char *capability_id) {
     for (size_t index = 0U; index < end; ++index) {
@@ -28,7 +28,7 @@ vt_board_hal_result_t vt_board_hal_validate(const vt_board_manifest_t *manifest)
     vt_mcp_tool_t all_tools[VT_BOARD_HAL_MAX_CAPABILITIES] = {0};
     size_t all_count = 0U;
     for (size_t index = 0U; index < manifest->capability_count; ++index) {
-        const vt_board_capability_t *capability = &manifest->capabilities[index];
+        const vt_board_capability_descriptor_t *capability = &manifest->capabilities[index];
         if (!bounded_nonempty(capability->capability_id, VT_BOARD_HAL_MAX_CAPABILITY_ID_BYTES) ||
             !bounded_nonempty(capability->owner_id, VT_BOARD_HAL_MAX_OWNER_ID_BYTES) ||
             capability->tool == NULL || capability->timeout_ms == 0U ||
@@ -68,8 +68,18 @@ vt_board_hal_result_t vt_board_hal_activate(
     vt_board_hal_t next = {0};
     next.capability_revision = manifest->capability_revision;
     next.capability_count = manifest->capability_count;
-    memcpy(next.capabilities, manifest->capabilities,
-           manifest->capability_count * sizeof(next.capabilities[0]));
+    for (size_t index = 0U; index < manifest->capability_count; ++index) {
+        const vt_board_capability_descriptor_t *source = &manifest->capabilities[index];
+        vt_board_capability_t *destination = &next.capabilities[index];
+        const size_t capability_id_length = strlen(source->capability_id);
+        const size_t owner_id_length = strlen(source->owner_id);
+        memcpy(destination->capability_id, source->capability_id, capability_id_length + 1U);
+        memcpy(destination->owner_id, source->owner_id, owner_id_length + 1U);
+        destination->tool = source->tool;
+        destination->timeout_ms = source->timeout_ms;
+        destination->safety_class = source->safety_class;
+        destination->enabled = source->enabled;
+    }
     *hal = next;
     return VT_BOARD_HAL_OK;
 }
