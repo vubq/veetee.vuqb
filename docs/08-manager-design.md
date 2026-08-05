@@ -261,7 +261,12 @@ Snapshot là contract immutable mà Voice Server tiêu thụ. Hình dạng tối
   "basePrompt": "...",
   "personality": { "id": "uuid", "revision": 3 },
   "speech": { "voiceId": "uuid", "rate": 1, "pitch": 0, "style": "natural" },
-  "progress": { "enabled": true, "acknowledgementId": "processing", "deadlineMs": 900 },
+  "progress": {
+    "enabled": true,
+    "acknowledgementId": "processing",
+    "deadlineMs": 900,
+    "acknowledgements": { "processing": "<localized config text>" }
+  },
   "admission": { "maxActiveTurns": 1, "retryAfterMs": 250 },
   "autoTurn": {
     "enabled": false,

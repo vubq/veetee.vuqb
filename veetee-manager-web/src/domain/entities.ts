@@ -65,6 +65,13 @@ export interface AutoTurnSettings {
   noSpeechAlert: AutoTurnAlertSettings
 }
 
+export interface ProgressAcknowledgementSettings extends RolePolicyObject {
+  enabled?: boolean
+  acknowledgementId?: string
+  deadlineMs?: number
+  acknowledgements?: Record<string, string>
+}
+
 /**
  * Additive runtime policy payloads are preserved by the Web gateway even when
  * this UI surface does not edit every field yet. This prevents a save from
@@ -81,7 +88,7 @@ export interface RoleConfig {
   speech: SpeechSettings
   admission: AdmissionSettings
   autoTurn: AutoTurnSettings
-  progress?: RolePolicyObject
+  progress?: ProgressAcknowledgementSettings
   segmentation?: RolePolicyObject
   bargeIn?: RolePolicyObject
   toolPolicy?: RolePolicyObject

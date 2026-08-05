@@ -27,7 +27,15 @@ const roleBodySchema = {
     // These policy objects are intentionally additive: provider/firmware
     // capabilities can add fields without the Manager route dropping them.
     // Domain validation remains owned by the published runtime snapshot.
-    progress: { type: 'object', additionalProperties: true, maxProperties: 32 },
+    progress: {
+      type: 'object', additionalProperties: true, maxProperties: 32,
+      properties: {
+        enabled: { type: 'boolean' },
+        acknowledgementId: { type: 'string', minLength: 1, maxLength: 64 },
+        deadlineMs: { type: 'integer', minimum: 1, maximum: 1499 },
+        acknowledgements: { type: 'object', maxProperties: 32, additionalProperties: { type: 'string', maxLength: 512 } },
+      },
+    },
     segmentation: { type: 'object', additionalProperties: true, maxProperties: 32 },
     bargeIn: { type: 'object', additionalProperties: true, maxProperties: 32 },
     toolPolicy: { type: 'object', additionalProperties: true, maxProperties: 32 },
@@ -67,7 +75,15 @@ const roleResponseSchema = {
     basePrompt: { type: 'string' },
     personality: { type: 'object', additionalProperties: true },
     speech: { type: 'object', additionalProperties: true },
-    progress: { type: 'object', additionalProperties: true },
+    progress: {
+      type: 'object', additionalProperties: true,
+      properties: {
+        enabled: { type: 'boolean' },
+        acknowledgementId: { type: 'string', minLength: 1, maxLength: 64 },
+        deadlineMs: { type: 'integer', minimum: 1, maximum: 1499 },
+        acknowledgements: { type: 'object', maxProperties: 32, additionalProperties: { type: 'string', maxLength: 512 } },
+      },
+    },
     segmentation: { type: 'object', additionalProperties: true },
     bargeIn: { type: 'object', additionalProperties: true },
     toolPolicy: { type: 'object', additionalProperties: true },

@@ -40,7 +40,7 @@ test('manager API publishes config through immutable ETag flow', async () => {
     const nextRole = {
       ...role.json(),
       personality: { name: 'focused', prompt: 'Use the configured style.' },
-      progress: { enabled: true, acknowledgementId: 'processing', deadlineMs: 900 },
+      progress: { enabled: true, acknowledgementId: 'processing', deadlineMs: 900, acknowledgements: { processing: 'Mình đang xử lý.' } },
       segmentation: { minimumCharacters: 2, maximumCharacters: 120 },
       bargeIn: { minSpeechFrames: 2 },
       toolPolicy: { maxRounds: 2, timeoutMs: 5000 },
@@ -61,6 +61,7 @@ test('manager API publishes config through immutable ETag flow', async () => {
     assert.equal(runtime.statusCode, 200)
     assert.equal(runtime.json().personality.name, 'focused')
     assert.equal(runtime.json().progress.deadlineMs, 900)
+    assert.equal(runtime.json().progress.acknowledgements.processing, 'Mình đang xử lý.')
     assert.equal(runtime.json().segmentation.maximumCharacters, 120)
     assert.equal(runtime.json().bargeIn.minSpeechFrames, 2)
     assert.equal(runtime.json().toolPolicy.maxRounds, 2)
@@ -96,7 +97,47 @@ test('role config OpenAPI response documents known policy fields while keeping a
       assert.ok(schema?.properties?.admission)
       assert.ok(schema?.properties?.autoTurn)
       assert.ok(schema?.properties?.tools)
+      assert.ok(schema?.properties?.progress)
     }
+  } finally {
+    await app.close()
+  }
+})
+
+test('role config validates progress acknowledgement shape while preserving additive fields', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistants = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    const assistant = assistants.json().items[0] as { id: string; etag: string }
+    const role = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistant.id}/role-config` })
+    const roleBody = role.json() as Record<string, unknown>
+    const valid = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/assistants/${assistant.id}/role-config`,
+      headers: { 'if-match': role.headers.etag },
+      payload: {
+        ...roleBody,
+        progress: {
+          enabled: true,
+          acknowledgementId: 'processing',
+          deadlineMs: 800,
+          acknowledgements: { processing: 'Mình đang xử lý.' },
+          pluginHint: { experimental: true },
+        },
+      },
+    })
+    assert.equal(valid.statusCode, 200)
+    assert.equal(valid.json().progress.acknowledgements.processing, 'Mình đang xử lý.')
+    assert.deepEqual(valid.json().progress.pluginHint, { experimental: true })
+
+    const invalid = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/assistants/${assistant.id}/role-config`,
+      headers: { 'if-match': valid.headers.etag },
+      payload: { ...(valid.json() as Record<string, unknown>), progress: { enabled: true, acknowledgementId: 'processing', deadlineMs: 1500 } },
+    })
+    assert.equal(invalid.statusCode, 400)
   } finally {
     await app.close()
   }

@@ -168,6 +168,45 @@ describe('RoleConfigFeature mutations', () => {
     })
   })
 
+  it('configures the progress acknowledgement without dropping additive policy fields', async () => {
+    const saveRoleConfig = vi.fn(async (...args: [string, RoleConfigDraft]) => {
+      void args
+      return success(resource)
+    })
+    const view = renderFeature(gateway({ saveRoleConfig }))
+
+    const deadline = await view.findByRole('spinbutton', { name: 'Deadline trước khi phản hồi' })
+    const message = view.getByRole('textbox', { name: 'Câu phản hồi khi đang xử lý' })
+    await fireEvent.update(deadline, '800')
+    await fireEvent.update(message, 'Mình đang xử lý yêu cầu của bạn.')
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
+
+    await waitFor(() => expect(saveRoleConfig).toHaveBeenCalledTimes(1))
+    const progress = saveRoleConfig.mock.calls[0]?.[1].progress
+    expect(progress).toMatchObject({ enabled: true, acknowledgementId: 'processing', deadlineMs: 800 })
+    expect(progress?.acknowledgements).toEqual({ processing: 'Mình đang xử lý yêu cầu của bạn.' })
+  })
+
+  it('allows enabling progress for a role that did not publish the optional policy', async () => {
+    const noProgressResource = {
+      ...resource,
+      value: { ...resource.value, progress: undefined },
+    }
+    const saveRoleConfig = vi.fn(async (...args: [string, RoleConfigDraft]) => {
+      void args
+      return success(noProgressResource)
+    })
+    const view = renderFeature(gateway({ getRoleConfig: vi.fn(async () => success(noProgressResource)), saveRoleConfig }))
+
+    const toggle = await view.findByRole('switch', { name: 'Bật phản hồi' })
+    await fireEvent.click(toggle)
+    await fireEvent.update(view.getByRole('textbox', { name: 'Câu phản hồi khi đang xử lý' }), 'Đang xử lý.')
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
+
+    await waitFor(() => expect(saveRoleConfig).toHaveBeenCalledTimes(1))
+    expect(saveRoleConfig.mock.calls[0]?.[1].progress).toMatchObject({ enabled: true, acknowledgementId: 'processing', deadlineMs: 900 })
+  })
+
   it('keeps the draft and exposes an offline save error', async () => {
     const view = renderFeature(gateway({ saveRoleConfig: vi.fn(async () => failure(true)) }))
     const prompt = await view.findByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })

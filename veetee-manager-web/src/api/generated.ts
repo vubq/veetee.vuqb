@@ -3055,6 +3055,13 @@ export interface operations {
                             [key: string]: unknown;
                         };
                         progress?: {
+                            enabled?: boolean;
+                            acknowledgementId?: string;
+                            deadlineMs?: number;
+                            acknowledgements?: {
+                                [key: string]: string;
+                            };
+                        } & {
                             [key: string]: unknown;
                         };
                         segmentation?: {
@@ -3237,6 +3244,13 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     progress?: {
+                        enabled?: boolean;
+                        acknowledgementId?: string;
+                        deadlineMs?: number;
+                        acknowledgements?: {
+                            [key: string]: string;
+                        };
+                    } & {
                         [key: string]: unknown;
                     };
                     segmentation?: {
@@ -3285,6 +3299,13 @@ export interface operations {
                             [key: string]: unknown;
                         };
                         progress?: {
+                            enabled?: boolean;
+                            acknowledgementId?: string;
+                            deadlineMs?: number;
+                            acknowledgements?: {
+                                [key: string]: string;
+                            };
+                        } & {
                             [key: string]: unknown;
                         };
                         segmentation?: {

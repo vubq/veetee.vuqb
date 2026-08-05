@@ -6483,7 +6483,30 @@
                     },
                     "progress": {
                       "type": "object",
-                      "additionalProperties": true
+                      "additionalProperties": true,
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "acknowledgementId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "deadlineMs": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1499
+                        },
+                        "acknowledgements": {
+                          "type": "object",
+                          "maxProperties": 32,
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 512
+                          }
+                        }
+                      }
                     },
                     "segmentation": {
                       "type": "object",
@@ -6931,7 +6954,30 @@
                   "progress": {
                     "type": "object",
                     "additionalProperties": true,
-                    "maxProperties": 32
+                    "maxProperties": 32,
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "acknowledgementId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      "deadlineMs": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1499
+                      },
+                      "acknowledgements": {
+                        "type": "object",
+                        "maxProperties": 32,
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 512
+                        }
+                      }
+                    }
                   },
                   "segmentation": {
                     "type": "object",
@@ -7071,7 +7117,30 @@
                     },
                     "progress": {
                       "type": "object",
-                      "additionalProperties": true
+                      "additionalProperties": true,
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "acknowledgementId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "deadlineMs": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1499
+                        },
+                        "acknowledgements": {
+                          "type": "object",
+                          "maxProperties": 32,
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 512
+                          }
+                        }
+                      }
                     },
                     "segmentation": {
                       "type": "object",

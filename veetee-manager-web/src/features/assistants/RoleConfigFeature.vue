@@ -20,6 +20,7 @@ import { notify } from '@/ui/primitives/notifications'
 
 import RevisionConflictDialog from './RevisionConflictDialog.vue'
 import { deriveLocaleOptions } from './locale-options'
+import ProgressAcknowledgementSection from './ProgressAcknowledgementSection.vue'
 
 const props = defineProps<{ assistantId: string }>()
 const emit = defineEmits<{ revision: [revision: number, dirty: boolean] }>()
@@ -41,6 +42,7 @@ const loadError = ref('')
 const actionError = ref('')
 const stateHeading = ref<HTMLElement | null>(null)
 const actionErrorHeading = ref<HTMLElement | null>(null)
+const progressValid = ref(true)
 let loadGeneration = 0
 let voiceGeneration = 0
 
@@ -199,6 +201,12 @@ async function focusActionError() {
 }
 
 function markDirty() { if (resource.value) emit('revision', resource.value.revision, true) }
+
+function updateProgress(value: NonNullable<RoleConfigDraft['progress']>) {
+  if (!draft.value) return
+  draft.value.progress = value
+  markDirty()
+}
 
 async function previewVoice() {
   if (!draft.value) return
@@ -612,6 +620,12 @@ onMounted(load)
       </div>
     </FormSection>
 
+    <ProgressAcknowledgementSection
+      :model-value="draft.progress"
+      @update:model-value="updateProgress"
+      @validity="progressValid = $event"
+    />
+
     <footer class="form-actions">
       <p
         v-if="actionError"
@@ -636,7 +650,7 @@ onMounted(load)
       <VtButton
         type="submit"
         variant="primary"
-        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError) || autoTurnError"
+        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError) || autoTurnError || !progressValid"
         :loading="saving"
       >
         <template #leading>

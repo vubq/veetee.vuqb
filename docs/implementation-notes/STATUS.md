@@ -1388,3 +1388,12 @@
   không reset. Manager API/Web và database không restart.
 - Runtime snapshot hiện chưa publish `progress.acknowledgements`, nên không lặp
   physical audio chỉ cho ownership fix; audio gate trước đó giữ nguyên evidence.
+
+### Progress acknowledgement owner controls — host-only (2026-08-05)
+
+- Role Config có component `ProgressAcknowledgementSection` để owner chỉnh
+  enabled/deadline/ID/message map; API giữ additive fields và validate boundary
+  tương ứng. OpenAPI/generated client đã đồng bộ.
+- Evidence: Manager API dedicated test DB **44/44**, Manager Web unit **95/95**,
+  Chromium E2E **11/11**, typecheck/lint/build/OpenAPI pass. Không mutate
+  production DB, không publish runtime, không đổi wire/provider fallback.
