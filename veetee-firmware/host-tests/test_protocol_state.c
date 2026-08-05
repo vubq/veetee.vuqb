@@ -1,6 +1,7 @@
 #include "veetee_config.h"
 #include "veetee_protocol.h"
 #include "veetee_state.h"
+#include "veetee_screen_model.h"
 #include "veetee_wire_guard.h"
 #include "veetee_ptt.h"
 #include "veetee_pairing.h"
@@ -197,6 +198,21 @@ static void test_interruptible_states(void) {
     assert(vt_state_is_interruptible(VT_DEVICE_SPEAKING));
 }
 
+static void test_screen_model(void) {
+    assert(vt_screen_for_state(VT_DEVICE_IDLE) == VT_SCREEN_HOME);
+    assert(vt_screen_for_state(VT_DEVICE_CONNECTING) == VT_SCREEN_CONNECTING);
+    assert(vt_screen_for_state(VT_DEVICE_LISTENING) == VT_SCREEN_LISTENING);
+    assert(vt_screen_for_state(VT_DEVICE_THINKING) == VT_SCREEN_THINKING);
+    assert(vt_screen_for_state(VT_DEVICE_SPEAKING) == VT_SCREEN_SPEAKING);
+    assert(vt_screen_is_overlay(VT_SCREEN_INTERRUPTED));
+    assert(vt_screen_is_overlay(VT_SCREEN_ERROR));
+    assert(vt_screen_is_overlay(VT_SCREEN_NOTICE));
+    assert(!vt_screen_is_overlay(VT_SCREEN_HOME));
+    assert(vt_screen_overlay_restore(VT_SCREEN_ERROR, VT_DEVICE_LISTENING) == VT_SCREEN_LISTENING);
+    assert(vt_screen_overlay_restore(VT_SCREEN_NOTICE, VT_DEVICE_SPEAKING) == VT_SCREEN_SPEAKING);
+    assert(vt_screen_overlay_restore(VT_SCREEN_HOME, VT_DEVICE_IDLE) == VT_SCREEN_HOME);
+}
+
 static void test_state_event_matrix_rejects_stale_events(void) {
     static const int8_t expected[5][10] = {
         /* connect, hello, listen-start, listen-stop, tts-start, tts-stop,
@@ -337,6 +353,7 @@ int main(void) {
     test_state();
     test_abort_from_thinking();
     test_interruptible_states();
+    test_screen_model();
     test_state_event_matrix_rejects_stale_events();
     test_mode_aware_graceful_tts_stop();
     test_ptt_debouncer_edges_and_bounce();

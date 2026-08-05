@@ -8,6 +8,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "lvgl.h"
 #include "veetee_state.h"
+#include "veetee_screen_model.h"
 
 /* Text is supplied as a resource bundle instead of being coupled to the
    renderer.  The fallback Vietnamese bundle is only a safe boot resource; a
@@ -38,20 +39,23 @@ typedef struct {
     const char *error_hint;
 } vt_display_texts_t;
 
-typedef enum {
-    VT_DISPLAY_SCREEN_PAIRING = 0,
-    VT_DISPLAY_SCREEN_HOME,
-    VT_DISPLAY_SCREEN_CONNECTING,
-    VT_DISPLAY_SCREEN_LISTENING,
-    VT_DISPLAY_SCREEN_THINKING,
-    VT_DISPLAY_SCREEN_SPEAKING,
-    VT_DISPLAY_SCREEN_INTERRUPTED,
-    VT_DISPLAY_SCREEN_ERROR,
-    VT_DISPLAY_SCREEN_NOTICE,
-} vt_display_screen_t;
+typedef vt_screen_id_t vt_display_screen_t;
+
+#define VT_DISPLAY_SCREEN_PAIRING VT_SCREEN_PAIRING
+#define VT_DISPLAY_SCREEN_HOME VT_SCREEN_HOME
+#define VT_DISPLAY_SCREEN_CONNECTING VT_SCREEN_CONNECTING
+#define VT_DISPLAY_SCREEN_LISTENING VT_SCREEN_LISTENING
+#define VT_DISPLAY_SCREEN_THINKING VT_SCREEN_THINKING
+#define VT_DISPLAY_SCREEN_SPEAKING VT_SCREEN_SPEAKING
+#define VT_DISPLAY_SCREEN_INTERRUPTED VT_SCREEN_INTERRUPTED
+#define VT_DISPLAY_SCREEN_ERROR VT_SCREEN_ERROR
+#define VT_DISPLAY_SCREEN_NOTICE VT_SCREEN_NOTICE
 
 typedef struct {
     lv_obj_t *screen;
+    lv_obj_t *state_chip;
+    lv_obj_t *state_chip_label;
+    lv_obj_t *activity_fill;
     lv_obj_t *status_title;
     lv_obj_t *status_hint;
     lv_obj_t *connection_label;

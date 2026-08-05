@@ -6,25 +6,25 @@ import { requireInjection } from '@/app/requireInjection'
 import { useUnsavedChangesGuard } from '@/app/useUnsavedChangesGuard'
 import type { ProviderConfigRecord, ProviderInstallationView, ProviderKind, ProviderProbeResult, SecretReference } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
-import FormSection from '@/ui/patterns/FormSection.vue'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
 import VtButton from '@/ui/primitives/VtButton.vue'
 import VtCard from '@/ui/primitives/VtCard.vue'
 import VtCheckbox from '@/ui/primitives/VtCheckbox.vue'
 import VtFormField from '@/ui/primitives/VtFormField.vue'
 import VtInput from '@/ui/primitives/VtInput.vue'
-import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
 import VtStatus from '@/ui/primitives/VtStatus.vue'
 import VtDialog from '@/ui/primitives/VtDialog.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
 import { notify } from '@/ui/primitives/notifications'
 
-import SchemaConfigForm from './SchemaConfigForm.vue'
 import SecretReferencePanel from './SecretReferencePanel.vue'
 import ProviderConfigList from './ProviderConfigList.vue'
+import ProviderInstallationCatalog from './ProviderInstallationCatalog.vue'
+import ProviderEditorShell from './ProviderEditorShell.vue'
 import VoiceCatalogPanel from './VoiceCatalogPanel.vue'
 import UnsavedChangesDialog from '@/ui/patterns/UnsavedChangesDialog.vue'
 import { cloneConfig } from './schema-config'
+import { normalizeProviderDraft } from './provider-editor'
 
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
 const props = withDefaults(defineProps<{
@@ -80,16 +80,9 @@ const kindItems = (Object.keys(kindLabels) as ProviderKind[]).map((id) => ({ id,
 const installationsForKind = computed(() => installations.value.filter((item) => item.kind === activeKind.value))
 const configsForKind = computed(() => configs.value.filter((config) => installations.value.some((item) => item.id === config.installationId && item.kind === activeKind.value)))
 const kindCounts = computed(() => Object.fromEntries((Object.keys(kindLabels) as ProviderKind[]).map((kind) => [kind, configs.value.filter((config) => installations.value.some((item) => item.id === config.installationId && item.kind === kind)).length])))
-const options = computed<VtSelectOption[]>(() => installationsForKind.value.map((item) => ({ value: item.id, label: item.displayName ?? item.displayNameKey, description: `${kindLabels[item.kind]} · ${item.version}` })))
 const selected = computed(() => installations.value.find((item) => item.id === selectedId.value))
 const removeTarget = computed(() => configs.value.find((item) => item.id === removeId.value))
 const selectedProbe = computed(() => selectedConfigId.value ? probeResults.value[selectedConfigId.value] : undefined)
-const selectedFamily = computed(() => selected.value?.providerFamily?.replace(/-/g, ' ') || 'Schema-driven')
-const selectedProtocol = computed(() => selected.value?.protocol?.replace(/-/g, ' ') || 'Provider contract')
-const selectedLocales = computed(() => {
-  const locales = selected.value?.supportedLocales ?? []
-  return locales.length === 0 || locales.includes('*') ? 'Đa ngôn ngữ' : locales.map(localeLabel).join(', ')
-})
 const pageTitle = computed(() => props.showKindNav ? 'Các dịch vụ AI' : kindLabels[activeKind.value])
 const pageDescription = computed(() => props.showKindNav
   ? 'Chọn cách Veetee nghe, hiểu và trả lời. Bạn có thể thay đổi cấu hình mà không cần sửa code.'
@@ -111,16 +104,13 @@ function formatCheckedAt(value: string) {
   return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
 }
 
-function localeLabel(value: string) {
-  return value === 'vi-VN' || value === 'vi' ? 'Tiếng Việt' : value === 'en-US' || value === 'en' ? 'English' : value
-}
-
 function chooseInstallation(value: string) {
   selectedId.value = value
+  const installation = installations.value.find((item) => item.id === value)
   const item = configs.value.find((config) => config.installationId === value)
   selectedConfigId.value = item?.id ?? ''
   name.value = item?.name ?? ''
-  configDraft.value = cloneConfig(item?.config ?? {})
+  configDraft.value = item && installation ? normalizeProviderDraft(installation, item.config) : {}
   configValid.value = true
   selectedSecretRefs.value = [...(item?.secretRefs ?? [])]
 }
@@ -273,7 +263,7 @@ async function save() {
   if (!selected.value || !name.value.trim() || !configValid.value) return
   saveError.value = ''
   saving.value = true
-  const payload = { name: name.value.trim(), config: cloneConfig(configDraft.value), secretRefs: [...selectedSecretRefs.value] }
+  const payload = { name: name.value.trim(), config: selected.value ? normalizeProviderDraft(selected.value, cloneConfig(configDraft.value)) : cloneConfig(configDraft.value), secretRefs: [...selectedSecretRefs.value] }
   try {
     const result = selectedConfigId.value
       ? await gateway.updateProviderConfig(selectedConfigId.value, payload, configs.value.find((item) => item.id === selectedConfigId.value)?.etag ?? '"missing"')
@@ -401,7 +391,7 @@ function toggleSecretReference(id: string, checked: boolean) {
         </button>
       </nav>
       <div class="provider-list-toolbar">
-        <p>{{ kindLabels[activeKind] }} được quản lý riêng. Thay đổi chỉ có hiệu lực sau khi bạn áp dụng cấu hình cho trợ lý.</p>
+        <p>{{ kindLabels[activeKind] }} được quản lý riêng. Installation, config và secret có vòng đời độc lập; thay đổi chỉ có hiệu lực sau khi bạn áp dụng cho trợ lý.</p>
         <VtButton
           size="sm"
           variant="primary"
@@ -410,6 +400,13 @@ function toggleSecretReference(id: string, checked: boolean) {
           Tạo cấu hình
         </VtButton>
       </div>
+      <ProviderInstallationCatalog
+        :installations="installationsForKind"
+        :configs="configsForKind"
+        :selected-id="selectedId"
+        :kind="activeKind"
+        @select="chooseInstallation"
+      />
       <ProviderConfigList
         v-model:query="providerQuery"
         v-model:kind="activeKind"
@@ -423,35 +420,20 @@ function toggleSecretReference(id: string, checked: boolean) {
         @remove="requestRemove"
       />
       <div class="provider-layout">
-        <FormSection
-          title="Loại dịch vụ"
-          :description="`${kindLabels[activeKind]} có thể có nhiều preset và cấu hình riêng.`"
-        >
-          <VtFormField
-            label="Provider / preset"
-            for-id="provider-installation"
-          >
-            <VtSelect
-              id="provider-installation"
-              :model-value="selectedId"
-              label="Provider / preset"
-              :options="options"
-              @update:model-value="chooseInstallation"
-            />
-          </VtFormField>
-          <div class="provider-meta">
-            <VtStatus
-              tone="online"
-              :label="kindLabels[activeKind]"
-            />
-            <span>{{ selectedFamily }} · {{ selectedProtocol }}</span>
-            <span>{{ selectedLocales }}</span>
-          </div>
-        </FormSection>
         <VtCard class="config-card">
-          <h2>Cấu hình riêng</h2>
+          <div class="config-card-heading">
+            <div>
+              <p class="eyebrow">
+                Config của installation
+              </p>
+              <h2>Cấu hình riêng</h2>
+            </div>
+            <VtBadge tone="success">
+              {{ selected ? `${selected.displayName ?? selected.displayNameKey}` : 'Chưa chọn provider' }}
+            </VtBadge>
+          </div>
           <p class="muted">
-            Các trường được sinh tự động. Khóa kết nối chỉ được lưu an toàn và không hiển thị lại trên trình duyệt.
+            Mỗi bản ghi là một cấu hình độc lập. Các trường được sinh từ manifest/provider adapter; khóa kết nối chỉ được lưu an toàn và không hiển thị lại trên trình duyệt.
           </p>
           <VtFormField
             label="Tên cấu hình"
@@ -465,9 +447,9 @@ function toggleSecretReference(id: string, checked: boolean) {
               placeholder="Tên hiển thị…"
             />
           </VtFormField>
-          <SchemaConfigForm
+          <ProviderEditorShell
             v-model="configDraft"
-            :schema="selected.configSchema"
+            :installation="selected"
             :disabled="saving"
             @validity-change="configValid = $event"
           />
@@ -644,6 +626,8 @@ h2 { margin-bottom: 6px; font-size: 14px; }
 .provider-layout > :deep(.secret-card) { grid-column: 1 / -1; min-width: 0; }
 .provider-meta { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: var(--vt-text-muted); font-size: 10px; }
 .config-card { display: grid; gap: 12px; }
+.config-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.config-card-heading h2 { margin: 0; }
 .probe-card { display: grid; gap: 9px; background: var(--vt-surface-subtle); padding: 12px; }
 .probe-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .probe-heading h3 { margin: 0; color: var(--vt-text); font-size: 12px; }
@@ -662,6 +646,7 @@ h2 { margin-bottom: 6px; font-size: 14px; }
 .provider-save-error { flex: 1; margin: 0; color: var(--vt-danger); font-size: 11px; line-height: 1.45; }
 @media (max-width: 980px) { .provider-kind-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .provider-header, .provider-layout { grid-template-columns: 1fr; display: grid; } }
+@media (max-width: 520px) { .config-card-heading { display: grid; } }
 @media (max-width: 600px) { .provider-kind-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .provider-list-toolbar { align-items: stretch; flex-direction: column; } .provider-list-toolbar .vt-button { width: 100%; } }
 </style>

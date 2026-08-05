@@ -86,6 +86,28 @@ static const char *state_hint(const vt_display_texts_t *texts, vt_device_state_t
     }
 }
 
+static const char *state_chip_text(vt_device_state_t state) {
+    switch (state) {
+    case VT_DEVICE_CONNECTING: return "CONNECTING";
+    case VT_DEVICE_LISTENING: return "LISTENING";
+    case VT_DEVICE_THINKING: return "THINKING";
+    case VT_DEVICE_SPEAKING: return "SPEAKING";
+    case VT_DEVICE_IDLE:
+    default: return "HOME";
+    }
+}
+
+static uint8_t state_activity(vt_device_state_t state) {
+    switch (state) {
+    case VT_DEVICE_CONNECTING: return 25U;
+    case VT_DEVICE_LISTENING: return 72U;
+    case VT_DEVICE_THINKING: return 58U;
+    case VT_DEVICE_SPEAKING: return 92U;
+    case VT_DEVICE_IDLE:
+    default: return 8U;
+    }
+}
+
 static esp_err_t configure_backlight(const vt_display_config_t *config) {
     if (config->backlight_gpio < 0) return ESP_OK;
     gpio_config_t gpio = {
@@ -176,6 +198,9 @@ static void update_connection(vt_display_t *display, vt_display_view_t *view, vt
 
 static void update_status(vt_display_t *display, vt_display_view_t *view, vt_device_state_t state) {
     const lv_color_t accent = state_color(state);
+    lv_label_set_text(view->state_chip_label, state_chip_text(state));
+    lv_obj_set_style_bg_color(view->state_chip, accent, LV_PART_MAIN);
+    lv_obj_set_width(view->activity_fill, (int32_t)(112U * state_activity(state) / 100U));
     lv_label_set_text(view->status_title, state_title(display->texts, state));
     lv_label_set_text(view->status_hint, state_hint(display->texts, state));
     lv_obj_set_style_bg_color(view->status_orb, accent, LV_PART_MAIN);
@@ -205,6 +230,23 @@ static esp_err_t create_state_view(vt_display_t *display, vt_device_state_t stat
     view->connection_label = make_text(view->screen, display->texts->connection_label,
                                        &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
                                        72, 24, 166, 12, LV_TEXT_ALIGN_RIGHT);
+
+    view->state_chip = make_panel(view->screen, 14, 34, 76, 12, 6);
+    lv_obj_set_style_bg_color(view->state_chip, state_color(state), LV_PART_MAIN);
+    lv_obj_set_style_border_width(view->state_chip, 0, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(view->state_chip, 0, LV_PART_MAIN);
+    view->state_chip_label = make_text(view->state_chip, state_chip_text(state),
+                                       &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_BACKGROUND),
+                                       72, 12, 2, 0, LV_TEXT_ALIGN_CENTER);
+    lv_obj_set_style_text_letter_space(view->state_chip_label, 1, LV_PART_MAIN);
+    lv_obj_t *activity_track = make_panel(view->screen, 104, 36, 122, 8, 4);
+    lv_obj_set_style_bg_color(activity_track, lv_color_hex(VT_COLOR_CARD_EDGE), LV_PART_MAIN);
+    lv_obj_set_style_border_width(activity_track, 0, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(activity_track, 0, LV_PART_MAIN);
+    view->activity_fill = make_panel(activity_track, 0, 0, 10, 8, 4);
+    lv_obj_set_style_bg_color(view->activity_fill, state_color(state), LV_PART_MAIN);
+    lv_obj_set_style_border_width(view->activity_fill, 0, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(view->activity_fill, 0, LV_PART_MAIN);
 
     lv_obj_t *card = make_panel(view->screen, 14, 50, 212, 174, 26);
     view->status_ring = lv_obj_create(card);
@@ -428,11 +470,7 @@ esp_err_t vt_display_show_state(vt_display_t *display, vt_device_state_t state) 
     update_status(display, view, state);
     display->notice_active = false;
     lv_screen_load(view->screen);
-    display->active_screen = state == VT_DEVICE_IDLE ? VT_DISPLAY_SCREEN_HOME
-        : state == VT_DEVICE_CONNECTING ? VT_DISPLAY_SCREEN_CONNECTING
-        : state == VT_DEVICE_LISTENING ? VT_DISPLAY_SCREEN_LISTENING
-        : state == VT_DEVICE_THINKING ? VT_DISPLAY_SCREEN_THINKING
-        : VT_DISPLAY_SCREEN_SPEAKING;
+    display->active_screen = vt_screen_for_state(state);
     display->showing_pairing = false;
     display->last_state = state;
     lvgl_port_unlock();

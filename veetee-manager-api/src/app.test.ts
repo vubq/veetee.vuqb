@@ -318,7 +318,9 @@ test('provider archive and probe expose safe lifecycle states', async () => {
       config: { endpoint: 'https://api.groq.com/openai/v1', model: 'fixture', maxTokens: 64 },
     } })
     assert.equal(created.statusCode, 201)
-    const value = created.json() as { id: string; etag: string }
+    const value = created.json() as { id: string; etag: string; config: Record<string, unknown> }
+    assert.equal(value.config.baseUrl, 'https://api.groq.com/openai/v1')
+    assert.equal('endpoint' in value.config, false)
 
     const probe = await app.inject({ method: 'POST', url: `/api/v1/provider-configs/${value.id}/probe` })
     assert.equal(probe.statusCode, 200)

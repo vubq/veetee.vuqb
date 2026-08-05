@@ -1906,3 +1906,12 @@
 - Full Chromium E2E **15/15 passed** sau thay đổi; UI unit **96/96**,
   typecheck/lint/build vẫn xanh. Không đổi API, wire contract, database runtime
   hoặc firmware.
+
+# 2026-08-06 — capability-first provider UI và firmware screen model
+
+Đã hoàn thành host-only follow-up trong
+`docs/implementation-notes/2026-08-06-provider-os-host-only.md`: provider UI
+tách theo capability/installation/config, OpenAI-compatible canonical `baseUrl`
+với compatibility cho `endpoint`, TTS voice catalog độc lập; firmware có pure
+screen model và state chip/activity track cho UI kiểu OS. Không phát audio,
+không flash/reset/erase và không đổi network trong checkpoint này.

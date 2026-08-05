@@ -41,9 +41,9 @@ export function createProviderRegistryFixtures(): {
     capabilities: ['streaming', 'tools'],
     configSchema: {
       type: 'object',
-      required: ['endpoint', 'model', 'maxTokens'],
+      required: ['baseUrl', 'model', 'maxTokens'],
       properties: {
-        endpoint: { type: 'string', format: 'uri' },
+        baseUrl: { type: 'string', format: 'uri' },
         model: { type: 'string', minLength: 1 },
         maxTokens: { type: 'integer', minimum: 1, maximum: 32768 },
         temperature: { type: 'number', minimum: 0, maximum: 2 },
@@ -84,7 +84,7 @@ export function createProviderRegistryFixtures(): {
       name: 'Groq test config',
       revision: 1,
       config: {
-        endpoint: 'https://api.groq.com/openai/v1',
+        baseUrl: 'https://api.groq.com/openai/v1',
         model: 'llama-3.3-70b-versatile',
         maxTokens: 512,
         temperature: 0.2,

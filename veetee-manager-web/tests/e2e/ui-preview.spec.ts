@@ -138,7 +138,7 @@ test('provider unavailable không fallback và conflict giữ draft', async ({ p
 test('provider registry sinh form từ schema và lưu revision', async ({ page }) => {
   await page.goto('/providers/llm')
   await expect(page.getByRole('heading', { name: 'Bộ não trả lời' })).toBeVisible()
-  await expect(page.getByRole('textbox', { name: 'Địa chỉ dịch vụ' })).toHaveValue('https://api.groq.com/openai/v1')
+  await expect(page.getByRole('textbox', { name: 'Base URL' })).toHaveValue('https://api.groq.com/openai/v1')
   await expect(page.getByRole('spinbutton', { name: 'Độ dài trả lời tối đa' })).toHaveValue('512')
   await expect(page.getByRole('switch', { name: 'Cho phép gọi công cụ' })).toBeChecked()
   await expect(page.getByRole('textbox', { name: 'Cấu hình nâng cao' })).toHaveValue(/toolPolicy/)

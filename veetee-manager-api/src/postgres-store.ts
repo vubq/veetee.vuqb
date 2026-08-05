@@ -28,6 +28,7 @@ import {
   hashPairingCode,
   isPresenceFresh,
   problem,
+  normalizeProviderConfig,
   validateSecretBindings,
   type Assistant,
   type ConversationDetail,
@@ -138,17 +139,18 @@ export class PostgresStore implements Store {
 
   async createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: JsonObject; secretRefs?: string[] }): Promise<ProviderConfig> {
     const installation = this.findInstallation(value.installationId)
-    validateJsonObject(value.config, installation.configSchema)
+    const config = normalizeProviderConfig(installation, value.config)
+    validateJsonObject(config, installation.configSchema)
     const secretRefs = [...(value.secretRefs ?? [])]
     validateSecretBindings(installation, secretRefs)
     await this.assertSecretRefs(ownerId, secretRefs)
     const id = randomUUID()
     const now = new Date()
     const revision = 1
-    const revisionEtag = etag({ ...value.config, revision })
+    const revisionEtag = etag({ ...config, revision })
     await this.handle.db.transaction(async (tx) => {
       await tx.insert(providerConfigTable).values({ id, ownerId, installationId: value.installationId, name: value.name, currentRevision: revision, currentEtag: revisionEtag, createdAt: now, updatedAt: now, archivedAt: null })
-      await tx.insert(providerConfigRevisionTable).values({ providerConfigId: id, revision, config: structuredClone(value.config), secretRefs, etag: revisionEtag, createdAt: now })
+      await tx.insert(providerConfigRevisionTable).values({ providerConfigId: id, revision, config: structuredClone(config), secretRefs, etag: revisionEtag, createdAt: now })
     })
     const identity = await this.findProviderIdentity(ownerId, id)
     const revisionRow = await this.findProviderRevision(id, revision)
@@ -164,7 +166,7 @@ export class PostgresStore implements Store {
     if (!current) throw new Error('provider config current revision is missing')
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
     const installation = this.findInstallation(identity.installationId)
-    const config = value.config ?? asJsonObject(current.config)
+    const config = normalizeProviderConfig(installation, value.config ?? asJsonObject(current.config))
     validateJsonObject(config, installation.configSchema)
     const secretRefs = [...(value.secretRefs ?? asSecretRefs(current.secretRefs))]
     validateSecretBindings(installation, secretRefs)
@@ -824,9 +826,10 @@ export class PostgresStore implements Store {
         const installation = this.installations.find((item) => item.id === value.providerId)
         if (!installation) continue
         const providerConfigId = randomUUID()
-        const providerEtag = etag({ ...value.config, revision: 1 })
+        const providerConfig = normalizeProviderConfig(installation, asJsonObject(value.config))
+        const providerEtag = etag({ ...providerConfig, revision: 1 })
         await tx.insert(providerConfigTable).values({ id: providerConfigId, ownerId: 'local-owner', installationId: installation.id, name: `${installation.displayName ?? installation.displayNameKey} mặc định`, currentRevision: 1, currentEtag: providerEtag, createdAt: now, updatedAt: now, archivedAt: null })
-        await tx.insert(providerConfigRevisionTable).values({ providerConfigId, revision: 1, config: asJsonObject(value.config), secretRefs: [], etag: providerEtag, createdAt: now })
+        await tx.insert(providerConfigRevisionTable).values({ providerConfigId, revision: 1, config: providerConfig, secretRefs: [], etag: providerEtag, createdAt: now })
         providerSelections[kind] = { mode: 'selected', providerConfigId }
       }
       await tx.insert(assistantRevisionTable).values({ assistantId: id, revision: snapshot.revision, role, providerSelections, etag: revisionEtag, createdAt: now })

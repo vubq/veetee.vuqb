@@ -13,6 +13,25 @@ export interface ProviderInstallation {
   configSchema: Record<string, unknown>
 }
 
+/**
+ * Normalize provider-family aliases at the persistence boundary.  The
+ * OpenAI-compatible family historically called its endpoint `endpoint`; the
+ * public contract now uses the standard `baseUrl`.  Keeping this conversion
+ * here means every store, including PostgreSQL and the memory adapter, writes
+ * one canonical shape while old clients/revisions remain readable.
+ */
+export function normalizeProviderConfig(installation: ProviderInstallation, value: Record<string, unknown>): Record<string, unknown> {
+  const next = structuredClone(value)
+  const family = installation.manifest.providerFamily
+  if (family === 'openai-compatible' && typeof next.baseUrl !== 'string' && typeof next.endpoint === 'string') {
+    next.baseUrl = next.endpoint
+    delete next.endpoint
+  } else if (family === 'openai-compatible' && typeof next.baseUrl === 'string' && 'endpoint' in next) {
+    delete next.endpoint
+  }
+  return next
+}
+
 export interface ProviderConfig {
   id: string
   ownerId: string
@@ -442,7 +461,8 @@ export class InMemoryStore implements Store {
         if (!value || value.mode === 'disabled' || typeof value.providerId !== 'string' || !value.config || typeof value.config !== 'object') continue
         const installation = this.installations.find((item) => item.id === value.providerId)
         if (!installation) continue
-        this.providerConfigs.set(value.providerId, { id: value.providerId, ownerId: 'local-owner', installationId: value.providerId, name: installation.displayNameKey, revision: 1, config: structuredClone(value.config as Record<string, unknown>), secretRefs: [], etag: etag(value.config), updatedAt: assistant.updatedAt })
+        const providerConfig = normalizeProviderConfig(installation, value.config as Record<string, unknown>)
+        this.providerConfigs.set(value.providerId, { id: value.providerId, ownerId: 'local-owner', installationId: value.providerId, name: installation.displayNameKey, revision: 1, config: providerConfig, secretRefs: [], etag: etag(providerConfig), updatedAt: assistant.updatedAt })
         this.providerConfigSecretRefs.set(value.providerId, new Set())
         void kind
       }
@@ -459,12 +479,13 @@ export class InMemoryStore implements Store {
   async createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<ProviderConfig> {
     const installation = this.installations.find((item) => item.id === value.installationId)
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
-    validateJsonObject(value.config, installation.configSchema)
+    const config = normalizeProviderConfig(installation, value.config)
+    validateJsonObject(config, installation.configSchema)
     const secretRefs = [...(value.secretRefs ?? [])]
     validateSecretBindings(installation, secretRefs)
     for (const referenceId of secretRefs) if (!this.secretReferences.has(referenceId) || this.secretReferences.get(referenceId)?.ownerId !== ownerId || this.secretReferences.get(referenceId)?.status !== 'available') throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
     const now = new Date().toISOString()
-    const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name, revision: 1, config: structuredClone(value.config), secretRefs, etag: etag({ ...value.config, revision: 1 }), updatedAt: now, archivedAt: null }
+    const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name, revision: 1, config: structuredClone(config), secretRefs, etag: etag({ ...config, revision: 1 }), updatedAt: now, archivedAt: null }
     this.providerConfigs.set(item.id, item)
     this.providerConfigSecretRefs.set(item.id, new Set(item.secretRefs))
     return structuredClone(item)
@@ -477,7 +498,7 @@ export class InMemoryStore implements Store {
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
     const installation = this.installations.find((item) => item.id === current.installationId)
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
-    const config = value.config ?? current.config
+    const config = normalizeProviderConfig(installation, value.config ?? current.config)
     validateJsonObject(config, installation.configSchema)
     const secretRefs = [...(value.secretRefs ?? current.secretRefs)]
     validateSecretBindings(installation, secretRefs)
