@@ -1405,3 +1405,19 @@
   `activeTurns=0`, ESP32 tự reconnect không reset.
 - Production role-config probe chỉ đọc: `progress.acknowledgements` hiện chưa
   được publish; không tự sửa DB hoặc runtime config.
+
+### Physical wake soak re-check — quota and false-reject gates remain open (2026-08-05)
+
+- Harness local đã đổi sang marker drain-aware (`graceful tts drain complete`
+  rồi `wake detector armed model=...`) để không phát wake phrase chồng TTS;
+  smoke mới đạt **2/2**.
+- Production single-key soak đạt 20 lượt rồi dừng ở lượt 21 với
+  `provider_error_LLM_RATE_LIMITED=1`. Fixture test-only với 4 key đạt 3 lượt,
+  key ordinal 1→2→3; sau đó wake detector miss ở lượt 4, dù server/fixture
+  không lỗi. Verbose fixture smoke tiếp theo đạt **2/2** và có mức mic hợp lệ.
+- Kết luận: multi-key test harness hoạt động và production đã được restore, nhưng
+  chưa có 100/100 wake pass. M1 vẫn mở các gate false-reject/false-accept,
+  AEC/echo-only, voice-onset barge-in/time-to-silence, TTFA p95 và peer thật.
+  Reports redact nằm ngoài Git tại `/tmp/veetee-wake-100-drain-aware-20260805.json`,
+  `/tmp/veetee-wake-100-fixture-drain-aware-20260805.json` và
+  `/tmp/veetee-wake-normal-fixture-verbose-20260805.json`.
