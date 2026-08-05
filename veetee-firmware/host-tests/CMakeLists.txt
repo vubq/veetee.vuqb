@@ -59,3 +59,11 @@ if(EXISTS "${VT_CJSON_ROOT}/cJSON.c" AND EXISTS "${VT_CJSON_ROOT}/cJSON.h")
 else()
     message(STATUS "Skipping mcp_dispatch host test: ESP-IDF cJSON source is not resolved")
 endif()
+
+add_executable(veetee_firmware_board_hal_tests
+    test_board_hal.c
+    ../main/veetee_board_hal.c
+    ../main/veetee_mcp.c)
+target_include_directories(veetee_firmware_board_hal_tests PRIVATE ../main)
+target_compile_options(veetee_firmware_board_hal_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
+add_test(NAME board_hal COMMAND veetee_firmware_board_hal_tests)

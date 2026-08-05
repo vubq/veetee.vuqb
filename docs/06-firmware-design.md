@@ -577,14 +577,18 @@ Implementation boundary hiện có:
 - `veetee_mcp.[ch]` giữ registry/cache/idempotency thuần dữ liệu;
 - `veetee_mcp_wire.[ch]` serialize response bounded;
 - `veetee_mcp_dispatch.[ch]` parse/validate cJSON envelope và route tới registry.
+- `veetee_board_hal.[ch]` giữ manifest capability revision, owner logical ID,
+  safety class và timeout; activation validate toàn bộ trước khi swap snapshot,
+  chỉ trả các tool có `enabled=true` cho registry.
 
-Ba lớp này đã có host CTest và ESP-IDF compile gate. Owner boundary
+Các lớp này đã có host CTest và ESP-IDF compile gate. Owner boundary
 `veetee_mcp_task.[ch]` đã đưa envelope vào queue `mcp_requests` bounded và chạy
 parser/dispatcher trong task riêng khi `CONFIG_VEETEE_MCP_ENABLED` được bật;
-config mặc định vẫn tắt. Chưa có `BoardHal` capability manifest và chưa được
-phép thực hiện hardware mutation. Integration tiếp theo phải map descriptor
-thật và đưa callback peripheral qua owner matrix §10.4; không gọi callback trực
-tiếp từ parser hoặc transport callback.
+config mặc định vẫn tắt. Manifest hiện mới là boundary dữ liệu/validation;
+chưa quảng bá descriptor phần cứng trong runtime và chưa được phép thực hiện
+hardware mutation. Integration tiếp theo phải map descriptor thật và đưa
+callback peripheral qua owner matrix §10.4; không gọi callback trực tiếp từ
+parser hoặc transport callback.
 
 ### 10.2 Initial tool catalog
 

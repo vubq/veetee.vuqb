@@ -116,6 +116,15 @@
   mở compatibility downgrade/fallback và không thay thế M0 physical PTT/mic/
   speaker acceptance. Không audio device, flash/reset ESP32 hoặc đổi mạng.
 
+### BoardHal capability manifest boundary (2026-08-05, host/build-only)
+
+- Firmware `veetee_board_hal.[ch]` đã có manifest revision + logical capability/
+  owner IDs, safety class và timeout; activation fail-closed và swap snapshot
+  nguyên tử sau validation. Chỉ capability bật mới được đưa vào MCP tool view.
+- Firmware host CTest hiện **8/8 pass**; chưa nối descriptor phần cứng, callback
+  owner task hay hardware mutation. M3 vẫn mở; không flash/reset, audio, serial,
+  Wi‑Fi/Tailscale hoặc production database.
+
 ## Cập nhật gần nhất (2026-08-04)
 
 ### Regression revalidation hiện tại
