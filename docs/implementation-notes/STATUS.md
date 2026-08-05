@@ -1151,3 +1151,13 @@
 - Đây chỉ là codec/golden evidence: không mở MQTT/UDP socket, không gọi provider,
   không phát/thu audio, không đọc serial audio, không flash/reset/erase ESP32,
   không đổi Wi-Fi/Tailscale và không mutate production `veetee_vubq`.
+
+### Voice hello shape hardening — host-only (2026-08-05)
+
+- `hello.features` hiện được kiểm tra là object khi field này được gửi; shape
+  malformed bị đóng `1002` và không làm rơi exception trong event loop. Field
+  vẫn optional cho peer cũ, wire hợp lệ và MCP discovery không đổi.
+- Voice Server full suite **146/146**, Ruff và compileall pass. Không gọi
+  provider/Groq, không phát/thu audio, không mở microphone/speaker/serial,
+  không flash/reset/erase ESP32, không đổi Wi-Fi/Tailscale và không mutate
+  production `veetee_vubq`.

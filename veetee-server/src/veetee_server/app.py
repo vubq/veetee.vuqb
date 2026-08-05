@@ -307,6 +307,9 @@ class VoiceSession:
             raise ProtocolError("hello version mismatch")
         if message.get("transport") != "websocket":
             raise ProtocolError("unsupported transport")
+        features = message.get("features")
+        if features is not None and not isinstance(features, dict):
+            raise ProtocolError("hello features must be an object")
         audio = message.get("audio_params")
         if not isinstance(audio, dict) or audio.get("format") != "opus":
             raise ProtocolError("unsupported client audio parameters")
@@ -351,7 +354,7 @@ class VoiceSession:
         timeout_ms = int((snapshot.raw.get("toolPolicy") or {}).get("timeoutMs", 30000))
         self.mcp = DeviceMcpBridge(session_id=self.session_id, send=self.send_text, descriptors=descriptors, timeout_ms=timeout_ms)
         self.ready = True
-        if bool((message.get("features") or {}).get("mcp", False)):
+        if bool((features or {}).get("mcp", False)):
             # Discovery is deliberately started only after the hello response
             # has been sent and the receive loop is active. The device replies
             # to initialize before it accepts the paginated tools/list request;

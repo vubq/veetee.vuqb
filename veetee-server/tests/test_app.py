@@ -64,6 +64,46 @@ async def test_websocket_v3_handshake_and_turn(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_handshake_rejects_non_object_features_without_server_exception(monkeypatch):
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    monkeypatch.setenv("VEETEE_CONFIG_POLL_MS", "5000")
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "malformed-hello", "Client-Id": "malformed-client", "Protocol-Version": "3"},
+        )
+        await ws.send_json(
+            {
+                "type": "hello",
+                "version": 3,
+                "transport": "websocket",
+                "features": ["mcp"],
+                "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+            }
+        )
+        await ws.receive()
+        assert ws.close_code == 1002
+        assert service.metrics["protocol_errors"] == 1
+        for _ in range(20):
+            if service.metrics["active_connections"] == 0:
+                break
+            await asyncio.sleep(0.01)
+        assert service.metrics["active_connections"] == 0
+    finally:
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_disconnect_aborts_active_turn_and_releases_lease(monkeypatch):
     """A transport drop must cancel the provider task before the next session."""
 
