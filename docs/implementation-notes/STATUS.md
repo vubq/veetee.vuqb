@@ -1795,3 +1795,11 @@
   `activeConnections=1`, `activeTurns=0`, `protocol_errors=0`.
 - Physical LCD/backlight/orientation và nghe âm thanh vẫn cần người dùng xác
   nhận; serial không thay thế kiểm tra nhìn/nghe/chạm.
+
+### Pairing UX không lẫn dữ liệu preview (2026-08-05, cập nhật)
+
+- Dialog ghép nối chỉ còn hướng dẫn mã 6 số trên robot; mã fixture `VT-2608`
+  không xuất hiện trong API/production mode. Fixture vẫn giữ mã riêng trong mock
+  gateway để E2E deterministic.
+- Preview E2E pairing pass; UI unit/typecheck/lint/build vẫn giữ xanh. Không đổi
+  API, wire contract, database runtime hoặc firmware.

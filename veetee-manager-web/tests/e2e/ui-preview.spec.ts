@@ -49,7 +49,7 @@ test('pair device kiểm tra lỗi rồi hoàn thành', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Ghép nối' }).click()
   const code = dialog.getByRole('textbox', { name: 'Mã xác thực' })
   await expect(code).toBeFocused()
-  await expect(dialog.getByText('Mã xác thực cần ít nhất 6 ký tự.')).toBeVisible()
+  await expect(dialog.getByText('Nhập đúng 6 chữ số trên robot.')).toBeVisible()
   await code.fill('VT-2608')
   await dialog.getByRole('textbox', { name: 'Tên hiển thị' }).fill('Veetee bàn làm việc')
   await dialog.getByRole('button', { name: 'Ghép nối' }).click()

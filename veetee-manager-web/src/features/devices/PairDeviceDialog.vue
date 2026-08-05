@@ -2,6 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
+import { isPreviewMode } from '@/app/runtime-mode'
 import type { AssistantCard, DeviceCard, DiscoverableDevice } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import VtButton from '@/ui/primitives/VtButton.vue'
@@ -79,7 +80,11 @@ async function submit() {
   const result = await gateway.pairDevice({ assistantId: selectedAssistant.value, deviceId: selectedDeviceId.value || undefined, verificationCode: normalizedCode, displayName: displayName.value || undefined })
   loading.value = false
   if (!result.ok) {
-    if (result.problem.type === 'pairing-code' || result.problem.type === 'validation') codeError.value = 'Mã không đúng hoặc đã hết hạn. Trong preview, dùng VT-2608.'
+    if (result.problem.type === 'pairing-code' || result.problem.type === 'validation') {
+      codeError.value = isPreviewMode
+        ? 'Mã không đúng hoặc đã hết hạn. Kiểm tra lại mã trong robot hoặc dữ liệu xem trước.'
+        : 'Mã không đúng hoặc đã hết hạn. Kiểm tra lại mã đang hiển thị trên robot.'
+    }
     else formError.value = result.problem.type === 'offline' ? 'Đang ngoại tuyến. Ghép nối đã bị chặn.' : 'Không thể ghép nối thiết bị.'
     notify('Ghép nối chưa thành công', { tone: 'error', message: codeError.value || formError.value, assertive: true })
     if (codeError.value) void nextTick(() => codeInput.value?.focus())
@@ -133,7 +138,7 @@ async function submit() {
         label="Mã xác thực"
         for-id="pair-code"
         :error="codeError"
-        hint="Bản preview cũ dùng VT-2608; robot thật dùng 6 chữ số."
+        hint="Nhập 6 chữ số đang hiển thị trên màn hình robot."
       >
         <template #default="{ describedby }">
           <VtInput

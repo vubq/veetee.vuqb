@@ -96,3 +96,11 @@ time-to-silence và false accept/reject vẫn là gate đo riêng.
   `activeConnections=1`, `activeTurns=0`, `protocol_errors=0`. Màn hình thực tế,
   backlight/orientation và chất lượng âm thanh vẫn cần người dùng nhìn/nghe để
   đóng physical acceptance; serial không thay thế kiểm tra đó.
+
+## Pairing UX không lẫn dữ liệu preview (2026-08-05, cập nhật)
+
+- Dialog ghép nối không còn hiển thị mã fixture cố định; API/production mode chỉ
+  hướng dẫn nhập 6 chữ số trên robot. Mock gateway vẫn giữ fixture riêng để test
+  deterministic, không đưa giá trị đó vào runtime hoặc database.
+- Chromium E2E pairing sau thay đổi: **1 passed**; thay đổi chỉ ở UI copy/guard,
+  không ảnh hưởng API, wire contract, DB hay firmware.
