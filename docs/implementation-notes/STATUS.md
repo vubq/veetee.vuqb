@@ -1264,3 +1264,16 @@
   reset/erase ESP32, không đổi Wi-Fi/route/Tailscale, không mở broker và không
   mutate production database `veetee_vubq`. M3 live gateway, firmware carrier,
   real-network loss/latency và transport promotion vẫn mở.
+
+### Firmware state-owner transition matrix — host/build-only (2026-08-05)
+
+- Event admission trong `veetee_state.c` đã được tách khỏi target-state graph:
+  stale `hello`, `listen/stop`, `abort` và `tts/stop` bị reject ở state không hợp
+  lệ; không mutate state/generation. Delayed `tts/start` từ `idle` được cho phép
+  theo `docs/06-firmware-design.md`; self-transition không tăng generation.
+- Host test kiểm tra **5 × 10** state/event matrix; firmware CTest **8/8 passed**
+  với `-Wall -Wextra -Werror -Wconversion -Wpedantic`. ESP-IDF 6.0.2 build-only
+  pass, binary khoảng **1.414 MiB**, app partition còn khoảng **66%**.
+- Không flash/reset/erase ESP32, không đọc serial audio, không phát/thu audio,
+  không đổi Wi-Fi/NVS/route/Tailscale và không mutate production database.
+  Physical M0 PTT/mic/speaker/LCD acceptance vẫn chờ operator cấp quyền.

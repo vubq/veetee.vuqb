@@ -179,6 +179,43 @@ static void test_interruptible_states(void) {
     assert(vt_state_is_interruptible(VT_DEVICE_SPEAKING));
 }
 
+static void test_state_event_matrix_rejects_stale_events(void) {
+    static const int8_t expected[5][10] = {
+        /* connect, hello, listen-start, listen-stop, tts-start, tts-stop,
+           tts-stop-manual, tts-stop-auto, abort, disconnect */
+        {VT_DEVICE_CONNECTING, -1, VT_DEVICE_LISTENING, -1, VT_DEVICE_SPEAKING, -1, -1, -1, -1, VT_DEVICE_IDLE},
+        {VT_DEVICE_CONNECTING, VT_DEVICE_LISTENING, -1, -1, -1, -1, -1, -1, -1, VT_DEVICE_IDLE},
+        {-1, -1, VT_DEVICE_LISTENING, VT_DEVICE_THINKING, VT_DEVICE_SPEAKING, -1, -1, -1, -1, VT_DEVICE_IDLE},
+        {-1, -1, -1, -1, VT_DEVICE_SPEAKING, -1, -1, -1, VT_DEVICE_LISTENING, VT_DEVICE_IDLE},
+        {-1, -1, -1, -1, -1, VT_DEVICE_LISTENING, VT_DEVICE_IDLE, VT_DEVICE_LISTENING, VT_DEVICE_LISTENING, VT_DEVICE_IDLE},
+    };
+    const vt_device_event_t events[] = {
+        VT_EVENT_CONNECT, VT_EVENT_HELLO_READY, VT_EVENT_LISTEN_START, VT_EVENT_LISTEN_STOP,
+        VT_EVENT_TTS_START, VT_EVENT_TTS_STOP, VT_EVENT_TTS_STOP_MANUAL, VT_EVENT_TTS_STOP_AUTO,
+        VT_EVENT_ABORT, VT_EVENT_DISCONNECT,
+    };
+    for (size_t state_index = 0U; state_index < 5U; ++state_index) {
+        for (size_t event_index = 0U; event_index < 10U; ++event_index) {
+            vt_device_state_machine_t machine = {
+                .state = (vt_device_state_t)state_index,
+                .generation = 7U,
+            };
+            const bool applied = vt_state_apply(&machine, events[event_index]);
+            const int8_t target = expected[state_index][event_index];
+            if (target < 0) {
+                assert(!applied);
+                assert(machine.state == (vt_device_state_t)state_index);
+                assert(machine.generation == 7U);
+                continue;
+            }
+            assert(applied);
+            assert(machine.state == (vt_device_state_t)target);
+            const bool destructive = events[event_index] == VT_EVENT_ABORT || events[event_index] == VT_EVENT_DISCONNECT;
+            assert(machine.generation == ((destructive && target != (int8_t)state_index) ? 8U : 7U));
+        }
+    }
+}
+
 static void test_mode_aware_graceful_tts_stop(void) {
     vt_device_state_machine_t machine = {.state = VT_DEVICE_IDLE, .generation = 0U};
     assert(vt_state_apply(&machine, VT_EVENT_CONNECT));
@@ -269,6 +306,7 @@ int main(void) {
     test_state();
     test_abort_from_thinking();
     test_interruptible_states();
+    test_state_event_matrix_rejects_stale_events();
     test_mode_aware_graceful_tts_stop();
     test_ptt_debouncer_edges_and_bounce();
     test_config_gate();
