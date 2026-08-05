@@ -83,6 +83,22 @@ async def test_stalled_websocket_send_closes_session_and_marks_transport_failed(
     from veetee_server.app import VoiceSession
 
     session = VoiceSession(app, ws, device_id="stalled-send", client_id="client", profile="ws-v3")
+    from veetee_server.pipeline import Turn
+
+    turn = Turn(
+        turn_id="stalled-turn",
+        generation=1,
+        mode="manual",
+        cancelled=asyncio.Event(),
+        speech_confirmed=asyncio.Event(),
+        sequence=1,
+        started_at="2026-08-05T00:00:00Z",
+        conversation_started_at="2026-08-05T00:00:00Z",
+    )
+    session.turn = turn
+    session._turn_lease_id = turn.turn_id
+    app._turn_leases[turn.turn_id] = session
+    app.metrics["active_turns"] = 1
     await session.send_text({"type": "alert", "code": "TEST"})
 
     assert session._closed is True
@@ -90,6 +106,10 @@ async def test_stalled_websocket_send_closes_session_and_marks_transport_failed(
     assert ws.closed is True
     assert app.metrics["ws_send_failures"] == 1
     assert app.metrics["ws_send_timeouts"] == 1
+
+    await session._cleanup()
+    assert app.metrics["active_turns"] == 0
+    assert app.metrics["turn_releases"] == 1
 
 
 @pytest.mark.asyncio
