@@ -120,7 +120,8 @@
 
 - Firmware `veetee_board_hal.[ch]` đã có manifest revision + logical capability/
   owner IDs, safety class và timeout; activation fail-closed và swap snapshot
-  nguyên tử sau validation. Chỉ capability bật mới được đưa vào MCP tool view.
+  nguyên tử sau validation. Chỉ capability bật mới được đưa vào MCP tool view;
+  owner task có API khởi tạo từ snapshot nhưng chưa được runtime bật.
 - Firmware host CTest hiện **8/8 pass**; chưa nối descriptor phần cứng, callback
   owner task hay hardware mutation. M3 vẫn mở; không flash/reset, audio, serial,
   Wi‑Fi/Tailscale hoặc production database.

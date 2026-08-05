@@ -7,6 +7,39 @@
 
 static const char *TAG = "veetee-mcp";
 
+static vt_mcp_task_result_t init_common(
+    vt_mcp_task_t *task,
+    const vt_mcp_tool_t *tools,
+    size_t tool_count,
+    const char *server_name,
+    const char *server_version,
+    vt_mcp_task_send_fn send,
+    vt_mcp_task_current_session_fn current_session,
+    void *context,
+    UBaseType_t queue_depth) {
+    if (task == NULL || server_name == NULL || server_version == NULL ||
+        send == NULL || current_session == NULL || queue_depth == 0U) {
+        return VT_MCP_TASK_ERR_ARGUMENT;
+    }
+    if (vt_mcp_registry_init(&task->registry, tools, tool_count) != VT_MCP_OK) {
+        return VT_MCP_TASK_ERR_ARGUMENT;
+    }
+    task->queue = xQueueCreate(queue_depth, sizeof(vt_mcp_task_request_t));
+    if (task->queue == NULL) return VT_MCP_TASK_ERR_QUEUE;
+    task->registry_lock = xSemaphoreCreateMutex();
+    if (task->registry_lock == NULL) {
+        vQueueDelete(task->queue);
+        task->queue = NULL;
+        return VT_MCP_TASK_ERR_QUEUE;
+    }
+    task->server_name = server_name;
+    task->server_version = server_version;
+    task->send = send;
+    task->current_session = current_session;
+    task->context = context;
+    return VT_MCP_TASK_OK;
+}
+
 static bool copy_session(char *destination, size_t capacity, const char *session_id) {
     if (destination == NULL || capacity == 0U || session_id == NULL) return false;
     const size_t length = strlen(session_id);
@@ -25,28 +58,29 @@ vt_mcp_task_result_t vt_mcp_task_init(
     vt_mcp_task_current_session_fn current_session,
     void *context,
     UBaseType_t queue_depth) {
-    if (task == NULL || server_name == NULL || server_version == NULL ||
-        send == NULL || current_session == NULL || queue_depth == 0U) {
-        return VT_MCP_TASK_ERR_ARGUMENT;
-    }
+    if (task == NULL) return VT_MCP_TASK_ERR_ARGUMENT;
     memset(task, 0, sizeof(*task));
-    if (vt_mcp_registry_init(&task->registry, tools, tool_count) != VT_MCP_OK) {
-        return VT_MCP_TASK_ERR_ARGUMENT;
+    return init_common(task, tools, tool_count, server_name, server_version, send,
+                       current_session, context, queue_depth);
+}
+
+vt_mcp_task_result_t vt_mcp_task_init_from_board_hal(
+    vt_mcp_task_t *task,
+    const vt_board_hal_t *hal,
+    const char *server_name,
+    const char *server_version,
+    vt_mcp_task_send_fn send,
+    vt_mcp_task_current_session_fn current_session,
+    void *context,
+    UBaseType_t queue_depth) {
+    if (task == NULL || hal == NULL) return VT_MCP_TASK_ERR_ARGUMENT;
+    memset(task, 0, sizeof(*task));
+    size_t tool_count = 0U;
+    if (vt_board_hal_copy_tools(hal, task->tool_storage, VT_MCP_MAX_TOOLS, &tool_count) != VT_BOARD_HAL_OK) {
+        return VT_MCP_TASK_ERR_CAPACITY;
     }
-    task->queue = xQueueCreate(queue_depth, sizeof(vt_mcp_task_request_t));
-    if (task->queue == NULL) return VT_MCP_TASK_ERR_QUEUE;
-    task->registry_lock = xSemaphoreCreateMutex();
-    if (task->registry_lock == NULL) {
-        vQueueDelete(task->queue);
-        task->queue = NULL;
-        return VT_MCP_TASK_ERR_QUEUE;
-    }
-    task->server_name = server_name;
-    task->server_version = server_version;
-    task->send = send;
-    task->current_session = current_session;
-    task->context = context;
-    return VT_MCP_TASK_OK;
+    return init_common(task, task->tool_storage, tool_count, server_name, server_version,
+                       send, current_session, context, queue_depth);
 }
 
 void vt_mcp_task_reset_session(vt_mcp_task_t *task) {

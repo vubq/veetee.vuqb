@@ -580,6 +580,9 @@ Implementation boundary hiện có:
 - `veetee_board_hal.[ch]` giữ manifest capability revision, owner logical ID,
   safety class và timeout; activation validate toàn bộ trước khi swap snapshot,
   chỉ trả các tool có `enabled=true` cho registry.
+- `veetee_mcp_task_init_from_board_hal()` copy enabled descriptors vào storage
+  thuộc owner task trước khi tạo registry; API cũ nhận mảng tool tĩnh vẫn giữ
+  nguyên để peer/runtime hiện tại không đổi.
 
 Các lớp này đã có host CTest và ESP-IDF compile gate. Owner boundary
 `veetee_mcp_task.[ch]` đã đưa envelope vào queue `mcp_requests` bounded và chạy
