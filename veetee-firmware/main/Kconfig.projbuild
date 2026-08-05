@@ -22,6 +22,24 @@ config VEETEE_WS_URI
         Runtime endpoint. Keep empty until an operator provisions a LAN/TLS
         endpoint; the firmware must not invent a host address.
 
+config VEETEE_WS_TASK_STACK
+    int "WebSocket task stack size (bytes)"
+    range 4096 16384
+    default 4096
+    help
+        The ESP-IDF WebSocket component receives stack depth in words. Veetee
+        stores this setting in bytes and converts it at the boundary so a
+        readable budget does not accidentally allocate four times the stack.
+
+config VEETEE_WS_BUFFER_SIZE
+    int "WebSocket RX/TX buffer size (bytes)"
+    range 2048 8192
+    default 4096
+    help
+        Bounded frame buffer for control and Opus packets. Keep it above the
+        largest configured control envelope; MCP itself remains bounded by
+        the wire ceiling and may use a separate transport profile later.
+
 config VEETEE_WIFI_SSID
     string "Optional station SSID for first provisioning"
     default ""
@@ -98,6 +116,51 @@ config VEETEE_MCP_TASK_PRIORITY
     help
         Relative FreeRTOS priority for bounded MCP parsing/dispatch. Keep it
         below audio capture/output deadlines and verify queue age on hardware.
+
+config VEETEE_MCP_CAPABILITY_REVISION
+    int "Board capability manifest revision"
+    range 1 2147483647
+    default 1
+    depends on VEETEE_MCP_ENABLED
+    help
+        Monotonic revision for the logical BoardHal capability manifest. A
+        stale revision is rejected instead of partially replacing descriptors.
+
+config VEETEE_BOARD_STATUS_LED_GPIO
+    int "Status LED data GPIO"
+    default -1
+    depends on VEETEE_MCP_ENABLED
+    help
+        Board manifest input for the optional status LED. Keep -1 when the
+        board has no verified LED; the MCP descriptor is then not advertised.
+
+config VEETEE_BOARD_LAMP_GPIO
+    int "Lamp output GPIO"
+    default -1
+    depends on VEETEE_MCP_ENABLED
+    help
+        Board manifest input for the optional digital lamp output. Keep -1
+        when the exact BOM/pin is not verified; no tool is advertised.
+
+config VEETEE_BOARD_STATUS_LED_ACTIVE_LEVEL
+    int "Status LED active level"
+    range 0 1
+    default 1
+    depends on VEETEE_MCP_ENABLED
+
+config VEETEE_BOARD_LAMP_ACTIVE_LEVEL
+    int "Lamp active level"
+    range 0 1
+    default 1
+    depends on VEETEE_MCP_ENABLED
+
+config VEETEE_BOARD_STATUS_LED_RGB
+    bool "Status LED uses WS2812-compatible RGB protocol"
+    default n
+    depends on VEETEE_MCP_ENABLED
+    help
+        Enable only when the board manifest identifies an addressable RGB LED
+        on VEETEE_BOARD_STATUS_LED_GPIO. A digital LED must leave this disabled.
 
 config VEETEE_WAKE_ENABLED
     bool "Enable on-device wake word"

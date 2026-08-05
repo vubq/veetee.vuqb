@@ -37,6 +37,28 @@ export interface ProviderProbeResult {
   checks: Array<{ id: string; state: ProviderProbeCheckState; message: string }>
 }
 
+/**
+ * A voice profile is a user-managed TTS voice, not a provider implementation.
+ * Built-in voices are exposed from an installation manifest; custom voices are
+ * stored here and reference one concrete TTS provider configuration.
+ */
+export interface VoiceProfile {
+  id: string
+  ownerId: string
+  providerConfigId: string
+  name: string
+  locale: string
+  voiceCode: string
+  description: string
+  demoUrl: string | null
+  enabled: boolean
+  sort: number
+  revision: number
+  etag: string
+  updatedAt: string
+  archivedAt?: string | null
+}
+
 export interface Assistant {
   id: string
   ownerId: string
@@ -341,6 +363,10 @@ export interface Store {
   updateProviderConfig(ownerId: string, id: string, value: Partial<Pick<ProviderConfig, 'name' | 'config' | 'secretRefs'>>, ifMatch: string): Promise<ProviderConfig>
   deleteProviderConfig(ownerId: string, id: string, ifMatch: string): Promise<void>
   probeProviderConfig(ownerId: string, id: string): Promise<ProviderProbeResult>
+  listVoiceProfiles(ownerId: string, options?: { locale?: string; providerConfigId?: string }): Promise<VoiceProfile[]>
+  createVoiceProfile(ownerId: string, value: Omit<VoiceProfile, 'id' | 'ownerId' | 'revision' | 'etag' | 'updatedAt' | 'archivedAt'>): Promise<VoiceProfile>
+  updateVoiceProfile(ownerId: string, id: string, value: Partial<Pick<VoiceProfile, 'name' | 'locale' | 'voiceCode' | 'description' | 'demoUrl' | 'enabled' | 'sort'>>, ifMatch: string): Promise<VoiceProfile>
+  deleteVoiceProfile(ownerId: string, id: string, ifMatch: string): Promise<void>
   listAssistants(ownerId: string): Promise<Assistant[]>
   getAssistant(ownerId: string, id: string): Promise<Assistant | undefined>
   createAssistant(ownerId: string, name: string): Promise<Assistant>
@@ -379,6 +405,7 @@ export class InMemoryStore implements Store {
   private readonly installations: ProviderInstallation[]
   private readonly providerConfigs = new Map<string, ProviderConfig>()
   private readonly providerConfigSecretRefs = new Map<string, Set<string>>()
+  private readonly voiceProfiles = new Map<string, VoiceProfile>()
   private readonly assistants = new Map<string, AssistantRecord>()
   private readonly sessions = new Map<string, ManagerSession>()
   private readonly secretReferences = new Map<string, SecretReference>()
@@ -492,6 +519,54 @@ export class InMemoryStore implements Store {
     checks.push({ id: 'manifest', state: 'passed', message: 'Dịch vụ đã được nạp.' })
     const state = checks.some((check) => check.state === 'failed') ? 'unavailable' : 'ready'
     return { providerConfigId: id, state, checkedAt: new Date().toISOString(), durationMs: Math.max(0, Date.now() - started), checks }
+  }
+
+  async listVoiceProfiles(ownerId: string, options: { locale?: string; providerConfigId?: string } = {}): Promise<VoiceProfile[]> {
+    return [...this.voiceProfiles.values()]
+      .filter((item) => item.ownerId === ownerId && !item.archivedAt)
+      .filter((item) => !options.locale || item.locale === options.locale)
+      .filter((item) => !options.providerConfigId || item.providerConfigId === options.providerConfigId)
+      .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, 'vi'))
+      .map((item) => structuredClone(item))
+  }
+
+  async createVoiceProfile(ownerId: string, value: Omit<VoiceProfile, 'id' | 'ownerId' | 'revision' | 'etag' | 'updatedAt' | 'archivedAt'>): Promise<VoiceProfile> {
+    this.assertTtsConfig(ownerId, value.providerConfigId)
+    validateVoiceValue(value)
+    const duplicate = [...this.voiceProfiles.values()].some((item) => item.ownerId === ownerId && !item.archivedAt && item.providerConfigId === value.providerConfigId && item.voiceCode === value.voiceCode)
+    if (duplicate) throw problem('VOICE_DUPLICATE', 'Voice code already exists for this TTS config', 409)
+    const revision = 1
+    const item: VoiceProfile = { ...structuredClone(value), id: randomUUID(), ownerId, revision, etag: etag({ ...value, revision }), updatedAt: new Date().toISOString(), archivedAt: null }
+    this.voiceProfiles.set(item.id, item)
+    return structuredClone(item)
+  }
+
+  async updateVoiceProfile(ownerId: string, id: string, value: Partial<Pick<VoiceProfile, 'name' | 'locale' | 'voiceCode' | 'description' | 'demoUrl' | 'enabled' | 'sort'>>, ifMatch: string): Promise<VoiceProfile> {
+    const current = this.voiceProfiles.get(id)
+    if (!current || current.ownerId !== ownerId || current.archivedAt) throw problem('NOT_FOUND', 'Voice profile not found', 404)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Voice profile changed', 409)
+    const next = { ...current, ...structuredClone(value), revision: current.revision + 1, updatedAt: new Date().toISOString() }
+    validateVoiceValue(next)
+    const duplicate = [...this.voiceProfiles.values()].some((item) => item.id !== id && item.ownerId === ownerId && !item.archivedAt && item.providerConfigId === next.providerConfigId && item.voiceCode === next.voiceCode)
+    if (duplicate) throw problem('VOICE_DUPLICATE', 'Voice code already exists for this TTS config', 409)
+    next.etag = etag({ ...next, revision: next.revision })
+    this.voiceProfiles.set(id, next)
+    return structuredClone(next)
+  }
+
+  async deleteVoiceProfile(ownerId: string, id: string, ifMatch: string): Promise<void> {
+    const current = this.voiceProfiles.get(id)
+    if (!current || current.ownerId !== ownerId || current.archivedAt) throw problem('NOT_FOUND', 'Voice profile not found', 404)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Voice profile changed', 409)
+    current.archivedAt = new Date().toISOString()
+    current.updatedAt = current.archivedAt
+    this.voiceProfiles.set(id, current)
+  }
+
+  private assertTtsConfig(ownerId: string, providerConfigId: string): void {
+    const config = this.providerConfigs.get(providerConfigId)
+    const installation = config ? this.installations.find((item) => item.id === config.installationId) : undefined
+    if (!config || config.ownerId !== ownerId || config.archivedAt || installation?.kind !== 'tts') throw problem('CONFIG_INVALID', 'Voice profile requires an active TTS provider config', 422)
   }
 
   async listAssistants(ownerId: string): Promise<Assistant[]> {
@@ -1228,4 +1303,13 @@ export function validateSecretBindings(installation: ProviderInstallation, refs:
     const qualifier = options.requireComplete === true ? 'exactly' : 'at most'
     throw problem('SECRET_INVALID', `${installation.id} requires ${qualifier} ${fields.length} secretRef`, 422)
   }
+}
+
+export function validateVoiceValue(value: Pick<VoiceProfile, 'providerConfigId' | 'name' | 'locale' | 'voiceCode' | 'description' | 'demoUrl' | 'enabled' | 'sort'>): void {
+  if (!value.providerConfigId || !value.name.trim() || !value.locale.trim() || !value.voiceCode.trim()) throw problem('VOICE_INVALID', 'Voice name, locale and voice code are required', 422)
+  if (value.name.length > 120 || value.locale.length > 35 || value.voiceCode.length > 160 || value.description.length > 512) throw problem('VOICE_INVALID', 'Voice metadata exceeds the allowed length', 422)
+  if (value.demoUrl !== null && value.demoUrl !== undefined) {
+    try { const parsed = new URL(value.demoUrl); if (!parsed.protocol || !parsed.hostname) throw new Error('invalid url') } catch { throw problem('VOICE_INVALID', 'Voice demo URL must be a valid URL', 422) }
+  }
+  if (!Number.isInteger(value.sort) || value.sort < 0 || value.sort > 100000) throw problem('VOICE_INVALID', 'Voice sort must be a non-negative integer', 422)
 }

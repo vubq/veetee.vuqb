@@ -78,12 +78,44 @@
       }
     },
     {
+      "id": "veetee.llm.openai-compatible",
+      "kind": "llm",
+      "displayNameKey": "provider.llm.openaiCompatible",
+      "displayName": "OpenAI-compatible — Chat Completions streaming",
+      "version": "1.0.0",
+      "manifest": {
+        "locales": ["*"], "supportsStreaming": true, "supportsTools": true, "secretFields": ["apiKey"],
+        "providerFamily": "openai-compatible", "protocol": "chat-completions",
+        "ui": { "category": "llm", "endpointLabel": "Base URL", "modelLabel": "Model", "supportsCustomHeaders": true }
+      },
+      "configSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["baseUrl", "model", "maxTokens"],
+        "properties": {
+          "baseUrl": { "type": "string", "format": "uri" },
+          "model": { "type": "string", "minLength": 1 },
+          "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+          "maxTokens": { "type": "integer", "minimum": 1, "maximum": 32768 },
+          "timeoutSeconds": { "type": "number", "minimum": 1, "maximum": 300 },
+          "maxConnections": { "type": "integer", "minimum": 1, "maximum": 64 },
+          "maxKeepaliveConnections": { "type": "integer", "minimum": 0, "maximum": 64 },
+          "keepaliveExpirySeconds": { "type": "number", "minimum": 0, "maximum": 300 },
+          "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+          "options": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    {
       "id": "groq.chat",
       "kind": "llm",
       "displayNameKey": "provider.llm.groq",
       "displayName": "Groq — trả lời nhanh",
       "version": "1.0.0",
-      "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsTools": true, "secretFields": ["apiKey"] },
+      "manifest": {
+        "locales": ["*"], "supportsStreaming": true, "supportsTools": true, "secretFields": ["apiKey"],
+        "providerFamily": "openai-compatible", "protocol": "chat-completions", "ui": { "category": "llm", "endpointLabel": "Base URL", "modelLabel": "Model", "supportsCustomHeaders": true }
+      },
       "configSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -115,7 +147,14 @@
       "displayNameKey": "provider.tts.vieneu",
       "displayName": "VieNeu — giọng nói tiếng Việt",
       "version": "1.0.0",
-      "manifest": { "locales": ["vi-VN"], "supportsStreaming": true, "supportsCancel": true },
+      "manifest": {
+        "locales": ["vi-VN"], "supportsStreaming": true, "supportsCancel": true, "providerFamily": "vieneu",
+        "ui": { "category": "tts", "voiceCatalog": true },
+        "voices": [
+          { "id": "tu-nhien", "name": "Tự nhiên", "voiceCode": "tu_nhien", "locale": "vi-VN", "description": "Giọng tiếng Việt trung tính cho hội thoại hằng ngày.", "sort": 10 },
+          { "id": "am-ap", "name": "Ấm áp", "voiceCode": "am_ap", "locale": "vi-VN", "description": "Giọng nhẹ và gần gũi.", "sort": 20 }
+        ]
+      },
       "configSchema": {
         "type": "object",
         "additionalProperties": false,

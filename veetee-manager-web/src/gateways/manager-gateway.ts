@@ -30,6 +30,7 @@ import type {
   Versioned,
   VoicePreview,
   VoiceProfile,
+  VoiceProfileInput,
   ProviderConfigRecord,
   ProviderProbeResult,
   ProviderInstallationView,
@@ -102,6 +103,9 @@ export interface AssistantGateway {
   probeProviderConfig(id: string): Promise<GatewayResult<ProviderProbeResult, ValidationProblem | NotFoundProblem | OfflineProblem>>
 
   listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>>
+  createVoiceProfile(input: VoiceProfileInput): Promise<GatewayResult<VoiceProfile, ValidationProblem | OfflineProblem>>
+  updateVoiceProfile(id: string, input: Partial<VoiceProfileInput>, expectedEtag: string): Promise<GatewayResult<VoiceProfile, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<VoiceProfile, unknown>>>
+  deleteVoiceProfile(id: string, expectedEtag: string): Promise<GatewayResult<void, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<VoiceProfile, unknown>>>
 
   previewVoice(
     voiceId: string,

@@ -248,8 +248,17 @@ const modelMemoryResponseSchema = {
   },
 } as const
 const voiceResponseSchema = {
-  type: 'object', additionalProperties: false, required: ['id', 'name', 'providerName', 'locale', 'description', 'previewDurationMs', 'available'],
-  properties: { id: { type: 'string' }, name: { type: 'string' }, providerName: { type: 'string' }, locale: { type: 'string' }, description: { type: 'string' }, previewDurationMs: { type: 'integer' }, available: { type: 'boolean' } },
+  type: 'object', additionalProperties: false, required: ['id', 'name', 'providerName', 'locale', 'description', 'previewDurationMs', 'available', 'managed', 'voiceCode', 'enabled'],
+  properties: {
+    id: { type: 'string' }, name: { type: 'string' }, providerName: { type: 'string' }, locale: { type: 'string' }, description: { type: 'string' }, previewDurationMs: { type: 'integer' }, available: { type: 'boolean' },
+    managed: { type: 'boolean' }, providerConfigId: { type: ['string', 'null'] }, voiceCode: { type: 'string' }, enabled: { type: 'boolean' }, sort: { type: 'integer' }, demoUrl: { type: ['string', 'null'] }, etag: { type: ['string', 'null'] }, updatedAt: { type: ['string', 'null'] },
+  },
+} as const
+const voiceBodySchema = {
+  type: 'object', additionalProperties: false, required: ['providerConfigId', 'name', 'locale', 'voiceCode'],
+  properties: {
+    providerConfigId: { type: 'string', minLength: 1, maxLength: 128 }, name: { type: 'string', minLength: 1, maxLength: 120 }, locale: { type: 'string', minLength: 2, maxLength: 35 }, voiceCode: { type: 'string', minLength: 1, maxLength: 160 }, description: { type: 'string', maxLength: 512 }, demoUrl: { type: ['string', 'null'], maxLength: 2048 }, enabled: { type: 'boolean' }, sort: { type: 'integer', minimum: 0, maximum: 100000 },
+  },
 } as const
 const deviceResponseSchema = {
   type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'assistantId', 'etag', 'displayName', 'maskedMac', 'firmwareVersion', 'board', 'onlineState', 'lastSeenAt', 'lastConversationAt'],
@@ -677,15 +686,50 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   })
 
   app.get('/api/v1/provider-installations', { schema: { response: { 200: listResponse(providerInstallationResponseSchema) } } }, async () => ({ items: await store.listInstallations() }))
-  app.get<{ Querystring: { locale?: string } }>('/api/v1/voices', { schema: {
-    querystring: { type: 'object', additionalProperties: false, properties: { locale: { type: 'string', minLength: 2, maxLength: 35 } } },
+  app.get<{ Querystring: { locale?: string; providerConfigId?: string } }>('/api/v1/voices', { schema: {
+    querystring: { type: 'object', additionalProperties: false, properties: { locale: { type: 'string', minLength: 2, maxLength: 35 }, providerConfigId: { type: 'string', minLength: 1, maxLength: 128 } } },
     response: { 200: listResponse(voiceResponseSchema, true) },
   } }, async (request) => {
     const installations = await store.listInstallations()
     const tts = installations.filter((item) => item.kind === 'tts')
-    const filtered = tts.filter((item) => !request.query.locale || item.manifest.locales === undefined || (item.manifest.locales as unknown[]).includes('*') || (item.manifest.locales as unknown[]).includes(request.query.locale))
-    const items = filtered.map((item) => ({ id: item.id, name: item.displayNameKey, providerName: item.displayNameKey, locale: request.query.locale ?? '*', description: item.displayNameKey, previewDurationMs: 0, available: true }))
+    const ttsConfigs = await store.listProviderConfigs(owner(request), 'tts')
+    const custom = await store.listVoiceProfiles(owner(request), request.query)
+    // When the caller scopes to one custom TTS config, built-in manifest
+    // voices (which have no providerConfigId) must not leak into that list.
+    const builtIn = request.query.providerConfigId ? [] : tts.flatMap((item) => manifestVoices(item, request.query.locale))
+    const items = [...builtIn, ...custom.map((voice) => ({
+      id: voice.id, name: voice.name, providerName: ttsConfigs.find((config) => config.id === voice.providerConfigId)?.name ?? 'Giọng nói tùy chỉnh', locale: voice.locale,
+      description: voice.description, previewDurationMs: 0, available: voice.enabled, managed: true,
+      providerConfigId: voice.providerConfigId, voiceCode: voice.voiceCode, enabled: voice.enabled,
+      sort: voice.sort, demoUrl: voice.demoUrl,
+      etag: voice.etag, updatedAt: voice.updatedAt,
+    }))]
     return { items, total: items.length }
+  })
+  app.post<{ Body: { providerConfigId: string; name: string; locale: string; voiceCode: string; description?: string; demoUrl?: string | null; enabled?: boolean; sort?: number } }>('/api/v1/voices', { schema: { body: voiceBodySchema, response: { 201: voiceResponseSchema } } }, async (request, reply) => {
+    try {
+      const value = await store.createVoiceProfile(owner(request), {
+        providerConfigId: request.body.providerConfigId, name: request.body.name, locale: request.body.locale, voiceCode: request.body.voiceCode,
+        description: request.body.description ?? '', demoUrl: request.body.demoUrl ?? null,
+        enabled: request.body.enabled ?? true, sort: request.body.sort ?? 0,
+      })
+      const configs = await store.listProviderConfigs(owner(request), 'tts')
+      return reply.code(201).header('ETag', value.etag).send({ id: value.id, name: value.name, providerName: configs.find((config) => config.id === value.providerConfigId)?.name ?? 'Giọng nói tùy chỉnh', locale: value.locale, description: value.description, previewDurationMs: 0, available: value.enabled, managed: true, providerConfigId: value.providerConfigId, voiceCode: value.voiceCode, enabled: value.enabled, sort: value.sort, demoUrl: value.demoUrl, etag: value.etag, updatedAt: value.updatedAt })
+    } catch (error) { return sendProblem(reply, error) }
+  })
+  app.patch<{ Params: { id: string }; Body: { name?: string; locale?: string; voiceCode?: string; description?: string; demoUrl?: string | null; enabled?: boolean; sort?: number } }>('/api/v1/voices/:id', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', minLength: 1, maxLength: 120 }, locale: { type: 'string', minLength: 2, maxLength: 35 }, voiceCode: { type: 'string', minLength: 1, maxLength: 160 }, description: { type: 'string', maxLength: 512 }, demoUrl: { type: ['string', 'null'], maxLength: 2048 }, enabled: { type: 'boolean' }, sort: { type: 'integer', minimum: 0, maximum: 100000 } } }, response: { 200: voiceResponseSchema } } }, async (request, reply) => {
+    const ifMatch = request.headers['if-match']
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
+    try {
+      const value = await store.updateVoiceProfile(owner(request), request.params.id, request.body, ifMatch)
+      const configs = await store.listProviderConfigs(owner(request), 'tts')
+      return reply.header('ETag', value.etag).send({ id: value.id, name: value.name, providerName: configs.find((config) => config.id === value.providerConfigId)?.name ?? 'Giọng nói tùy chỉnh', locale: value.locale, description: value.description, previewDurationMs: 0, available: value.enabled, managed: true, providerConfigId: value.providerConfigId, voiceCode: value.voiceCode, enabled: value.enabled, sort: value.sort, demoUrl: value.demoUrl, etag: value.etag, updatedAt: value.updatedAt })
+    } catch (error) { return sendProblem(reply, error) }
+  })
+  app.delete<{ Params: { id: string } }>('/api/v1/voices/:id', { schema: { params: resourceIdParamsSchema, response: { 204: { type: 'null' } } } }, async (request, reply) => {
+    const ifMatch = request.headers['if-match']
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
+    try { await store.deleteVoiceProfile(owner(request), request.params.id, ifMatch); return reply.code(204).send() } catch (error) { return sendProblem(reply, error) }
   })
   app.get<{ Querystring: { kind?: ProviderKind } }>('/api/v1/provider-configs', { schema: {
     querystring: { type: 'object', additionalProperties: false, properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] } } },
@@ -935,6 +979,18 @@ function mapConversationExport(value: ConversationDetail) {
       retention: value.retention,
     },
   }
+}
+
+function manifestVoices(installation: { id: string; displayNameKey: string; displayName?: string; manifest: Record<string, unknown> }, locale?: string) {
+  const raw = installation.manifest.voices
+  const candidates = Array.isArray(raw) ? raw.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item))) : []
+  const source = candidates.length ? candidates : [{ id: `${installation.id}:default`, name: installation.displayName ?? installation.displayNameKey, locale: Array.isArray(installation.manifest.locales) && typeof installation.manifest.locales[0] === 'string' ? installation.manifest.locales[0] : '*', description: installation.displayName ?? installation.displayNameKey, voiceCode: 'default' }]
+  return source
+    .map((voice) => {
+      const voiceLocale = typeof voice.locale === 'string' ? voice.locale : '*'
+      return { id: typeof voice.id === 'string' ? `${installation.id}:${voice.id}` : `${installation.id}:default`, name: typeof voice.name === 'string' ? voice.name : installation.displayName ?? installation.displayNameKey, providerName: installation.displayName ?? installation.displayNameKey, locale: voiceLocale, description: typeof voice.description === 'string' ? voice.description : '', previewDurationMs: 0, available: voice.enabled !== false, managed: false, providerConfigId: null, voiceCode: typeof voice.voiceCode === 'string' ? voice.voiceCode : typeof voice.id === 'string' ? voice.id : 'default', enabled: voice.enabled !== false, sort: typeof voice.sort === 'number' ? voice.sort : 0, demoUrl: typeof voice.demoUrl === 'string' ? voice.demoUrl : null, etag: null, updatedAt: null }
+    })
+    .filter((voice) => !locale || voice.locale === '*' || voice.locale === locale)
 }
 
 function safeExportFilename(value: string): string {

@@ -45,7 +45,7 @@ const actionError = ref('')
 const stateHeading = ref<HTMLElement | null>(null)
 const actionErrorHeading = ref<HTMLElement | null>(null)
 const progressValid = ref(true)
-const advancedSectionsOpen = reactive({ limits: false, autoTurn: false, conversation: false, bargeIn: false, progress: false })
+const advancedSectionsOpen = reactive({ limits: false, autoTurn: false, conversation: false, bargeIn: false, tools: false, progress: false })
 let loadGeneration = 0
 let voiceGeneration = 0
 
@@ -101,6 +101,17 @@ function bargeInDraft(value: RoleConfig['bargeIn']): NonNullable<RoleConfig['bar
     minSpeechFrames: typeof source.minSpeechFrames === 'number' ? source.minSpeechFrames : 2,
     cooldownMs: typeof source.cooldownMs === 'number' ? source.cooldownMs : 2000,
   }
+}
+
+const allowDeviceDiscovery = computed(() => draft.value?.toolPolicy?.allowDeviceDiscovery === true)
+
+function setAllowDeviceDiscovery(enabled: boolean) {
+  if (!draft.value) return
+  const policy = draft.value.toolPolicy ? clonePolicy(draft.value.toolPolicy) : {}
+  if (enabled) policy.allowDeviceDiscovery = true
+  else delete policy.allowDeviceDiscovery
+  draft.value.toolPolicy = Object.keys(policy).length ? policy : undefined
+  markDirty()
 }
 
 function toRoleConfig(config: RoleConfig): RoleConfig {
@@ -789,6 +800,23 @@ onMounted(load)
       </VtFormField>
     </FormSection>
 
+    <FormSection
+      title="Công cụ trên thiết bị"
+      description="Cho phép robot dùng các capability mà firmware công bố qua MCP. Chỉ bật khi bạn tin cậy thiết bị đang kết nối."
+      collapsible
+      :open="advancedSectionsOpen.tools"
+      @update:open="advancedSectionsOpen.tools = $event"
+    >
+      <VtSwitch
+        :model-value="allowDeviceDiscovery"
+        label="Cho phép thiết bị công bố công cụ"
+        @update:model-value="setAllowDeviceDiscovery"
+      />
+      <p class="policy-note">
+        Khi tắt, chỉ những công cụ đã được allow-list trong cấu hình mới được gửi cho AI. Khi bật, descriptor hợp lệ từ thiết bị sẽ được kiểm tra schema trước khi thực thi.
+      </p>
+    </FormSection>
+
     <ProgressAcknowledgementSection
       :model-value="draft.progress"
       collapsible
@@ -869,6 +897,7 @@ onMounted(load)
 .two-columns { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr); gap: 10px; }
 .three-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .policy-switches { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px; }
+.policy-note { margin: 10px 0 0; color: var(--vt-text-muted); font-size: 10px; line-height: 1.5; }
 .voice-preview { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; border-top: 1px solid var(--vt-border); padding-top: 11px; }
 .voice-preview span { color: var(--vt-text-muted); font-size: 10px; }
 .form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--vt-border); padding-top: 14px; }

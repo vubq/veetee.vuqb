@@ -39,6 +39,11 @@
       "emotion": "neutral"
     }
   },
+  "toolPolicy": {
+    "maxRounds": 3,
+    "timeoutMs": 30000,
+    "allowDeviceDiscovery": true
+  },
   "admission": {
     "maxActiveTurns": 1,
     "retryAfterMs": 250

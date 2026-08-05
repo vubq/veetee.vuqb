@@ -168,6 +168,23 @@ describe('RoleConfigFeature mutations', () => {
     expect(saveRoleConfig.mock.calls[0]?.[1].bargeIn).toEqual({ enabled: true, deviceDuplex: true, minSpeechFrames: 4, cooldownMs: 1200 })
   })
 
+  it('exposes device MCP discovery as an explicit owner policy', async () => {
+    const saveRoleConfig = vi.fn(async (...args: [string, RoleConfigDraft]) => {
+      void args
+      return success(resource)
+    })
+    const view = renderFeature(gateway({ saveRoleConfig }))
+
+    await openSection(view, 'Công cụ trên thiết bị')
+    const toggle = await view.findByRole('switch', { name: 'Cho phép thiết bị công bố công cụ' })
+    expect((toggle as HTMLButtonElement).getAttribute('aria-checked')).toBe('false')
+    await fireEvent.click(toggle)
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
+
+    await waitFor(() => expect(saveRoleConfig).toHaveBeenCalledTimes(1))
+    expect(saveRoleConfig.mock.calls[0]?.[1].toolPolicy).toEqual({ maxRounds: 2, timeoutMs: 5000, allowDeviceDiscovery: true })
+  })
+
   it('configures the first-speech timeout and localized alert through the role form', async () => {
     const saveRoleConfig = vi.fn(async (...args: [string, RoleConfigDraft]) => {
       void args

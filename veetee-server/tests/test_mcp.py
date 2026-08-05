@@ -66,6 +66,48 @@ async def test_mcp_discovery_follows_paginated_tools_list():
     assert await second_page == {"tools": []}
 
 
+def test_mcp_discovery_updates_allowlisted_descriptor_schema_in_place():
+    descriptors = [{"name": "device.led.set", "description": "old", "inputSchema": {}}]
+
+    async def send(value):
+        del value
+
+    bridge = DeviceMcpBridge(session_id="session", send=send, descriptors=descriptors, timeout_ms=1000)
+    assert bridge.merge_discovered_tools([
+        {
+            "name": "device.led.set",
+            "description": "new",
+            "inputSchema": {"type": "object", "additionalProperties": False},
+            "ignored": "metadata",
+        },
+        {"name": "device.unknown", "inputSchema": {}},
+    ]) == 1
+    assert descriptors == [{
+        "name": "device.led.set",
+        "description": "new",
+        "inputSchema": {"type": "object", "additionalProperties": False},
+    }]
+
+
+def test_mcp_discovery_can_explicitly_allow_device_owned_tools():
+    descriptors = []
+
+    async def send(value):
+        del value
+
+    bridge = DeviceMcpBridge(
+        session_id="session",
+        send=send,
+        descriptors=descriptors,
+        timeout_ms=1000,
+        allow_device_discovery=True,
+    )
+    assert bridge.merge_discovered_tools([
+        {"name": "device.status.get", "description": "status", "inputSchema": {}},
+    ]) == 1
+    assert descriptors[0]["name"] == "device.status.get"
+
+
 @pytest.mark.asyncio
 async def test_mcp_cancel_generation_cancels_pending_call():
     async def send(value):

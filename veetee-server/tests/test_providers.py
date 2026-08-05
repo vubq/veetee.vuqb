@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from veetee_server.config import ConfigurationError, load_snapshot
-from veetee_server.providers import AudioChunk, EnergyVAD, GroqLLM, GroqTestKeyPool, PatternIntent, PhoWhisperASR, ProviderError, ProviderRegistry, SessionWindowMemory, SileroVAD, VieNeuTTS, discover_provider_factories, provider_factory
+from veetee_server.providers import AudioChunk, EnergyVAD, GroqLLM, GroqTestKeyPool, OpenAICompatibleLLM, PatternIntent, PhoWhisperASR, ProviderError, ProviderRegistry, SessionWindowMemory, SileroVAD, VieNeuTTS, discover_provider_factories, provider_factory
 
 
 @pytest.mark.asyncio
@@ -252,6 +252,58 @@ def test_groq_provider_resolves_one_secret_ref_without_file(tmp_path):
         ["secret-1"],
     )
     assert provider._key() == "key-from-manager"
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_uses_base_url_headers_and_options(monkeypatch):
+    requests = []
+
+    class Response:
+        status_code = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            del exc_type, exc, traceback
+
+        async def aiter_lines(self):
+            yield 'data: {"choices":[{"delta":{"content":"Xin chào"}}]}'
+            yield "data: [DONE]"
+
+    class Client:
+        def __init__(self, **kwargs):
+            del kwargs
+
+        def stream(self, method, endpoint, *, headers, json):
+            requests.append((method, endpoint, headers, json))
+            return Response()
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr("veetee_server.providers.httpx.AsyncClient", Client)
+    provider = OpenAICompatibleLLM(
+        {
+            "baseUrl": "https://provider.invalid/v1/chat/completions",
+            "model": "small-chat",
+            "maxTokens": 128,
+            "headers": {"X-Workspace": "demo", "Authorization": "ignored"},
+            "options": {"top_p": 0.8, "stream": False},
+        },
+        None,
+        types.SimpleNamespace(resolve=lambda reference_id: "key-from-manager"),
+        ["secret-1"],
+    )
+
+    deltas = [delta async for delta in provider.stream(prompt="xin", locale="vi-VN", tools=[])]
+    assert deltas[0].text == "Xin chào"
+    assert requests[0][0:2] == ("POST", "https://provider.invalid/v1/chat/completions")
+    assert requests[0][2]["X-Workspace"] == "demo"
+    assert requests[0][2]["Authorization"] == "Bearer key-from-manager"
+    assert requests[0][3]["top_p"] == 0.8
+    assert requests[0][3]["stream"] is True
+    await provider.close()
 
 
 @pytest.mark.asyncio

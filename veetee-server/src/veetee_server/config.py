@@ -74,6 +74,7 @@ class ServerConfig:
     log_level: str
     max_ws_message_bytes: int
     hello_timeout_ms: int
+    ws_send_timeout_ms: int
 
     @classmethod
     def from_env(cls) -> "ServerConfig":
@@ -132,6 +133,12 @@ class ServerConfig:
                 "VEETEE_HELLO_TIMEOUT_MS",
                 os.getenv("VEETEE_HELLO_TIMEOUT_MS", "10000"),
                 minimum=1000,
+                maximum=60000,
+            ),
+            ws_send_timeout_ms=_bounded_int(
+                "VEETEE_WS_SEND_TIMEOUT_MS",
+                os.getenv("VEETEE_WS_SEND_TIMEOUT_MS", "5000"),
+                minimum=100,
                 maximum=60000,
             ),
         )

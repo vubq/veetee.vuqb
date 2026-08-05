@@ -18,13 +18,74 @@ class PendingCall:
 
 
 class DeviceMcpBridge:
-    def __init__(self, *, session_id: str, send: Callable[[dict[str, Any]], Awaitable[None]], descriptors: list[dict[str, Any]], timeout_ms: int) -> None:
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        send: Callable[[dict[str, Any]], Awaitable[None]],
+        descriptors: list[dict[str, Any]],
+        timeout_ms: int,
+        allow_device_discovery: bool = False,
+    ) -> None:
         self.session_id = session_id
         self._send = send
         self._descriptors = descriptors
+        self._allow_device_discovery = allow_device_discovery
         self._timeout_s = max(1, timeout_ms) / 1000
         self._next_id = 1
         self._pending: dict[int, PendingCall] = {}
+
+    def merge_discovered_tools(self, tools: Any) -> int:
+        """Merge a device's tools/list page into the LLM catalog.
+
+        Discovery is data, not executable policy.  By default only names already
+        published in the assistant snapshot are accepted; an owner may opt into
+        device-owned names with ``toolPolicy.allowDeviceDiscovery``.  In either
+        mode the descriptor is reduced to the wire fields understood by the
+        server, so malformed/additive metadata cannot reach the model provider.
+        The caller owns the mutable list passed to the bridge; updating it in
+        place lets a session that is already listening see the next page without
+        replacing a live pipeline or turn generation.
+        """
+
+        if not isinstance(tools, list):
+            return 0
+        accepted: dict[str, dict[str, Any]] = {}
+        for item in tools:
+            descriptor = _normalize_descriptor(item)
+            if descriptor is not None:
+                accepted[descriptor["name"]] = descriptor
+
+        if not accepted:
+            return 0
+        existing_names = {
+            item.get("name")
+            for item in self._descriptors
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        }
+        if not self._allow_device_discovery:
+            accepted = {name: item for name, item in accepted.items() if name in existing_names}
+        if not accepted:
+            return 0
+
+        merged: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in self._descriptors:
+            if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+                continue
+            name = item["name"]
+            replacement = accepted.get(name)
+            selected = replacement if replacement is not None else _normalize_descriptor(item)
+            if selected is not None and name not in seen:
+                merged.append(selected)
+                seen.add(name)
+        if self._allow_device_discovery:
+            for name, item in accepted.items():
+                if name not in seen:
+                    merged.append(item)
+                    seen.add(name)
+        self._descriptors[:] = merged
+        return len(accepted)
 
     async def initialize(self) -> dict[str, Any]:
         return await self._request(
@@ -138,6 +199,27 @@ class DeviceMcpBridge:
 
     def _envelope(self, request_id: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
         return {"type": "mcp", "session_id": self.session_id, "payload": {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}}
+
+
+def _normalize_descriptor(value: Any) -> dict[str, Any] | None:
+    """Keep only a bounded, model-facing MCP descriptor shape."""
+
+    if not isinstance(value, dict):
+        return None
+    name = value.get("name")
+    if not isinstance(name, str) or not 1 <= len(name) <= 128:
+        return None
+    description = value.get("description", "")
+    if not isinstance(description, str) or len(description) > 1024:
+        return None
+    schema = value.get("inputSchema", {})
+    if not isinstance(schema, dict):
+        return None
+    return {
+        "name": name,
+        "description": description,
+        "inputSchema": schema,
+    }
 
 
 class ToolSchemaError(ValueError):

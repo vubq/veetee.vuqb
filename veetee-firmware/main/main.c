@@ -1,6 +1,7 @@
 #include "veetee_audio.h"
 #include "veetee_config.h"
 #include "veetee_display.h"
+#include "veetee_board_tools.h"
 #include "veetee_mcp_task.h"
 #include "veetee_protocol.h"
 #include "veetee_state.h"
@@ -26,15 +27,22 @@
 #include "esp_wifi.h"
 #include "esp_http_server.h"
 #include "esp_random.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 #include "nvs_flash.h"
 #include "psa/crypto.h"
 #include "lwip/inet.h"
 #include "lwip/sockets.h"
+
+/* xTaskCreate() takes stack depth in words. Project/Kconfig values are kept
+   in bytes so the memory budget remains readable and consistent. */
+#define VT_STACK_WORDS(bytes) \
+    ((uint32_t)(((bytes) + sizeof(StackType_t) - 1U) / sizeof(StackType_t)))
 
 #ifndef CONFIG_VEETEE_PROTOCOL_PROFILE
 #define CONFIG_VEETEE_PROTOCOL_PROFILE 3
@@ -177,6 +185,24 @@
 #ifndef CONFIG_VEETEE_MCP_TASK_PRIORITY
 #define CONFIG_VEETEE_MCP_TASK_PRIORITY 14
 #endif
+#ifndef CONFIG_VEETEE_MCP_CAPABILITY_REVISION
+#define CONFIG_VEETEE_MCP_CAPABILITY_REVISION 1
+#endif
+#ifndef CONFIG_VEETEE_BOARD_STATUS_LED_GPIO
+#define CONFIG_VEETEE_BOARD_STATUS_LED_GPIO (-1)
+#endif
+#ifndef CONFIG_VEETEE_BOARD_LAMP_GPIO
+#define CONFIG_VEETEE_BOARD_LAMP_GPIO (-1)
+#endif
+#ifndef CONFIG_VEETEE_BOARD_STATUS_LED_ACTIVE_LEVEL
+#define CONFIG_VEETEE_BOARD_STATUS_LED_ACTIVE_LEVEL 1
+#endif
+#ifndef CONFIG_VEETEE_BOARD_LAMP_ACTIVE_LEVEL
+#define CONFIG_VEETEE_BOARD_LAMP_ACTIVE_LEVEL 1
+#endif
+#ifndef CONFIG_VEETEE_BOARD_STATUS_LED_RGB
+#define CONFIG_VEETEE_BOARD_STATUS_LED_RGB 0
+#endif
 
 static const char *TAG = "veetee-fw";
 
@@ -205,6 +231,7 @@ typedef struct {
     QueueHandle_t wake_command_queue;
 #if CONFIG_VEETEE_MCP_ENABLED
     vt_mcp_task_t *mcp_task;
+    vt_board_tools_t board_tools;
 #endif
     SemaphoreHandle_t state_lock;
     SemaphoreHandle_t audio_encoder_lock;
@@ -267,6 +294,7 @@ static void service_playback_idle(vt_app_t *app);
 #if CONFIG_VEETEE_MCP_ENABLED
 static int mcp_send_text(const char *text, const char *session_id, void *context);
 static const char *mcp_current_session(void *context);
+static void mcp_init(vt_app_t *app);
 #endif
 
 static void request_wake_arm(vt_app_t *app) {
@@ -710,7 +738,7 @@ static void playback_task(void *context) {
             service_playback_idle(app);
         }
     }
-    vTaskDelete(NULL);
+    vTaskDeleteWithCaps(NULL);
 }
 
 static void capture_task(void *context) {
@@ -860,7 +888,7 @@ static void capture_task(void *context) {
         }
         (void)vt_transport_send_audio(&app->transport, opus, opus_size, 0);
     }
-    vTaskDelete(NULL);
+    vTaskDeleteWithCaps(NULL);
 }
 
 static void ptt_task(void *context) {
@@ -965,14 +993,20 @@ static void network_task(void *context) {
     vt_app_t *app = (vt_app_t *)context;
     if (CONFIG_VEETEE_WS_URI[0] == '\0') {
         ESP_LOGW(TAG, "WebSocket endpoint is empty; provision VEETEE_WS_URI through config before M0 run");
-        vTaskDelete(NULL);
+        vTaskDeleteWithCaps(NULL);
         return;
     }
     if (wifi_start(app) != ESP_OK) {
         ESP_LOGW(TAG, "WiFi station did not obtain an IP; preserve NVS and provision credentials before retry");
-        vTaskDelete(NULL);
+        vTaskDeleteWithCaps(NULL);
         return;
     }
+#if CONFIG_VEETEE_MCP_ENABLED
+    /* Wi-Fi allocates several large internal RX buffers. Initialize the
+       optional MCP owner only after that reservation and before advertising
+       capabilities in the transport hello. */
+    mcp_init(app);
+#endif
     while (!app->stop_requested) {
         vt_transport_config_t transport_config = {
             .uri = CONFIG_VEETEE_WS_URI,
@@ -1012,7 +1046,7 @@ static void network_task(void *context) {
         (void)state_apply(app, VT_EVENT_DISCONNECT);
         if (!app->stop_requested) vTaskDelay(pdMS_TO_TICKS(VT_WS_RETRY_DELAY_MS));
     }
-    vTaskDelete(NULL);
+    vTaskDeleteWithCaps(NULL);
 }
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
@@ -1309,7 +1343,7 @@ static int provisioning_start(vt_app_t *app) {
         app->provisioning_http = NULL;
         return ESP_FAIL;
     }
-    BaseType_t result = xTaskCreate(provisioning_dns_task, "vt_dns", 4096, app, 3, &app->provisioning_dns_task);
+    BaseType_t result = xTaskCreate(provisioning_dns_task, "vt_dns", VT_STACK_WORDS(4096), app, 3, &app->provisioning_dns_task);
     if (result != pdPASS) {
         (void)httpd_stop(app->provisioning_http);
         app->provisioning_http = NULL;
@@ -1407,6 +1441,62 @@ static int device_identity(vt_app_t *app) {
     return result > 0 && (size_t)result < sizeof(app->client_id) ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
+#if CONFIG_VEETEE_MCP_ENABLED
+/* MCP/board drivers are initialized by the network owner after Wi-Fi has
+   reserved its internal RX buffers.  This keeps the optional capability
+   owner out of app_main and guarantees the hello snapshot is complete. */
+static void mcp_init(vt_app_t *app) {
+    if (app == NULL) return;
+    app->mcp_task = heap_caps_calloc(1, sizeof(*app->mcp_task), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    const esp_app_desc_t *app_description = esp_app_get_description();
+    esp_err_t board_result = ESP_ERR_INVALID_STATE;
+    vt_mcp_task_result_t task_result = VT_MCP_TASK_ERR_ARGUMENT;
+    if (app->mcp_task != NULL && app_description != NULL) {
+        board_result = vt_board_tools_init(&app->board_tools, CONFIG_VEETEE_BOARD_PROFILE,
+                                           CONFIG_VEETEE_BOARD_STATUS_LED_GPIO, CONFIG_VEETEE_BOARD_LAMP_GPIO,
+                                           CONFIG_VEETEE_BOARD_STATUS_LED_ACTIVE_LEVEL, CONFIG_VEETEE_BOARD_LAMP_ACTIVE_LEVEL,
+                                           CONFIG_VEETEE_BOARD_STATUS_LED_RGB != 0,
+                                           CONFIG_VEETEE_MCP_CAPABILITY_REVISION);
+        if (board_result == ESP_OK) {
+            task_result = vt_mcp_task_init_from_board_hal(
+                app->mcp_task, vt_board_tools_hal(&app->board_tools),
+                app_description->project_name, app_description->version,
+                mcp_send_text, mcp_current_session, app,
+                CONFIG_VEETEE_MCP_QUEUE_DEPTH);
+        }
+    }
+    const bool ready = app->mcp_task != NULL && app_description != NULL &&
+                       board_result == ESP_OK && task_result == VT_MCP_TASK_OK;
+    if (!ready) {
+        ESP_LOGW(TAG, "MCP owner task unavailable; continuing without device tools board=%s task=%d stack_free=%u",
+                 esp_err_to_name(board_result), (int)task_result,
+                 (unsigned)uxTaskGetStackHighWaterMark(NULL));
+        if (app->mcp_task != NULL) {
+            if (app->mcp_task->registry_lock != NULL) vSemaphoreDeleteWithCaps(app->mcp_task->registry_lock);
+            if (app->mcp_task->queue != NULL) vQueueDeleteWithCaps(app->mcp_task->queue);
+            heap_caps_free(app->mcp_task->output);
+        }
+        heap_caps_free(app->mcp_task);
+        app->mcp_task = NULL;
+        return;
+    }
+    BaseType_t owner_result = xTaskCreateWithCaps(vt_mcp_task_run, "vt_mcp",
+                                                  VT_STACK_WORDS(CONFIG_VEETEE_MCP_TASK_STACK),
+                                                  app->mcp_task, CONFIG_VEETEE_MCP_TASK_PRIORITY, NULL,
+                                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (owner_result != pdPASS) {
+        ESP_LOGW(TAG, "MCP owner task creation failed; continuing without device tools");
+        vSemaphoreDeleteWithCaps(app->mcp_task->registry_lock);
+        vQueueDeleteWithCaps(app->mcp_task->queue);
+        heap_caps_free(app->mcp_task->output);
+        heap_caps_free(app->mcp_task);
+        app->mcp_task = NULL;
+    } else {
+        ESP_LOGI(TAG, "MCP owner task ready");
+    }
+}
+#endif
+
 void app_main(void) {
     esp_err_t nvs_error = nvs_flash_init();
     if (nvs_error == ESP_ERR_NVS_NO_FREE_PAGES || nvs_error == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -1430,15 +1520,7 @@ void app_main(void) {
         return;
     }
 #if CONFIG_VEETEE_MCP_ENABLED
-    app->mcp_task = calloc(1, sizeof(*app->mcp_task));
-    const esp_app_desc_t *app_description = esp_app_get_description();
-    if (app->mcp_task == NULL || app_description == NULL ||
-        vt_mcp_task_init(app->mcp_task, NULL, 0U, app_description->project_name,
-                         app_description->version, mcp_send_text, mcp_current_session,
-                         app, CONFIG_VEETEE_MCP_QUEUE_DEPTH) != VT_MCP_TASK_OK) {
-        ESP_LOGE(TAG, "MCP owner task initialization failed; refusing partial bootstrap");
-        return;
-    }
+    /* Board/MCP peripheral ownership is started after app_main yields. */
 #endif
     ESP_LOGI(TAG, "board=%s protocol=v%d device=%s", CONFIG_VEETEE_BOARD_PROFILE, CONFIG_VEETEE_PROTOCOL_PROFILE, app->device_id);
 #if CONFIG_VEETEE_LCD_ENABLED
@@ -1515,24 +1597,22 @@ void app_main(void) {
         .intr_type = GPIO_INTR_DISABLE,
     };
     ESP_ERROR_CHECK(gpio_config(&ptt));
-    BaseType_t task = xTaskCreate(capture_task, "vt_capture", 32768, app, 6, NULL);
+    BaseType_t task = xTaskCreateWithCaps(capture_task, "vt_capture", VT_STACK_WORDS(32768), app, 6, NULL,
+                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     configASSERT(task == pdPASS);
-    task = xTaskCreate(playback_task, "vt_playback", 16384, app, 6, NULL);
+    task = xTaskCreateWithCaps(playback_task, "vt_playback", VT_STACK_WORDS(16384), app, 6, NULL,
+                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     configASSERT(task == pdPASS);
-    task = xTaskCreate(ptt_task, "vt_ptt", 4096, app, 7, NULL);
+    task = xTaskCreate(ptt_task, "vt_ptt", VT_STACK_WORDS(4096), app, 7, NULL);
     configASSERT(task == pdPASS);
 #else
     ESP_LOGW(TAG, "hardware I/O disabled by config");
 #endif
 #if CONFIG_VEETEE_LCD_ENABLED
-    BaseType_t display_task_result = xTaskCreate(display_task, "vt_display", 4096, app, 3, NULL);
+    BaseType_t display_task_result = xTaskCreate(display_task, "vt_display", VT_STACK_WORDS(4096), app, 3, NULL);
     configASSERT(display_task_result == pdPASS);
 #endif
-#if CONFIG_VEETEE_MCP_ENABLED
-    BaseType_t mcp_task_result = xTaskCreate(vt_mcp_task_run, "vt_mcp", CONFIG_VEETEE_MCP_TASK_STACK,
-                                             app->mcp_task, CONFIG_VEETEE_MCP_TASK_PRIORITY, NULL);
-    configASSERT(mcp_task_result == pdPASS);
-#endif
-    BaseType_t network_task_result = xTaskCreate(network_task, "vt_network", 8192, app, 5, NULL);
+    BaseType_t network_task_result = xTaskCreateWithCaps(network_task, "vt_network", VT_STACK_WORDS(8192), app, 5, NULL,
+                                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     configASSERT(network_task_result == pdPASS);
 }

@@ -1389,6 +1389,7 @@ thể abort khi phát hiện voice
 | Opus decode fail | drop frame, reset decoder only after bounded consecutive failures |
 | queue full | áp dụng bounded policy của firmware, metric bắt buộc; normal soak test yêu cầu 0 drop |
 | provider/server pipeline fail | gửi configurable `alert` nếu session còn sống, rồi `tts/stop`; không giả TTS success |
+| outbound WebSocket write timeout/reset | đóng session (code `1011` best-effort), cancel turn và release lease; tăng `ws_send_failures` cùng metric subtype |
 
 Firmware tham chiếu log/ignore missing message type
 (`references/xiaozhi-esp32/main/protocols/websocket_protocol.cc:141-156`); backend
@@ -1403,6 +1404,14 @@ không có inbound packet
 (`references/xiaozhi-esp32/main/protocols/protocol.cc:100-109`); Veetee deployment
 MUST cấu hình heartbeat ngắn hơn ngưỡng này nhưng không áp arbitrary conversation
 duration limit.
+
+Ở server Veetee, mọi outbound text/binary frame trên cùng một WebSocket MUST đi
+qua một send lock để giữ thứ tự giữa control và audio. Mỗi write có deadline
+`VEETEE_WS_SEND_TIMEOUT_MS` (mặc định 5.000 ms, bounded 100..60.000 ms). Khi
+deadline hết hoặc peer reset connection, server MUST đóng session fail-closed,
+cancel provider task và release turn lease; server không được giữ queue/lease vô
+hạn và không được thử transport fallback. Các metric send chỉ là counter đã
+redact, không chứa payload/audio.
 
 ## 11. Conformance hai chiều
 

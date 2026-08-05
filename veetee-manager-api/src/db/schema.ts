@@ -49,6 +49,24 @@ export const providerConfigRevisionTable = managerSchema.table('provider_config_
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
 })
 
+export const voiceProfileTable = managerSchema.table('voice_profile', {
+  id: uuid('id').primaryKey(),
+  ownerId: text('owner_id').notNull(),
+  providerConfigId: uuid('provider_config_id').notNull().references(() => providerConfigTable.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  locale: text('locale').notNull(),
+  voiceCode: text('voice_code').notNull(),
+  description: text('description').notNull(),
+  demoUrl: text('demo_url'),
+  enabled: boolean('enabled').notNull(),
+  sort: integer('sort').notNull(),
+  revision: integer('revision').notNull(),
+  etag: text('etag').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+  archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'date' }),
+})
+
 export const runtimePublicationTable = managerSchema.table('runtime_publication', {
   assistantId: uuid('assistant_id').primaryKey(),
   revision: integer('revision').notNull(),

@@ -101,6 +101,13 @@ Handshake WebSocket có deadline 10 giây mặc định. Có thể điều chỉ
 `hello_timeouts`. Đây là timeout của handshake, không phải timeout của một lượt
 thoại đã bắt đầu.
 
+Outbound text và binary frame được serialize qua một send lock để không trộn thứ
+tự giữa TTS/control tasks. Mỗi write có deadline 5 giây, điều chỉnh bằng
+`VEETEE_WS_SEND_TIMEOUT_MS` trong khoảng 100–60.000 ms. Peer không đọc kịp sẽ bị
+đóng fail-closed; cleanup huỷ provider task và release turn lease thay vì giữ tài
+nguyên vô hạn. Các metric `ws_send_failures`, `ws_send_timeouts` và
+`ws_send_connection_errors` chỉ là counter đã redact.
+
 ### Staged MQTT/UDP v3 core
 
 `veetee_server.mqtt_udp` cung cấp parser/crypto/reorder primitives cho profile M3;

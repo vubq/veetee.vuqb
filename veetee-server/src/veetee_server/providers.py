@@ -545,7 +545,14 @@ class GroqTestKeyPool:
             self._cursor = (ordinal + 1) % len(self._keys)
 
 
-class GroqLLM:
+class OpenAICompatibleLLM:
+    """Streaming Chat Completions adapter shared by compatible providers.
+
+    The selected provider ID still comes from the runtime snapshot.  The
+    legacy ``GroqLLM`` name below is only a compatibility wrapper for existing
+    snapshots and tests; it does not create a separate implementation.
+    """
+
     def __init__(
         self,
         config: dict[str, Any],
@@ -554,17 +561,35 @@ class GroqLLM:
         secret_refs: list[str],
         *,
         test_key_file: Path | None = None,
+        provider_name: str = "OpenAI-compatible",
     ) -> None:
+        self._provider_name = provider_name
         if secret_file is None and secret_resolver is None and test_key_file is None:
-            raise ProviderError("LLM_SECRET_MISSING", "Groq provider requires one secret reference")
+            raise ProviderError("LLM_SECRET_MISSING", f"{provider_name} provider requires one secret reference")
         if len(secret_refs) > 1:
-            raise ConfigurationError("Groq provider accepts exactly one secretRef")
+            raise ConfigurationError(f"{provider_name} provider accepts exactly one secretRef")
         if test_key_file is not None and secret_refs:
-            raise ConfigurationError("test Groq key pool requires empty secretRefs")
+            raise ConfigurationError(f"test {provider_name} key pool requires empty secretRefs")
         self._model = _required_string(config, "model")
-        self._endpoint = _required_string(config, "endpoint")
+        endpoint = config.get("baseUrl", config.get("endpoint"))
+        if not isinstance(endpoint, str) or not endpoint.strip():
+            raise ConfigurationError(f"{provider_name} provider requires baseUrl")
+        self._endpoint = endpoint.strip()
         self._temperature = float(config.get("temperature", 0.3))
         self._max_tokens = int(config.get("maxTokens", 512))
+        headers = config.get("headers", {})
+        if not isinstance(headers, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in headers.items()
+        ):
+            raise ConfigurationError(f"{provider_name} config.headers must be a string map")
+        self._headers = {
+            key: value for key, value in headers.items()
+            if key.lower() not in {"authorization", "content-length"}
+        }
+        options = config.get("options", {})
+        if not isinstance(options, dict):
+            raise ConfigurationError(f"{provider_name} config.options must be an object")
+        self._options = dict(options)
         self._timeout_seconds = _bounded_float(
             config,
             "timeoutSeconds",
@@ -600,30 +625,30 @@ class GroqLLM:
             try:
                 return self._secret_resolver.resolve(self._secret_ref)
             except SecretResolutionError as exc:
-                raise ProviderError("LLM_SECRET_RESOLVE_FAILED", "Groq secretRef could not be resolved") from exc
+                raise ProviderError("LLM_SECRET_RESOLVE_FAILED", f"{self._provider_name} secretRef could not be resolved") from exc
         if self._secret_ref and not self._secret_resolver:
-            raise ProviderError("LLM_SECRET_RESOLVER_MISSING", "Groq secretRef resolver is not configured")
+            raise ProviderError("LLM_SECRET_RESOLVER_MISSING", f"{self._provider_name} secretRef resolver is not configured")
         if self._secret_file is None:
-            raise ProviderError("LLM_SECRET_MISSING", "Groq provider requires one secret reference")
+            raise ProviderError("LLM_SECRET_MISSING", f"{self._provider_name} provider requires one secret reference")
         try:
             lines = self._secret_file.read_text(encoding="utf-8").splitlines()
         except OSError as exc:
-            raise ProviderError("LLM_SECRET_READ_FAILED", "cannot read Groq secret file") from exc
+            raise ProviderError("LLM_SECRET_READ_FAILED", f"cannot read {self._provider_name} secret file") from exc
         values = [line.split("=", 1)[1] if "=" in line else line for line in lines]
         values = [value.strip() for value in values if value.strip() and not value.lstrip().startswith("#")]
         if len(values) != 1:
-            raise ProviderError("LLM_SINGLE_SECRET_REQUIRED", "production Groq config requires exactly one key")
+            raise ProviderError("LLM_SINGLE_SECRET_REQUIRED", f"production {self._provider_name} config requires exactly one key")
         return values[0]
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._closed:
-            raise ProviderError("LLM_PROVIDER_CLOSED", "Groq provider is closed")
+            raise ProviderError("LLM_PROVIDER_CLOSED", f"{self._provider_name} provider is closed")
         client = self._client
         if client is not None:
             return client
         async with self._client_lock:
             if self._closed:
-                raise ProviderError("LLM_PROVIDER_CLOSED", "Groq provider is closed")
+                raise ProviderError("LLM_PROVIDER_CLOSED", f"{self._provider_name} provider is closed")
             if self._client is None:
                 self._client = httpx.AsyncClient(
                     timeout=httpx.Timeout(self._timeout_seconds),
@@ -653,6 +678,12 @@ class GroqLLM:
             "max_tokens": self._max_tokens,
             "stream": True,
         }
+        # Keep reserved protocol fields authoritative while allowing standard
+        # provider-specific options such as top_p or response_format.
+        payload.update({
+            key: value for key, value in self._options.items()
+            if key not in {"model", "messages", "stream", "tools"}
+        })
         if tools:
             payload["tools"] = tools
         client = await self._get_client()
@@ -670,7 +701,7 @@ class GroqLLM:
                     emitted = True
                     yield delta
                 await pool.mark_success(ordinal)
-                LOG.info("test-only Groq key ordinal=%d succeeded", ordinal + 1)
+                LOG.info("test-only %s key ordinal=%d succeeded", self._provider_name, ordinal + 1)
                 return
             except ProviderError as exc:
                 # A partial stream cannot be replayed safely: retrying would
@@ -678,7 +709,7 @@ class GroqLLM:
                 if exc.code != "LLM_RATE_LIMITED" or emitted:
                     raise
                 last_error = exc
-                LOG.info("test-only Groq key ordinal=%d rate_limited", ordinal + 1)
+                LOG.info("test-only %s key ordinal=%d rate_limited", self._provider_name, ordinal + 1)
                 continue
         assert last_error is not None
         raise last_error
@@ -689,13 +720,14 @@ class GroqLLM:
         payload: dict[str, Any],
         key: str,
     ) -> AsyncIterator[LLMDelta]:
-        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        headers = dict(self._headers)
+        headers.update({"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
         try:
             async with client.stream("POST", self._endpoint, headers=headers, json=payload) as response:
                 if response.status_code == 429:
-                    raise ProviderError("LLM_RATE_LIMITED", "Groq rate limit", retryable=True)
+                    raise ProviderError("LLM_RATE_LIMITED", f"{self._provider_name} rate limit", retryable=True)
                 if response.status_code >= 400:
-                    raise ProviderError("LLM_HTTP_ERROR", f"Groq HTTP {response.status_code}")
+                    raise ProviderError("LLM_HTTP_ERROR", f"{self._provider_name} HTTP {response.status_code}")
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -734,9 +766,31 @@ class GroqLLM:
                             tool_arguments=arguments,
                         )
         except httpx.TimeoutException as exc:
-            raise ProviderError("LLM_TIMEOUT", "Groq request timed out", retryable=True) from exc
+            raise ProviderError("LLM_TIMEOUT", f"{self._provider_name} request timed out", retryable=True) from exc
         except httpx.RequestError as exc:
-            raise ProviderError("LLM_NETWORK_ERROR", "Groq request failed", retryable=True) from exc
+            raise ProviderError("LLM_NETWORK_ERROR", f"{self._provider_name} request failed", retryable=True) from exc
+
+
+class GroqLLM(OpenAICompatibleLLM):
+    """Compatibility name for existing ``groq.chat`` snapshots."""
+
+    def __init__(
+        self,
+        config: dict[str, Any],
+        secret_file: Path | None,
+        secret_resolver: EncryptedFileSecretResolver | None,
+        secret_refs: list[str],
+        *,
+        test_key_file: Path | None = None,
+    ) -> None:
+        super().__init__(
+            config,
+            secret_file,
+            secret_resolver,
+            secret_refs,
+            test_key_file=test_key_file,
+            provider_name="Groq",
+        )
 
 
 class FixtureToneTTS:
@@ -888,8 +942,19 @@ class VieNeuTTS:
                 if int(rate) != self._sample_rate:
                     try:
                         import soxr
-
                         samples = soxr.resample(samples, int(rate), self._sample_rate)
+                    except ImportError:
+                        # Keep the local provider usable on a minimal install.
+                        # soxr remains preferred, while this bounded linear
+                        # fallback avoids making an optional wheel a runtime
+                        # requirement for streaming.
+                        target_size = max(1, round(samples.size * self._sample_rate / int(rate)))
+                        if samples.size > 1:
+                            source_axis = np.linspace(0.0, 1.0, samples.size, endpoint=True)
+                            target_axis = np.linspace(0.0, 1.0, target_size, endpoint=True)
+                            samples = np.interp(target_axis, source_axis, samples).astype(np.float32)
+                        else:
+                            samples = np.repeat(samples, target_size).astype(np.float32)
                     except Exception as exc:  # noqa: BLE001
                         raise ProviderError("TTS_RESAMPLE_FAILED", "cannot resample VieNeu audio") from exc
                 pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
@@ -950,6 +1015,22 @@ def phowhisper_asr_factory(config: dict[str, Any], context: ProviderFactoryConte
 def fixture_llm_factory(config: dict[str, Any], context: ProviderFactoryContext) -> LLMProvider:
     del context
     return FixtureLLM(config)
+
+
+@provider_factory("llm", "veetee.llm.openai-compatible")
+def openai_compatible_llm_factory(config: dict[str, Any], context: ProviderFactoryContext) -> LLMProvider:
+    raw_refs = context.secret_refs
+    if not all(isinstance(value, str) and value for value in raw_refs) or (
+        not raw_refs and context.test_groq_keys_file is None
+    ):
+        raise ConfigurationError("OpenAI-compatible provider secretRefs must be a non-empty string array")
+    return OpenAICompatibleLLM(
+        config,
+        context.secret_file,
+        context.secret_resolver,
+        list(raw_refs),
+        test_key_file=context.test_groq_keys_file,
+    )
 
 
 @provider_factory("llm", "groq.chat")

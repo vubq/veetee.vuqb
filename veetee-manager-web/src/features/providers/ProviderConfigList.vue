@@ -6,7 +6,7 @@ import VtBadge from '@/ui/primitives/VtBadge.vue'
 import VtButton from '@/ui/primitives/VtButton.vue'
 import VtCard from '@/ui/primitives/VtCard.vue'
 import VtInput from '@/ui/primitives/VtInput.vue'
-import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
+import type { VtSelectOption } from '@/ui/primitives/VtSelect.vue'
 import VtStatus from '@/ui/primitives/VtStatus.vue'
 
 const props = defineProps<{
@@ -36,7 +36,7 @@ const kindOptions: VtSelectOption[] = [
   { value: 'memory', label: 'Ghi nhớ' },
 ]
 
-function kindLabel(kind: ProviderKind | undefined) {
+function kindLabel(kind: ProviderKind | 'all' | undefined) {
   return kindOptions.find((option) => option.value === kind)?.label ?? 'Dịch vụ'
 }
 
@@ -72,8 +72,8 @@ function probeLabel(result: ProviderProbeResult | undefined) {
   <VtCard class="provider-list-card">
     <header class="list-heading">
       <div>
-        <h2>Cấu hình dịch vụ</h2>
-        <p>Chọn một cấu hình để chỉnh sửa. Mỗi loại dịch vụ có một lựa chọn cho từng trợ lý.</p>
+        <h2>{{ kindLabel(kind) }}</h2>
+        <p>Quản lý từng cấu hình {{ kindLabel(kind).toLocaleLowerCase() }} độc lập. Bạn có thể thêm, sửa hoặc xóa từng cấu hình.</p>
       </div>
       <VtBadge tone="primary">
         {{ filtered.length }} dịch vụ
@@ -86,11 +86,6 @@ function probeLabel(result: ProviderProbeResult | undefined) {
         autocomplete="off"
         aria-label="Tìm cấu hình dịch vụ"
         placeholder="Tìm cấu hình…"
-      />
-      <VtSelect
-        v-model="kind"
-        label="Lọc theo loại dịch vụ"
-        :options="kindOptions"
       />
     </div>
     <ul

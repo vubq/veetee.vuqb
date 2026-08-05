@@ -35,6 +35,7 @@ import type {
   Versioned,
   VoicePreview,
   VoiceProfile,
+  VoiceProfileInput,
 } from '@/domain'
 import type { paths } from '@/api/generated'
 import type { GatewayDependencies, ManagerGateway, PreviewControlGateway, RetentionMutationProblem, SecretMutationProblem } from './manager-gateway'
@@ -44,6 +45,8 @@ import type {
   PairDeviceRequest,
   ProviderConfigPatchRequest,
   ProviderConfigRequest,
+  VoiceProfilePatchRequest,
+  VoiceProfileRequest,
   ProviderSelectionRequest,
   RetentionPolicyRequest,
   RoleConfigRequest,
@@ -228,6 +231,26 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     const result = await this.execute(() => this.client.GET('/api/v1/voices', { params: { query: { locale } } }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
     return this.success({ items: result.data.items.map(voiceProfile), total: result.data.total })
+  }
+
+  async createVoiceProfile(input: VoiceProfileInput): Promise<GatewayResult<VoiceProfile, ValidationProblem | OfflineProblem>> {
+    const payload: VoiceProfileRequest = input
+    const result = await this.execute(() => this.client.POST('/api/v1/voices', { body: payload }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(voiceProfile(result.data))
+  }
+
+  async updateVoiceProfile(id: string, input: Partial<VoiceProfileInput>, expectedEtag: string): Promise<GatewayResult<VoiceProfile, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<VoiceProfile, unknown>>> {
+    const payload: VoiceProfilePatchRequest = input
+    const result = await this.execute(() => this.client.PATCH('/api/v1/voices/{id}', { params: { path: { id } }, headers: { 'If-Match': expectedEtag }, body: payload }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(voiceProfile(result.data))
+  }
+
+  async deleteVoiceProfile(id: string, expectedEtag: string): Promise<GatewayResult<void, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<VoiceProfile, unknown>>> {
+    const result = await this.execute(() => this.client.DELETE('/api/v1/voices/{id}', { params: { path: { id } }, headers: { 'If-Match': expectedEtag } }))
+    if (!result.response.ok) return this.failure(result)
+    return this.success(undefined)
   }
 
   async previewVoice(voiceId: string, transcript: string): Promise<GatewayResult<VoicePreview, never>> {
@@ -480,7 +503,7 @@ function secretReference(value: SecretReferenceResource): SecretReference {
 }
 
 function voiceProfile(value: VoiceResource): VoiceProfile {
-  return { id: value.id, name: value.name, providerName: value.providerName, locale: value.locale, description: value.description, previewDurationMs: value.previewDurationMs, available: value.available }
+  return { id: value.id, name: value.name, providerName: value.providerName, locale: value.locale, description: value.description, previewDurationMs: value.previewDurationMs, available: value.available, managed: value.managed, providerConfigId: value.providerConfigId, voiceCode: value.voiceCode, enabled: value.enabled, sort: value.sort, demoUrl: value.demoUrl, etag: value.etag, updatedAt: value.updatedAt }
 }
 
 function modelMemory(value: ModelMemoryResource): ModelMemoryWorkspace {

@@ -6,9 +6,19 @@
 #include "esp_crt_bundle.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
 
 #define TAG "veetee-ws"
-#define VT_TRANSPORT_BUFFER_SIZE 4096
+
+#ifndef CONFIG_VEETEE_WS_TASK_STACK
+#define CONFIG_VEETEE_WS_TASK_STACK 8192
+#endif
+#ifndef CONFIG_VEETEE_WS_BUFFER_SIZE
+#define CONFIG_VEETEE_WS_BUFFER_SIZE 4096
+#endif
+
+#define VT_WS_STACK_WORDS(bytes) \
+    ((int)(((bytes) + sizeof(StackType_t) - 1U) / sizeof(StackType_t)))
 
 static void transport_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static int send_hello(vt_transport_t *transport);
@@ -57,8 +67,11 @@ int vt_transport_init(vt_transport_t *transport, const vt_transport_config_t *co
         .enable_close_reconnect = false,
         .task_prio = 5,
         .task_name = "vt_ws_io",
-        .task_stack = 8192,
-        .buffer_size = VT_TRANSPORT_BUFFER_SIZE,
+        /* esp_websocket_client forwards this value to xTaskCreate(), which
+           expects words even though the public setting is documented here in
+           bytes. */
+        .task_stack = VT_WS_STACK_WORDS(CONFIG_VEETEE_WS_TASK_STACK),
+        .buffer_size = CONFIG_VEETEE_WS_BUFFER_SIZE,
         .network_timeout_ms = 10000,
         .ping_interval_sec = 15,
         .pingpong_timeout_sec = 10,

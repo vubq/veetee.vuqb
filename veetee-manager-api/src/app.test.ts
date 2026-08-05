@@ -200,6 +200,56 @@ test('voice catalog total matches the locale-filtered items', async () => {
   }
 })
 
+test('voice catalog provider filter excludes manifest voices', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const configs = await app.inject({ method: 'GET', url: '/api/v1/provider-configs?kind=tts' })
+    assert.equal(configs.statusCode, 200)
+    const providerConfigId = configs.json().items[0]?.id as string | undefined
+    assert.ok(providerConfigId)
+    const filtered = await app.inject({ method: 'GET', url: `/api/v1/voices?providerConfigId=${providerConfigId}` })
+    assert.equal(filtered.statusCode, 200)
+    assert.ok(filtered.json().items.every((item: { providerConfigId: string | null }) => item.providerConfigId === providerConfigId))
+  } finally {
+    await app.close()
+  }
+})
+
+test('voice catalog aliases are ETag guarded and cloning fields stay deferred', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const configs = await app.inject({ method: 'GET', url: '/api/v1/provider-configs?kind=tts' })
+    const providerConfigId = configs.json().items[0]?.id as string | undefined
+    assert.ok(providerConfigId)
+    const deferred = await app.inject({
+      method: 'POST',
+      url: '/api/v1/voices',
+      payload: { providerConfigId, name: 'Deferred clone', locale: 'vi-VN', voiceCode: 'deferred', referenceAudio: '/tmp/voice.wav' },
+    })
+    assert.equal(deferred.statusCode, 201)
+    assert.equal('referenceAudio' in deferred.json(), false)
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/voices',
+      payload: { providerConfigId, name: 'Giọng tự nhiên', locale: 'vi-VN', voiceCode: `tu-nhien-${Date.now()}`, description: 'Alias TTS', enabled: true },
+    })
+    assert.equal(created.statusCode, 201)
+    const value = created.json() as { id: string; etag: string; name: string }
+    const updated = await app.inject({ method: 'PATCH', url: `/api/v1/voices/${value.id}`, headers: { 'if-match': value.etag }, payload: { name: 'Giọng rõ ràng' } })
+    assert.equal(updated.statusCode, 200)
+    assert.equal(updated.json().name, 'Giọng rõ ràng')
+    const stale = await app.inject({ method: 'PATCH', url: `/api/v1/voices/${value.id}`, headers: { 'if-match': value.etag }, payload: { name: 'Ghi đè cũ' } })
+    assert.equal(stale.statusCode, 409)
+    const removed = await app.inject({ method: 'DELETE', url: `/api/v1/voices/${value.id}`, headers: { 'if-match': updated.headers.etag } })
+    assert.equal(removed.statusCode, 204)
+  } finally {
+    await app.close()
+  }
+})
+
 test('provider catalog parsing fails closed on duplicate or malformed installations', () => {
   const installation = { id: 'test.tts', kind: 'tts', displayNameKey: 'provider.tts.test', version: '1.0.0', manifest: {}, configSchema: {} }
   assert.throws(() => parseCatalog({ schemaVersion: 2, installations: [installation] }), /schemaVersion must be 1/)

@@ -93,6 +93,7 @@ class TurnPipeline:
         memory: MemorySession | None = None,
         on_intent: Callable[[IntentMatch], Awaitable[None]] | None = None,
         metrics: dict[str, int],
+        tools: list[dict[str, Any]] | None = None,
     ) -> None:
         self.snapshot = snapshot
         self.registry = registry
@@ -105,6 +106,9 @@ class TurnPipeline:
         self._execute_tool = execute_tool
         self._memory = memory
         self._on_intent = on_intent
+        # Keep the list reference: MCP discovery can replace descriptors in
+        # place after the WebSocket hello while a session is still alive.
+        self._tools = tools if tools is not None else (snapshot.raw.get("tools") or [])
         self.metrics = metrics
         wire = snapshot.raw.get("wire") or {}
         self._uplink_rate = int(wire.get("uplinkSampleRate", 16000))
@@ -220,7 +224,7 @@ class TurnPipeline:
         return self.turn.cancelled is not None and self.turn.cancelled.is_set()
 
     async def _stream_answer(self, prompt: str) -> str:
-        tools = self.snapshot.raw.get("tools") or []
+        tools = self._tools
         max_rounds = max(1, int((self.snapshot.raw.get("toolPolicy") or {}).get("maxRounds", 3)))
         answer_started = False
         answer_parts: list[str] = []

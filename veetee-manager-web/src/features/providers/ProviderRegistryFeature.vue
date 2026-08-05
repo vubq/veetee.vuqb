@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { AudioWaveform, BrainCircuit, Database, Lightbulb, Mic, Volume2 } from '@lucide/vue'
 
 import { requireInjection } from '@/app/requireInjection'
 import { useUnsavedChangesGuard } from '@/app/useUnsavedChangesGuard'
@@ -15,11 +16,13 @@ import VtInput from '@/ui/primitives/VtInput.vue'
 import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
 import VtStatus from '@/ui/primitives/VtStatus.vue'
 import VtDialog from '@/ui/primitives/VtDialog.vue'
+import VtIcon from '@/ui/primitives/VtIcon.vue'
 import { notify } from '@/ui/primitives/notifications'
 
 import SchemaConfigForm from './SchemaConfigForm.vue'
 import SecretReferencePanel from './SecretReferencePanel.vue'
 import ProviderConfigList from './ProviderConfigList.vue'
+import VoiceCatalogPanel from './VoiceCatalogPanel.vue'
 import UnsavedChangesDialog from '@/ui/patterns/UnsavedChangesDialog.vue'
 import { cloneConfig } from './schema-config'
 
@@ -30,7 +33,7 @@ const secretReferences = ref<SecretReference[]>([])
 const selectedSecretRefs = ref<string[]>([])
 const probeResults = ref<Record<string, ProviderProbeResult | undefined>>({})
 const providerQuery = ref('')
-const providerKindFilter = ref<ProviderKind | 'all'>('all')
+const activeKind = ref<ProviderKind>('vad')
 const probingId = ref('')
 const removeId = ref('')
 const removing = ref(false)
@@ -56,10 +59,27 @@ const kindLabels: Record<ProviderKind, string> = {
   intent: 'Hiểu ý định',
   memory: 'Ghi nhớ',
 }
-const options = computed<VtSelectOption[]>(() => installations.value.map((item) => ({ value: item.id, label: item.displayName ?? item.displayNameKey, description: kindLabels[item.kind] })))
+const kindDescriptions: Record<ProviderKind, string> = {
+  vad: 'Giảm tiếng ồn và tìm lúc bạn bắt đầu nói',
+  asr: 'Chuyển lời nói thành văn bản',
+  llm: 'Suy luận, streaming và gọi tool',
+  tts: 'Chọn model và quản lý giọng nói',
+  intent: 'Nhận diện thao tác nhanh theo cấu hình',
+  memory: 'Giữ ngữ cảnh cho các lượt trò chuyện',
+}
+const kindIcons = { vad: AudioWaveform, asr: Mic, llm: BrainCircuit, tts: Volume2, intent: Lightbulb, memory: Database } as const
+const kindItems = (Object.keys(kindLabels) as ProviderKind[]).map((id) => ({ id, label: kindLabels[id], description: kindDescriptions[id], icon: kindIcons[id] }))
+const installationsForKind = computed(() => installations.value.filter((item) => item.kind === activeKind.value))
+const configsForKind = computed(() => configs.value.filter((config) => installations.value.some((item) => item.id === config.installationId && item.kind === activeKind.value)))
+const kindCounts = computed(() => Object.fromEntries((Object.keys(kindLabels) as ProviderKind[]).map((kind) => [kind, configs.value.filter((config) => installations.value.some((item) => item.id === config.installationId && item.kind === kind)).length])))
+const options = computed<VtSelectOption[]>(() => installationsForKind.value.map((item) => ({ value: item.id, label: item.displayName ?? item.displayNameKey, description: `${kindLabels[item.kind]} · ${item.version}` })))
 const selected = computed(() => installations.value.find((item) => item.id === selectedId.value))
 const removeTarget = computed(() => configs.value.find((item) => item.id === removeId.value))
 const selectedProbe = computed(() => selectedConfigId.value ? probeResults.value[selectedConfigId.value] : undefined)
+const emptyHeading = computed(() => loadState.value === 'ready' ? `Chưa có nhà cung cấp cho nhóm ${kindLabels[activeKind.value].toLowerCase()}` : 'Chưa có dịch vụ nào')
+const emptyDescription = computed(() => loadState.value === 'ready'
+  ? 'Nhóm này chưa có installation khả dụng trong catalog. Hãy nạp provider tương ứng trước khi tạo cấu hình.'
+  : 'Danh sách dịch vụ chưa sẵn sàng. Hãy tải lại để thử lại.')
 
 function checkLabel(id: string) {
   return ({ schema: 'Cấu hình', secrets: 'Khóa kết nối', manifest: 'Dịch vụ' } as Record<string, string>)[id] ?? 'Chi tiết kiểm tra'
@@ -81,6 +101,18 @@ function chooseInstallation(value: string) {
   configDraft.value = cloneConfig(item?.config ?? {})
   configValid.value = true
   selectedSecretRefs.value = [...(item?.secretRefs ?? [])]
+}
+
+function selectKind(kind: ProviderKind) {
+  activeKind.value = kind
+  const first = installations.value.find((item) => item.kind === kind)
+  if (!first) {
+    selectedId.value = ''
+    selectedConfigId.value = ''
+    startNew()
+    return
+  }
+  if (selected.value?.kind !== kind) chooseInstallation(first.id)
 }
 
 function chooseConfig(id: string) {
@@ -146,7 +178,11 @@ async function load() {
       selectedId.value = ''
       selectedConfigId.value = ''
     }
-    if (!selectedId.value && catalog.data[0]) chooseInstallation(catalog.data[0].id)
+    if (!catalog.data.some((item) => item.kind === activeKind.value)) activeKind.value = catalog.data[0]?.kind ?? 'vad'
+    if (!selectedId.value || selected.value?.kind !== activeKind.value) {
+      const first = catalog.data.find((item) => item.kind === activeKind.value)
+      if (first) chooseInstallation(first.id)
+    }
     loadState.value = catalog.data.length > 0 ? 'ready' : 'empty'
   } catch {
     if (generation !== loadGeneration) return
@@ -185,7 +221,7 @@ async function remove() {
   const result = await gateway.deleteProviderConfig(target.id, target.etag)
   removing.value = false
   if (!result.ok) {
-    notify('Không thể ẩn cấu hình', { tone: 'error', message: result.meta.offline ? 'Máy chủ quản trị đang ngoại tuyến.' : 'Cấu hình đang được dùng hoặc đã thay đổi; hãy tải lại.', assertive: true })
+    notify('Không thể xóa cấu hình', { tone: 'error', message: result.meta.offline ? 'Máy chủ quản trị đang ngoại tuyến.' : 'Cấu hình đang được dùng hoặc đã thay đổi; hãy tải lại.', assertive: true })
     return
   }
   configs.value = configs.value.filter((item) => item.id !== target.id)
@@ -198,7 +234,7 @@ async function remove() {
     if (fallback) chooseConfig(fallback.id)
     else startNew()
   }
-  notify('Đã ẩn cấu hình', { tone: 'success', message: 'Lịch sử cấu hình vẫn được giữ nguyên.' })
+  notify('Đã xóa cấu hình khỏi danh sách', { tone: 'success', message: 'Lịch sử cấu hình vẫn được giữ nguyên.' })
 }
 
 async function focusStateHeading() {
@@ -241,6 +277,12 @@ async function save() {
 }
 
 onMounted(load)
+
+watch(activeKind, (kind) => {
+  if (loading.value) return
+  const first = installations.value.find((item) => item.kind === kind)
+  if (first && selected.value?.kind !== kind) chooseInstallation(first.id)
+})
 
 const unknownSecretRefs = computed(() => selectedSecretRefs.value.filter((id) => !secretReferences.value.some((item) => item.id === id)))
 
@@ -310,8 +352,29 @@ function toggleSecretReference(id: string, checked: boolean) {
       v-else-if="loadState === 'ready' && selected"
       class="provider-content"
     >
+      <nav
+        class="provider-kind-nav"
+        aria-label="Nhóm dịch vụ AI"
+      >
+        <button
+          v-for="item in kindItems"
+          :key="item.id"
+          class="provider-kind-tab"
+          :class="{ active: activeKind === item.id }"
+          type="button"
+          :aria-current="activeKind === item.id ? 'page' : undefined"
+          @click="selectKind(item.id)"
+        >
+          <span class="provider-kind-icon"><VtIcon
+            :icon="item.icon"
+            :size="17"
+          /></span>
+          <span class="provider-kind-copy"><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
+          <span class="provider-kind-count">{{ kindCounts[item.id] ?? 0 }}</span>
+        </button>
+      </nav>
       <div class="provider-list-toolbar">
-        <p>Mỗi dịch vụ có một cấu hình đang dùng. Khi kiểm tra lỗi, Veetee không tự đổi sang dịch vụ khác.</p>
+        <p>{{ kindLabels[activeKind] }} được quản lý riêng. Thay đổi chỉ có hiệu lực sau khi bạn áp dụng cấu hình cho trợ lý.</p>
         <VtButton
           size="sm"
           variant="primary"
@@ -322,9 +385,9 @@ function toggleSecretReference(id: string, checked: boolean) {
       </div>
       <ProviderConfigList
         v-model:query="providerQuery"
-        v-model:kind="providerKindFilter"
-        :configs="configs"
-        :installations="installations"
+        v-model:kind="activeKind"
+        :configs="configsForKind"
+        :installations="installationsForKind"
         :selected-id="selectedConfigId"
         :probe-results="probeResults"
         :probing-id="probingId"
@@ -334,8 +397,8 @@ function toggleSecretReference(id: string, checked: boolean) {
       />
       <div class="provider-layout">
         <FormSection
-          title="Loại dịch vụ"
-          description="Chọn dịch vụ cần cấu hình; các trường bên dưới tự sinh theo loại đã chọn."
+          title="Nhà cung cấp"
+          :description="`${kindLabels[activeKind]} có thể có nhiều cấu hình độc lập.`"
         >
           <VtFormField
             label="Dịch vụ"
@@ -352,8 +415,8 @@ function toggleSecretReference(id: string, checked: boolean) {
           <div class="provider-meta">
             <VtStatus
               tone="online"
-              :label="kindLabels[selected.kind]"
-            /><span>Cấu hình tự động theo dịch vụ</span>
+              :label="kindLabels[activeKind]"
+            /><span>Biểu mẫu được sinh từ schema của nhà cung cấp</span>
           </div>
         </FormSection>
         <VtCard class="config-card">
@@ -464,6 +527,11 @@ function toggleSecretReference(id: string, checked: boolean) {
           @update:selected-ids="selectedSecretRefs = $event"
           @changed="load"
         />
+        <VoiceCatalogPanel
+          v-if="activeKind === 'tts'"
+          :configs="configsForKind"
+          :gateway="gateway"
+        />
       </div>
     </div>
     <VtCard
@@ -474,9 +542,9 @@ function toggleSecretReference(id: string, checked: boolean) {
         ref="stateHeading"
         tabindex="-1"
       >
-        Chưa có dịch vụ nào
+        {{ emptyHeading }}
       </h2>
-      <p>Danh sách dịch vụ chưa sẵn sàng. Hãy tải lại để thử lại.</p>
+      <p>{{ emptyDescription }}</p>
       <VtButton
         variant="secondary"
         :loading="loading"
@@ -487,7 +555,7 @@ function toggleSecretReference(id: string, checked: boolean) {
     </VtCard>
     <VtDialog
       :open="Boolean(removeTarget)"
-      title="Ẩn cấu hình?"
+      title="Xóa cấu hình?"
       :description="removeTarget ? `${removeTarget.name} sẽ không còn xuất hiện trong danh sách chọn. Lịch sử cấu hình vẫn được giữ.` : undefined"
       width="sm"
       @update:open="!$event && closeRemove()"
@@ -504,7 +572,7 @@ function toggleSecretReference(id: string, checked: boolean) {
           :loading="removing"
           @click="remove"
         >
-          Ẩn cấu hình
+          Xóa cấu hình khỏi danh sách
         </VtButton>
       </template>
     </VtDialog>
@@ -520,6 +588,15 @@ function toggleSecretReference(id: string, checked: boolean) {
 .provider-page { display: grid; gap: 16px; }
 .provider-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .provider-content { display: grid; gap: 14px; }
+.provider-kind-nav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.provider-kind-tab { display: flex; min-width: 0; align-items: flex-start; gap: 8px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface); padding: 10px; color: var(--vt-text-muted); text-align: left; transition: border-color var(--vt-transition), background var(--vt-transition), color var(--vt-transition), transform var(--vt-transition); }
+.provider-kind-tab:hover { border-color: var(--vt-primary); background: var(--vt-primary-soft); color: var(--vt-text); transform: translateY(-1px); }
+.provider-kind-tab.active { border-color: var(--vt-primary); background: var(--vt-primary-soft); color: var(--vt-text); box-shadow: 0 0 0 2px rgba(47, 107, 255, .08); }
+.provider-kind-icon { display: grid; flex: none; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--vt-surface-subtle); color: var(--vt-primary); }
+.provider-kind-copy { display: grid; min-width: 0; gap: 3px; flex: 1; }
+.provider-kind-copy strong { overflow: hidden; color: inherit; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.provider-kind-copy small { display: -webkit-box; overflow: hidden; color: var(--vt-text-muted); font-size: 8px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.provider-kind-count { display: grid; flex: none; place-items: center; min-width: 18px; height: 18px; border-radius: 999px; background: var(--vt-surface-subtle); color: var(--vt-text-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
 .provider-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--vt-text-muted); font-size: 10px; }
 .provider-list-toolbar p { margin: 0; }
 .secret-selection { display: grid; gap: 7px; min-height: 38px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); padding: 9px 10px; }
@@ -554,6 +631,8 @@ h2 { margin-bottom: 6px; font-size: 14px; }
 .provider-state-error { display: grid; justify-items: center; gap: 4px; }
 .provider-state-error h2:focus-visible, .empty-card h2:focus-visible, .provider-save-error:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--vt-focus); border-radius: 3px; }
 .provider-save-error { flex: 1; margin: 0; color: var(--vt-danger); font-size: 11px; line-height: 1.45; }
+@media (max-width: 980px) { .provider-kind-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .provider-header, .provider-layout { grid-template-columns: 1fr; display: grid; } }
+@media (max-width: 600px) { .provider-kind-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .provider-list-toolbar { align-items: stretch; flex-direction: column; } .provider-list-toolbar .vt-button { width: 100%; } }
 </style>

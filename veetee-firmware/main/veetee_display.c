@@ -1,84 +1,82 @@
 #include "veetee_display.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
-#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_lcd_panel_vendor.h"
-#include "veetee_state.h"
+#include "esp_lvgl_port.h"
 #include "veetee_pairing.h"
+
+LV_FONT_DECLARE(veetee_font_vietnamese_16);
+LV_FONT_DECLARE(veetee_font_vietnamese_26);
 
 #define TAG "veetee-display"
 
-static uint16_t rgb565(uint8_t red, uint8_t green, uint8_t blue) {
-    return (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
-                      ((uint16_t)(green & 0xFCU) << 3) |
-                      ((uint16_t)blue >> 3));
-}
+#define VT_COLOR_BACKGROUND 0x0B1220U
+#define VT_COLOR_BACKGROUND_TOP 0x17233AU
+#define VT_COLOR_CARD 0x17233AU
+#define VT_COLOR_CARD_EDGE 0x2A3B59U
+#define VT_COLOR_TEXT 0xF4F8FFU
+#define VT_COLOR_MUTED 0x9EABC0U
+#define VT_COLOR_GREEN 0x35D39BU
+#define VT_COLOR_AMBER 0xF4B95FU
+#define VT_COLOR_ORANGE 0xFF8958U
+#define VT_COLOR_PURPLE 0xB779FFU
+#define VT_COLOR_BLUE 0x6EA8FEU
 
-static uint16_t state_color(vt_device_state_t state) {
-    uint16_t color = rgb565(64, 148, 255);
+static const vt_display_texts_t fallback_texts = {
+    .brand = "VEETEE",
+    .pairing_title = "Kết nối thiết bị",
+    .pairing_subtitle = "Mở dashboard để thêm robot vào không gian của bạn.",
+    .pairing_hint = "Nhập mã 6 số để tiếp tục",
+    .connection_label = "Đang kết nối",
+    .idle_title = "Sẵn sàng",
+    .idle_hint = "Nhấn nút hoặc gọi từ khóa để nói",
+    .connecting_title = "Đang kết nối",
+    .connecting_hint = "Đang thiết lập đường truyền an toàn",
+    .listening_title = "Đang nghe",
+    .listening_hint = "Bạn cứ nói, tôi đang lắng nghe",
+    .thinking_title = "Đang xử lý",
+    .thinking_hint = "Đang hiểu và chuẩn bị câu trả lời",
+    .speaking_title = "Đang nói",
+    .speaking_hint = "Nhấn nút để ngắt lời",
+    .online_label = "Đã kết nối",
+};
+
+static lv_color_t state_color(vt_device_state_t state) {
     switch (state) {
-    case VT_DEVICE_CONNECTING: color = rgb565(255, 190, 72); break;
-    case VT_DEVICE_LISTENING: color = rgb565(54, 218, 150); break;
-    case VT_DEVICE_THINKING: color = rgb565(255, 135, 72); break;
-    case VT_DEVICE_SPEAKING: color = rgb565(180, 112, 255); break;
-    default: break;
-    }
-    return color;
-}
-
-static bool inside_box(int column, int row, int left, int top, int right, int bottom) {
-    return column >= left && column <= right && row >= top && row <= bottom;
-}
-
-/* The LCD keeps a useful, text-free status surface even before assets/i18n are
-   loaded.  It deliberately uses simple geometry instead of a baked font so
-   locale strings stay in the signed asset/config layer. */
-static bool status_icon_pixel(vt_device_state_t state, int column, int row, int width, int height) {
-    const int center_x = width / 2;
-    const int center_y = height / 2 - 12;
-    const int radius = (width < height ? width : height) / 5;
-    const int dx = column - center_x;
-    const int dy = row - center_y;
-    const int distance = dx * dx + dy * dy;
-    const int outer = radius * radius;
-    const int inner = (radius - 5) * (radius - 5);
-    if (distance <= outer && distance >= inner) return true;
-
-    switch (state) {
+    case VT_DEVICE_CONNECTING: return lv_color_hex(VT_COLOR_AMBER);
+    case VT_DEVICE_LISTENING: return lv_color_hex(VT_COLOR_GREEN);
+    case VT_DEVICE_THINKING: return lv_color_hex(VT_COLOR_ORANGE);
+    case VT_DEVICE_SPEAKING: return lv_color_hex(VT_COLOR_PURPLE);
     case VT_DEVICE_IDLE:
-        return distance <= 12 * 12;
-    case VT_DEVICE_CONNECTING:
-        return (inside_box(column, row, center_x - 7, center_y - radius / 2, center_x + 7, center_y - radius / 2 + 13) ||
-                inside_box(column, row, center_x - 7, center_y + radius / 2 - 13, center_x + 7, center_y + radius / 2));
-    case VT_DEVICE_LISTENING:
-        return (inside_box(column, row, center_x - 17, center_y - 18, center_x - 9, center_y + 18) ||
-                inside_box(column, row, center_x - 4, center_y - 28, center_x + 4, center_y + 28) ||
-                inside_box(column, row, center_x + 9, center_y - 12, center_x + 17, center_y + 12));
-    case VT_DEVICE_THINKING:
-        return distance <= 7 * 7 || (column >= center_x - 27 && column <= center_x - 15 && row >= center_y - 6 && row <= center_y + 6) ||
-               (column >= center_x + 15 && column <= center_x + 27 && row >= center_y - 6 && row <= center_y + 6);
-    case VT_DEVICE_SPEAKING:
-        return (inside_box(column, row, center_x - 25, center_y - 12, center_x - 17, center_y + 12) ||
-                inside_box(column, row, center_x - 12, center_y - 26, center_x - 4, center_y + 26) ||
-                inside_box(column, row, center_x + 4, center_y - 36, center_x + 12, center_y + 36) ||
-                inside_box(column, row, center_x + 17, center_y - 19, center_x + 25, center_y + 19));
-    default:
-        return false;
+    default: return lv_color_hex(VT_COLOR_BLUE);
     }
 }
 
-static uint16_t display_pixel(vt_device_state_t state, int column, int row, int width, int height) {
-    const uint16_t background = rgb565(8, 16, 32);
-    const uint16_t accent = state_color(state);
-    const uint16_t icon = rgb565(236, 247, 255);
-    if (row < 8 || row >= height - 22) return accent;
-    if (status_icon_pixel(state, column, row, width, height)) return icon;
-    if (row >= height - 17 && column > width / 3 && column < (width * 2) / 3) return background;
-    return background;
+static const char *state_title(const vt_display_texts_t *texts, vt_device_state_t state) {
+    switch (state) {
+    case VT_DEVICE_CONNECTING: return texts->connecting_title;
+    case VT_DEVICE_LISTENING: return texts->listening_title;
+    case VT_DEVICE_THINKING: return texts->thinking_title;
+    case VT_DEVICE_SPEAKING: return texts->speaking_title;
+    case VT_DEVICE_IDLE:
+    default: return texts->idle_title;
+    }
+}
+
+static const char *state_hint(const vt_display_texts_t *texts, vt_device_state_t state) {
+    switch (state) {
+    case VT_DEVICE_CONNECTING: return texts->connecting_hint;
+    case VT_DEVICE_LISTENING: return texts->listening_hint;
+    case VT_DEVICE_THINKING: return texts->thinking_hint;
+    case VT_DEVICE_SPEAKING: return texts->speaking_hint;
+    case VT_DEVICE_IDLE:
+    default: return texts->idle_hint;
+    }
 }
 
 static esp_err_t configure_backlight(const vt_display_config_t *config) {
@@ -96,6 +94,11 @@ static esp_err_t configure_backlight(const vt_display_config_t *config) {
 }
 
 static void release_panel(vt_display_t *display) {
+    if (display->lv_display != NULL) {
+        (void)lvgl_port_remove_disp(display->lv_display);
+        display->lv_display = NULL;
+    }
+    (void)lvgl_port_deinit();
     if (display->panel != NULL) {
         (void)esp_lcd_panel_del(display->panel);
         display->panel = NULL;
@@ -107,6 +110,154 @@ static void release_panel(vt_display_t *display) {
     if (display->spi_host > 0) (void)spi_bus_free((spi_host_device_t)display->spi_host);
 }
 
+static void style_screen(lv_obj_t *screen) {
+    lv_obj_remove_style_all(screen);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(VT_COLOR_BACKGROUND), LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_color(screen, lv_color_hex(VT_COLOR_BACKGROUND_TOP), LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_dir(screen, LV_GRAD_DIR_VER, LV_PART_MAIN);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+static lv_obj_t *make_panel(lv_obj_t *parent, int x, int y, int width, int height, int radius) {
+    lv_obj_t *panel = lv_obj_create(parent);
+    lv_obj_remove_style_all(panel);
+    lv_obj_set_pos(panel, x, y);
+    lv_obj_set_size(panel, width, height);
+    lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(VT_COLOR_CARD), LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_color(panel, lv_color_hex(VT_COLOR_BACKGROUND_TOP), LV_PART_MAIN);
+    lv_obj_set_style_bg_grad_dir(panel, LV_GRAD_DIR_VER, LV_PART_MAIN);
+    lv_obj_set_style_radius(panel, radius, LV_PART_MAIN);
+    lv_obj_set_style_border_width(panel, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(panel, lv_color_hex(VT_COLOR_CARD_EDGE), LV_PART_MAIN);
+    lv_obj_set_style_border_opa(panel, LV_OPA_70, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(panel, 18, LV_PART_MAIN);
+    lv_obj_set_style_shadow_opa(panel, LV_OPA_30, LV_PART_MAIN);
+    lv_obj_set_style_shadow_color(panel, lv_color_black(), LV_PART_MAIN);
+    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    return panel;
+}
+
+static lv_obj_t *make_text(lv_obj_t *parent, const char *text, const lv_font_t *font,
+                           lv_color_t color, int width, int height, int x, int y,
+                           lv_text_align_t align) {
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, text != NULL ? text : "");
+    lv_obj_set_size(label, width, height);
+    lv_obj_set_pos(label, x, y);
+    lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
+    lv_obj_set_style_text_align(label, align, LV_PART_MAIN);
+    lv_obj_set_style_text_line_space(label, 2, LV_PART_MAIN);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    return label;
+}
+
+static void update_connection(vt_display_t *display, vt_device_state_t state) {
+    const bool connected = state != VT_DEVICE_CONNECTING;
+    const lv_color_t accent = state_color(state);
+    lv_obj_set_style_bg_color(display->connection_dot, accent, LV_PART_MAIN);
+    lv_label_set_text(display->connection_label,
+                      connected ? display->texts->online_label : display->texts->connection_label);
+}
+
+static void update_status(vt_display_t *display, vt_device_state_t state) {
+    const lv_color_t accent = state_color(state);
+    lv_label_set_text(display->status_title, state_title(display->texts, state));
+    lv_label_set_text(display->status_hint, state_hint(display->texts, state));
+    lv_obj_set_style_bg_color(display->status_orb, accent, LV_PART_MAIN);
+    lv_obj_set_style_border_color(display->status_ring, accent, LV_PART_MAIN);
+    lv_obj_set_style_shadow_color(display->status_orb, accent, LV_PART_MAIN);
+    lv_obj_set_style_shadow_opa(display->status_orb,
+                                state == VT_DEVICE_IDLE ? LV_OPA_20 : LV_OPA_60, LV_PART_MAIN);
+    update_connection(display, state);
+}
+
+static esp_err_t create_ui(vt_display_t *display) {
+    display->status_screen = lv_obj_create(NULL);
+    display->pairing_screen = lv_obj_create(NULL);
+    if (display->status_screen == NULL || display->pairing_screen == NULL) return ESP_ERR_NO_MEM;
+    style_screen(display->status_screen);
+    style_screen(display->pairing_screen);
+
+    /* Live conversation screen: a compact status bar, a large central orb,
+       and a single action hint.  All geometry is expressed in LVGL objects,
+       so anti-aliasing and font rendering are handled by the graphics engine. */
+    lv_obj_t *brand = make_text(display->status_screen, display->texts->brand,
+                                &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_TEXT),
+                                110, 24, 16, 12, LV_TEXT_ALIGN_LEFT);
+    lv_obj_set_style_text_letter_space(brand, 2, LV_PART_MAIN);
+    display->connection_dot = lv_obj_create(display->status_screen);
+    lv_obj_remove_style_all(display->connection_dot);
+    lv_obj_set_size(display->connection_dot, 9, 9);
+    lv_obj_set_pos(display->connection_dot, 154, 20);
+    lv_obj_set_style_radius(display->connection_dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    display->connection_label = make_text(display->status_screen, display->texts->connection_label,
+                                           &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                                           72, 24, 166, 12, LV_TEXT_ALIGN_RIGHT);
+
+    lv_obj_t *card = make_panel(display->status_screen, 14, 50, 212, 174, 26);
+    display->status_ring = lv_obj_create(card);
+    lv_obj_remove_style_all(display->status_ring);
+    lv_obj_set_size(display->status_ring, 116, 116);
+    lv_obj_align(display->status_ring, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_set_style_bg_opa(display->status_ring, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_radius(display->status_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_border_width(display->status_ring, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_opa(display->status_ring, LV_OPA_60, LV_PART_MAIN);
+
+    display->status_orb = lv_obj_create(card);
+    lv_obj_remove_style_all(display->status_orb);
+    lv_obj_set_size(display->status_orb, 88, 88);
+    lv_obj_align(display->status_orb, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_style_radius(display->status_orb, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(display->status_orb, LV_OPA_90, LV_PART_MAIN);
+    lv_obj_set_style_border_width(display->status_orb, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(display->status_orb, lv_color_hex(VT_COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_border_opa(display->status_orb, LV_OPA_30, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(display->status_orb, 26, LV_PART_MAIN);
+    lv_obj_set_style_shadow_spread(display->status_orb, 3, LV_PART_MAIN);
+
+    display->status_title = make_text(card, display->texts->idle_title,
+                                      &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
+                                      190, 34, 11, 120, LV_TEXT_ALIGN_CENTER);
+    display->status_hint = make_text(card, display->texts->idle_hint,
+                                     &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                                     188, 36, 12, 151, LV_TEXT_ALIGN_CENTER);
+
+    lv_obj_t *hint_panel = make_panel(display->status_screen, 14, 236, 212, 30, 15);
+    lv_obj_set_style_bg_color(hint_panel, lv_color_hex(VT_COLOR_BACKGROUND_TOP), LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(hint_panel, 0, LV_PART_MAIN);
+    make_text(hint_panel, "PTT  •  Wake word  •  Barge-in", &veetee_font_vietnamese_16,
+              lv_color_hex(VT_COLOR_MUTED), 200, 24, 6, 3, LV_TEXT_ALIGN_CENTER);
+
+    /* Pairing screen: the code is presented as a readable typographic block,
+       not hand-drawn seven-segment pixels, and remains clear at a glance. */
+    make_text(display->pairing_screen, display->texts->brand, &veetee_font_vietnamese_16,
+              lv_color_hex(VT_COLOR_TEXT), 110, 24, 16, 12, LV_TEXT_ALIGN_LEFT);
+    lv_obj_t *pair_card = make_panel(display->pairing_screen, 14, 50, 212, 202, 26);
+    display->pairing_title = make_text(pair_card, display->texts->pairing_title,
+                                       &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
+                                       190, 36, 11, 18, LV_TEXT_ALIGN_CENTER);
+    display->pairing_subtitle = make_text(pair_card, display->texts->pairing_subtitle,
+                                          &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                                          184, 42, 14, 61, LV_TEXT_ALIGN_CENTER);
+    display->pairing_code = make_text(pair_card, "------", &veetee_font_vietnamese_26,
+                                      lv_color_hex(VT_COLOR_GREEN), 190, 42, 11, 112,
+                                      LV_TEXT_ALIGN_CENTER);
+    lv_obj_set_style_text_letter_space(display->pairing_code, 5, LV_PART_MAIN);
+    display->pairing_hint = make_text(pair_card, display->texts->pairing_hint,
+                                      &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                                      184, 28, 14, 160, LV_TEXT_ALIGN_CENTER);
+
+    display->last_state = VT_DEVICE_IDLE;
+    display->showing_pairing = true;
+    update_status(display, VT_DEVICE_IDLE);
+    lv_screen_load(display->pairing_screen);
+    return ESP_OK;
+}
+
 esp_err_t vt_display_init(vt_display_t *display, const vt_display_config_t *config) {
     if (display == NULL || config == NULL || config->width <= 0 || config->height <= 0 ||
         config->mosi_gpio < 0 || config->sclk_gpio < 0 || config->dc_gpio < 0 ||
@@ -114,21 +265,24 @@ esp_err_t vt_display_init(vt_display_t *display, const vt_display_config_t *conf
         return ESP_ERR_INVALID_ARG;
     }
     memset(display, 0, sizeof(*display));
-    display->row_width = config->width;
     display->height = config->height;
     display->spi_host = config->spi_host;
     display->backlight_gpio = config->backlight_gpio;
     display->backlight_active_level = config->backlight_active_level;
+    display->texts = config->texts != NULL ? config->texts : &fallback_texts;
 
     esp_err_t error = configure_backlight(config);
     if (error != ESP_OK) return error;
+    /* A partial LVGL buffer of 40 rows is enough for smooth dirty-region
+       rendering while keeping both DMA buffers in internal RAM. */
+    const int transfer_rows = 40;
     spi_bus_config_t bus = {
         .mosi_io_num = config->mosi_gpio,
         .miso_io_num = GPIO_NUM_NC,
         .sclk_io_num = config->sclk_gpio,
         .quadwp_io_num = GPIO_NUM_NC,
         .quadhd_io_num = GPIO_NUM_NC,
-        .max_transfer_sz = config->width * sizeof(uint16_t),
+        .max_transfer_sz = config->width * transfer_rows * (int)sizeof(uint16_t),
     };
     error = spi_bus_initialize((spi_host_device_t)config->spi_host, &bus, SPI_DMA_CH_AUTO);
     if (error != ESP_OK) return error;
@@ -166,117 +320,94 @@ esp_err_t vt_display_init(vt_display_t *display, const vt_display_config_t *conf
         return error;
     }
 
-    display->row_buffer = heap_caps_malloc((size_t)config->width * sizeof(uint16_t),
-                                           MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (display->row_buffer == NULL) {
+    const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    error = lvgl_port_init(&lvgl_cfg);
+    if (error != ESP_OK) {
+        release_panel(display);
+        return error;
+    }
+    const lvgl_port_display_cfg_t display_cfg = {
+        .io_handle = display->panel_io,
+        .panel_handle = display->panel,
+        .buffer_size = (uint32_t)config->width * transfer_rows,
+        .double_buffer = true,
+        .hres = (uint32_t)config->width,
+        .vres = (uint32_t)config->height,
+        .monochrome = false,
+        .rotation = {
+            .swap_xy = config->swap_xy,
+            .mirror_x = config->mirror_x,
+            .mirror_y = config->mirror_y,
+        },
+        .color_format = LV_COLOR_FORMAT_RGB565,
+        .flags = {
+            .buff_dma = 1,
+            .buff_spiram = 0,
+            .sw_rotate = 0,
+            .swap_bytes = 1,
+            .full_refresh = 0,
+            .direct_mode = 0,
+        },
+    };
+    display->lv_display = lvgl_port_add_disp(&display_cfg);
+    if (display->lv_display == NULL) {
         release_panel(display);
         return ESP_ERR_NO_MEM;
+    }
+    if (!lvgl_port_lock(1000)) {
+        release_panel(display);
+        return ESP_ERR_TIMEOUT;
+    }
+    error = create_ui(display);
+    lvgl_port_unlock();
+    if (error != ESP_OK) {
+        release_panel(display);
+        return error;
     }
     display->ready = true;
     if (config->backlight_gpio >= 0) {
         (void)gpio_set_level(config->backlight_gpio, config->backlight_active_level ? 1 : 0);
     }
-    ESP_LOGI(TAG, "ST7789 ready %dx%d offset=%d,%d spi=%d", config->width, config->height,
-             config->offset_x, config->offset_y, config->spi_host);
-    return vt_display_show_state(display, 0);
-}
-
-esp_err_t vt_display_show_state(vt_display_t *display, vt_device_state_t state) {
-    if (display == NULL || !display->ready || display->panel == NULL || display->row_buffer == NULL) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    for (int row = 0; row < display->height; ++row) {
-        for (int column = 0; column < display->row_width; ++column) {
-            display->row_buffer[column] = display_pixel(state, column, row, display->row_width, display->height);
-        }
-        esp_err_t error = esp_lcd_panel_draw_bitmap(display->panel, 0, row, display->row_width, row + 1,
-                                                     display->row_buffer);
-        if (error != ESP_OK) return error;
-    }
+    ESP_LOGI(TAG, "ST7789 LVGL ready %dx%d offset=%d,%d spi=%d buffer=%d rows",
+             config->width, config->height, config->offset_x, config->offset_y,
+             config->spi_host, config->width * transfer_rows, transfer_rows);
     return ESP_OK;
 }
 
-static bool pairing_segment_pixel(unsigned int mask, int segment, int x, int y,
-                                  int left, int top, int width, int height, int thickness) {
-    if ((mask & (1U << (unsigned int)segment)) == 0U) return false;
-    const int right = left + width - 1;
-    const int bottom = top + height - 1;
-    const int mid = top + height / 2;
-    switch (segment) {
-    case 0: return x >= left + thickness && x <= right - thickness && y >= top && y < top + thickness;
-    case 1: return x >= right - thickness + 1 && x <= right && y >= top + thickness && y < mid - thickness / 2;
-    case 2: return x >= right - thickness + 1 && x <= right && y >= mid + thickness / 2 && y <= bottom - thickness;
-    case 3: return x >= left + thickness && x <= right - thickness && y > bottom - thickness && y <= bottom;
-    case 4: return x >= left && x < left + thickness && y >= mid + thickness / 2 && y <= bottom - thickness;
-    case 5: return x >= left && x < left + thickness && y >= top + thickness && y < mid - thickness / 2;
-    case 6: return x >= left + thickness && x <= right - thickness && y >= mid - thickness / 2 && y <= mid + thickness / 2;
-    default: return false;
+esp_err_t vt_display_show_state(vt_display_t *display, vt_device_state_t state) {
+    if (display == NULL || !display->ready || display->lv_display == NULL) return ESP_ERR_INVALID_STATE;
+    if (!lvgl_port_lock(250)) return ESP_ERR_TIMEOUT;
+    update_status(display, state);
+    if (display->showing_pairing) {
+        lv_screen_load(display->status_screen);
+        display->showing_pairing = false;
     }
-}
-
-static unsigned int pairing_digit_mask(char digit) {
-    static const unsigned int masks[10] = {
-        0x3FU, 0x06U, 0x5BU, 0x4FU, 0x66U,
-        0x6DU, 0x7DU, 0x07U, 0x7FU, 0x6FU,
-    };
-    return (digit >= '0' && digit <= '9') ? masks[(unsigned int)(digit - '0')] : 0U;
+    display->last_state = state;
+    lvgl_port_unlock();
+    return ESP_OK;
 }
 
 esp_err_t vt_display_show_pairing_code(vt_display_t *display, const char *code) {
-    if (display == NULL || !display->ready || display->panel == NULL || display->row_buffer == NULL ||
+    if (display == NULL || !display->ready || display->lv_display == NULL ||
         !vt_pairing_code_is_valid(code)) return ESP_ERR_INVALID_ARG;
-    const uint16_t background = rgb565(8, 16, 32);
-    const uint16_t accent = rgb565(54, 218, 150);
-    const uint16_t digit_color = rgb565(236, 247, 255);
-    const int digit_width = 26;
-    const int digit_height = 54;
-    const int gap = 8;
-    const int thickness = 5;
-    const int total_width = (int)VT_PAIRING_CODE_LENGTH * digit_width + ((int)VT_PAIRING_CODE_LENGTH - 1) * gap;
-    const int origin_x = (display->row_width - total_width) / 2;
-    const int origin_y = display->height / 2 - digit_height / 2;
-    for (int row = 0; row < display->height; ++row) {
-        for (int column = 0; column < display->row_width; ++column) {
-            uint16_t pixel = background;
-            if (row < 7 || row >= display->height - 7 || column < 7 || column >= display->row_width - 7) {
-                pixel = accent;
-            } else {
-                for (unsigned int index = 0U; index < VT_PAIRING_CODE_LENGTH; ++index) {
-                    const int left = origin_x + (int)index * (digit_width + gap);
-                    if (pairing_segment_pixel(pairing_digit_mask(code[index]), 0, column, row, left, origin_y,
-                                              digit_width, digit_height, thickness) ||
-                        pairing_segment_pixel(pairing_digit_mask(code[index]), 1, column, row, left, origin_y,
-                                              digit_width, digit_height, thickness) ||
-                        pairing_segment_pixel(pairing_digit_mask(code[index]), 2, column, row, left, origin_y,
-                                              digit_width, digit_height, thickness) ||
-                        pairing_segment_pixel(pairing_digit_mask(code[index]), 3, column, row, left, origin_y,
-                                              digit_width, digit_height, thickness) ||
-                        pairing_segment_pixel(pairing_digit_mask(code[index]), 4, column, row, left, origin_y,
-                                              digit_width, digit_height, thickness) ||
-                        pairing_segment_pixel(pairing_digit_mask(code[index]), 5, column, row, left, origin_y,
-                                              digit_width, digit_height, thickness) ||
-                        pairing_segment_pixel(pairing_digit_mask(code[index]), 6, column, row, left, origin_y,
-                                              digit_width, digit_height, thickness)) {
-                        pixel = digit_color;
-                        break;
-                    }
-                }
-            }
-            display->row_buffer[column] = pixel;
-        }
-        esp_err_t error = esp_lcd_panel_draw_bitmap(display->panel, 0, row, display->row_width, row + 1,
-                                                     display->row_buffer);
-        if (error != ESP_OK) return error;
+    if (!lvgl_port_lock(250)) return ESP_ERR_TIMEOUT;
+    char formatted[VT_PAIRING_CODE_LENGTH + 2U] = {0};
+    memcpy(formatted, code, 3U);
+    formatted[3] = ' ';
+    memcpy(formatted + 4, code + 3, VT_PAIRING_CODE_LENGTH - 3U);
+    lv_label_set_text(display->pairing_code, formatted);
+    if (!display->showing_pairing) {
+        lv_screen_load(display->pairing_screen);
+        display->showing_pairing = true;
     }
+    lvgl_port_unlock();
     return ESP_OK;
 }
 
 void vt_display_deinit(vt_display_t *display) {
     if (display == NULL) return;
-    if (display->backlight_gpio >= 0) (void)gpio_set_level(display->backlight_gpio, display->backlight_active_level ? 0 : 1);
-    if (display->row_buffer != NULL) {
-        heap_caps_free(display->row_buffer);
-        display->row_buffer = NULL;
+    if (display->backlight_gpio >= 0) {
+        (void)gpio_set_level(display->backlight_gpio, display->backlight_active_level ? 0 : 1);
     }
     release_panel(display);
     display->ready = false;

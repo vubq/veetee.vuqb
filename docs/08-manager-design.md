@@ -282,7 +282,7 @@ Snapshot là contract immutable mà Voice Server tiêu thụ. Hình dạng tối
     "minSpeechFrames": 2,
     "cooldownMs": 2000
   },
-  "toolPolicy": { "maxRounds": 3, "timeoutMs": 30000 },
+  "toolPolicy": { "maxRounds": 3, "timeoutMs": 30000, "allowDeviceDiscovery": true },
   "tools": [],
   "providers": {
     "vad": { "providerConfigId": "uuid", "configRevision": 2 },
@@ -305,6 +305,15 @@ qua draft/publish để Voice Server áp dụng atomically; peer/phiên bản c�
 hiểu field thì bỏ qua. Progress acknowledgement cho tác vụ lâu là configuration
 theo locale/personality, ví dụ policy chứa threshold và translation/prompt key.
 Không hardcode câu “đợi chút” vào pipeline hoặc UI.
+
+`toolPolicy.allowDeviceDiscovery` là cờ owner-configured cho MCP device. Khi
+`false` (hoặc vắng mặt), Voice Server chỉ đưa các tool đã có trong snapshot vào
+LLM catalog; `tools/list` của thiết bị chỉ được dùng để cập nhật schema của
+những tên đã allow-list. Khi `true`, descriptor hợp lệ từ `tools/list` được
+thêm vào catalog theo session và được kiểm tra schema trước `tools/call`. Đây là
+policy rõ ràng, không phải provider fallback; descriptor lạ/malformed không
+được thực thi. UI/API lưu cờ này trong role snapshot để owner bật/tắt mà không
+phải sửa code hoặc restart service.
 
 `bargeIn.deviceDuplex` là owner-configured opt-in. Khi `false` hoặc field vắng,
 firmware giữ half-duplex trong lúc TTS phát; khi `true`, server thêm metadata

@@ -1,5 +1,6 @@
 #include "veetee_board_hal.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 static bool bounded_nonempty(const char *value, size_t capacity) {
@@ -42,8 +43,14 @@ vt_board_hal_result_t vt_board_hal_validate(const vt_board_manifest_t *manifest)
         all_tools[all_count++] = *capability->tool;
     }
 
-    vt_mcp_registry_t registry = {0};
-    if (vt_mcp_registry_init(&registry, all_tools, all_count) != VT_MCP_OK) {
+    /* The registry owns a bounded replay cache and is intentionally much
+     * larger than a bootstrap task stack.  Keep validation re-entrant without
+     * placing that cache on the FreeRTOS stack. */
+    vt_mcp_registry_t *registry = calloc(1, sizeof(*registry));
+    if (registry == NULL) return VT_BOARD_HAL_ERR_CAPACITY;
+    const vt_mcp_result_t registry_result = vt_mcp_registry_init(registry, all_tools, all_count);
+    free(registry);
+    if (registry_result != VT_MCP_OK) {
         return VT_BOARD_HAL_ERR_DUPLICATE;
     }
     return VT_BOARD_HAL_OK;

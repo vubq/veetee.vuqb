@@ -12,7 +12,7 @@ import time
 from typing import Any
 from uuid import UUID, uuid4
 
-from aiohttp import WSMsgType, web
+from aiohttp import WSMsgType, WebSocketError, web
 
 from .config import AutoTurnPolicy, ConversationPolicy, ServerConfig
 from .history import ConversationHistoryReporter
@@ -56,6 +56,10 @@ class VoiceApplication:
             "turn_releases": 0,
             "auto_no_speech_timeouts": 0,
             "hello_timeouts": 0,
+            "ws_send_failures": 0,
+            "ws_send_timeouts": 0,
+            "ws_send_connection_errors": 0,
+            "ws_close_failures": 0,
             "protocol_errors": 0,
             "audio_frames_in": 0,
             "audio_frames_out": 0,
@@ -212,6 +216,7 @@ class VoiceSession:
         self.codec: OpusCodec | None = None
         self.mcp: DeviceMcpBridge | None = None
         self._mcp_discovery_task: asyncio.Task[None] | None = None
+        self._tool_descriptors: list[dict[str, Any]] = []
         self.memory: MemorySession | None = None
         self.view: RuntimeView | None = None
         self.phase = "ready_idle"
@@ -225,6 +230,8 @@ class VoiceSession:
         self._no_speech_task: asyncio.Task[None] | None = None
         self._conversation_idle_task: asyncio.Task[None] | None = None
         self._continuous_armed = False
+        self._send_lock = asyncio.Lock()
+        self._transport_failed = False
         self._lock = asyncio.Lock()
         self.conversation_id = str(uuid4())
         self.conversation_started_at: str | None = None
@@ -367,10 +374,18 @@ class VoiceSession:
             }
         )
         descriptors = snapshot.raw.get("tools")
-        if not isinstance(descriptors, list):
-            descriptors = []
-        timeout_ms = int((snapshot.raw.get("toolPolicy") or {}).get("timeoutMs", 30000))
-        self.mcp = DeviceMcpBridge(session_id=self.session_id, send=self.send_text, descriptors=descriptors, timeout_ms=timeout_ms)
+        self._tool_descriptors = [item for item in descriptors if isinstance(item, dict)] if isinstance(descriptors, list) else []
+        tool_policy = snapshot.raw.get("toolPolicy") or {}
+        if not isinstance(tool_policy, dict):
+            tool_policy = {}
+        timeout_ms = int(tool_policy.get("timeoutMs", 30000))
+        self.mcp = DeviceMcpBridge(
+            session_id=self.session_id,
+            send=self.send_text,
+            descriptors=self._tool_descriptors,
+            timeout_ms=timeout_ms,
+            allow_device_discovery=tool_policy.get("allowDeviceDiscovery") is True,
+        )
         self.ready = True
         if bool((features or {}).get("mcp", False)):
             # Discovery is deliberately started only after the hello response
@@ -389,6 +404,7 @@ class VoiceSession:
             cursor: str | None = None
             for _ in range(64):
                 result = await bridge.list_tools(cursor=cursor)
+                bridge.merge_discovered_tools(result.get("tools"))
                 next_cursor = result.get("nextCursor")
                 if not isinstance(next_cursor, str) or not next_cursor:
                     return
@@ -512,6 +528,7 @@ class VoiceSession:
                 execute_tool=self._execute_tool,
                 memory=self.memory,
                 on_intent=self._handle_intent,
+                tools=self._tool_descriptors,
                 metrics=self.app.metrics,
             )
             view.registry.vad.reset()
@@ -872,7 +889,15 @@ class VoiceSession:
         return result
 
     async def send_text(self, value: dict[str, Any]) -> None:
-        if not self._closed:
+        if self._closed:
+            return
+        turn_id = value.get("turn_id")
+        if isinstance(turn_id, str) and (self.turn is None or self.turn.turn_id != turn_id):
+            return
+        payload = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        async with self._send_lock:
+            if self._closed:
+                return
             turn_id = value.get("turn_id")
             if isinstance(turn_id, str) and (self.turn is None or self.turn.turn_id != turn_id):
                 return
@@ -886,11 +911,77 @@ class VoiceSession:
                 self.phase = "listening" if self.turn is not None and self.turn.mode in {"auto", "realtime"} else "ready_idle"
             elif value.get("type") == "alert":
                 self.phase = "ready_idle"
-            await self.ws.send_str(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+            try:
+                await asyncio.wait_for(
+                    self.ws.send_str(payload),
+                    timeout=self.app.config.ws_send_timeout_ms / 1000,
+                )
+            except asyncio.CancelledError:
+                raise
+            except asyncio.TimeoutError as exc:
+                await self._handle_send_failure(timed_out=True, error=exc)
+            except (ConnectionError, OSError, RuntimeError, WebSocketError) as exc:
+                await self._handle_send_failure(timed_out=False, error=exc)
 
     async def send_binary(self, value: bytes, *, turn_id: str | None = None) -> None:
-        if not self._closed and (turn_id is None or (self.turn is not None and self.turn.turn_id == turn_id)):
-            await self.ws.send_bytes(value)
+        if self._closed or (turn_id is not None and (self.turn is None or self.turn.turn_id != turn_id)):
+            return
+        async with self._send_lock:
+            if self._closed or (turn_id is not None and (self.turn is None or self.turn.turn_id != turn_id)):
+                return
+            try:
+                await asyncio.wait_for(
+                    self.ws.send_bytes(value),
+                    timeout=self.app.config.ws_send_timeout_ms / 1000,
+                )
+            except asyncio.CancelledError:
+                raise
+            except asyncio.TimeoutError as exc:
+                await self._handle_send_failure(timed_out=True, error=exc)
+            except (ConnectionError, OSError, RuntimeError, WebSocketError) as exc:
+                await self._handle_send_failure(timed_out=False, error=exc)
+
+    async def _handle_send_failure(self, *, timed_out: bool, error: BaseException) -> None:
+        """Fail closed when a peer stops accepting outbound frames.
+
+        The receive loop owns final session cleanup. Marking the transport
+        closed here makes that cleanup path cancel the turn and release its
+        lease, while avoiding a second send or a recursive ``_abort`` from the
+        task that observed the failed write.
+        """
+
+        if self._transport_failed:
+            return
+        self._transport_failed = True
+        self.app.metrics["ws_send_failures"] += 1
+        if timed_out:
+            self.app.metrics["ws_send_timeouts"] += 1
+            reason = "websocket send timeout"
+        else:
+            self.app.metrics["ws_send_connection_errors"] += 1
+            reason = "websocket send failed"
+        self.app.log.warning(
+            "outbound websocket send failed device=%s reason=%s error_type=%s",
+            self.device_id,
+            reason,
+            type(error).__name__,
+        )
+        self._closed = True
+        turn = self.turn
+        if turn is not None and turn.cancelled is not None:
+            turn.cancelled.set()
+        task = turn.task if turn is not None else None
+        if task is not None and task is not asyncio.current_task() and not task.done():
+            task.cancel()
+        try:
+            await asyncio.wait_for(
+                self.ws.close(code=1011, message=reason.encode("utf-8")),
+                timeout=self.app.config.ws_send_timeout_ms / 1000,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - transport is already failed
+            self.app.metrics["ws_close_failures"] += 1
 
     async def replace_by(self) -> None:
         """Stop this device session before a newer connection takes its lease."""
@@ -911,7 +1002,15 @@ class VoiceSession:
         if self._closed:
             return
         self._closed = True
-        await self.ws.close(code=code, message=message.encode())
+        try:
+            await asyncio.wait_for(
+                self.ws.close(code=code, message=message.encode()),
+                timeout=self.app.config.ws_send_timeout_ms / 1000,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - closing an already broken peer is best effort
+            self.app.metrics["ws_close_failures"] += 1
 
 
 def _mask_device_id(value: str) -> str:

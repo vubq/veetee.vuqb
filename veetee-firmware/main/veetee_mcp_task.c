@@ -3,6 +3,8 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "freertos/idf_additions.h"
 #include "freertos/task.h"
 
 static const char *TAG = "veetee-mcp";
@@ -24,13 +26,26 @@ static vt_mcp_task_result_t init_common(
     if (vt_mcp_registry_init(&task->registry, tools, tool_count) != VT_MCP_OK) {
         return VT_MCP_TASK_ERR_ARGUMENT;
     }
-    task->queue = xQueueCreate(queue_depth, sizeof(vt_mcp_task_request_t));
+    /* A request envelope is bounded by the wire ceiling. Keep both the
+     * queue control block and its storage in PSRAM so MCP cannot consume the
+     * internal heap needed by Wi-Fi/audio. */
+    task->queue = xQueueCreateWithCaps(queue_depth, sizeof(vt_mcp_task_request_t *),
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (task->queue == NULL) return VT_MCP_TASK_ERR_QUEUE;
-    task->registry_lock = xSemaphoreCreateMutex();
+    task->registry_lock = xSemaphoreCreateMutexWithCaps(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (task->registry_lock == NULL) {
-        vQueueDelete(task->queue);
+        vQueueDeleteWithCaps(task->queue);
         task->queue = NULL;
         return VT_MCP_TASK_ERR_QUEUE;
+    }
+    task->output = heap_caps_calloc(1, VT_MCP_WIRE_MAX_BYTES + 1U,
+                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (task->output == NULL) {
+        vSemaphoreDeleteWithCaps(task->registry_lock);
+        vQueueDeleteWithCaps(task->queue);
+        task->registry_lock = NULL;
+        task->queue = NULL;
+        return VT_MCP_TASK_ERR_CAPACITY;
     }
     task->server_name = server_name;
     task->server_version = server_version;
@@ -91,7 +106,13 @@ void vt_mcp_task_reset_session(vt_mcp_task_t *task) {
     }
     vt_mcp_registry_reset_session(&task->registry);
     if (task->registry_lock != NULL) (void)xSemaphoreGive(task->registry_lock);
-    if (task->queue != NULL) (void)xQueueReset(task->queue);
+    if (task->queue != NULL) {
+        vt_mcp_task_request_t *pending = NULL;
+        while (xQueueReceive(task->queue, &pending, 0) == pdTRUE) {
+            heap_caps_free(pending);
+            pending = NULL;
+        }
+    }
 }
 
 vt_mcp_task_result_t vt_mcp_task_enqueue(
@@ -101,21 +122,31 @@ vt_mcp_task_result_t vt_mcp_task_enqueue(
     if (task == NULL || task->queue == NULL || message == NULL || session_id == NULL) {
         return VT_MCP_TASK_ERR_ARGUMENT;
     }
-    vt_mcp_task_request_t request = {0};
-    if (!copy_session(request.session_id, sizeof(request.session_id), session_id)) {
+    vt_mcp_task_request_t *request = heap_caps_calloc(1, sizeof(*request),
+                                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (request == NULL) return VT_MCP_TASK_ERR_CAPACITY;
+    if (!copy_session(request->session_id, sizeof(request->session_id), session_id)) {
+        heap_caps_free(request);
         return VT_MCP_TASK_ERR_SESSION;
     }
     char *serialized = cJSON_PrintUnformatted(message);
-    if (serialized == NULL) return VT_MCP_TASK_ERR_CAPACITY;
+    if (serialized == NULL) {
+        heap_caps_free(request);
+        return VT_MCP_TASK_ERR_CAPACITY;
+    }
     const size_t length = strlen(serialized);
     if (length == 0U || length > VT_MCP_TASK_MAX_MESSAGE_BYTES) {
         cJSON_free(serialized);
+        heap_caps_free(request);
         return VT_MCP_TASK_ERR_CAPACITY;
     }
-    memcpy(request.json, serialized, length + 1U);
-    request.length = (uint16_t)length;
+    memcpy(request->json, serialized, length + 1U);
+    request->length = (uint16_t)length;
     cJSON_free(serialized);
-    if (xQueueSend(task->queue, &request, 0) != pdTRUE) return VT_MCP_TASK_ERR_QUEUE;
+    if (xQueueSend(task->queue, &request, 0) != pdTRUE) {
+        heap_caps_free(request);
+        return VT_MCP_TASK_ERR_QUEUE;
+    }
     return VT_MCP_TASK_OK;
 }
 
@@ -131,35 +162,52 @@ static bool session_is_current(const vt_mcp_task_t *task, const char *session_id
 void vt_mcp_task_run(void *context) {
     vt_mcp_task_t *task = (vt_mcp_task_t *)context;
     if (task == NULL || task->queue == NULL) {
-        vTaskDelete(NULL);
+        vTaskDeleteWithCaps(NULL);
         return;
     }
-    static char output[VT_MCP_WIRE_MAX_BYTES + 1U];
-    vt_mcp_task_request_t request = {0};
+    vt_mcp_task_request_t *request = NULL;
     while (!task->stop_requested) {
         if (xQueueReceive(task->queue, &request, pdMS_TO_TICKS(100)) != pdTRUE) continue;
-        if (!session_is_current(task, request.session_id)) continue;
-        cJSON *message = cJSON_ParseWithLength(request.json, request.length);
-        if (message == NULL) continue;
+        if (request == NULL) continue;
+        if (!session_is_current(task, request->session_id)) {
+            heap_caps_free(request);
+            request = NULL;
+            continue;
+        }
+        cJSON *message = cJSON_ParseWithLength(request->json, request->length);
+        if (message == NULL) {
+            heap_caps_free(request);
+            request = NULL;
+            continue;
+        }
         size_t output_length = 0U;
         vt_mcp_dispatch_result_t dispatch = VT_MCP_DISPATCH_ERR_ARGUMENT;
         if (task->registry_lock != NULL && xSemaphoreTake(task->registry_lock, pdMS_TO_TICKS(100)) == pdTRUE) {
             dispatch = vt_mcp_dispatch_message(
-                message, request.session_id, task->server_name, task->server_version,
-                &task->registry, output, sizeof(output), &output_length);
+                message, request->session_id, task->server_name, task->server_version,
+                &task->registry, task->output, VT_MCP_WIRE_MAX_BYTES + 1U, &output_length);
             (void)xSemaphoreGive(task->registry_lock);
         }
         cJSON_Delete(message);
         if (dispatch == VT_MCP_DISPATCH_IGNORED || dispatch != VT_MCP_DISPATCH_OK ||
-            output_length == 0U || !session_is_current(task, request.session_id)) {
+            output_length == 0U || !session_is_current(task, request->session_id)) {
             if (dispatch != VT_MCP_DISPATCH_IGNORED && dispatch != VT_MCP_DISPATCH_OK) {
                 ESP_LOGW(TAG, "MCP request dropped dispatch=%d", (int)dispatch);
             }
+            heap_caps_free(request);
+            request = NULL;
             continue;
         }
-        if (task->send(output, request.session_id, task->context) != 0) {
+        if (task->send(task->output, request->session_id, task->context) != 0) {
             ESP_LOGW(TAG, "MCP response send failed");
         }
+        heap_caps_free(request);
+        request = NULL;
     }
-    vTaskDelete(NULL);
+    if (request != NULL) heap_caps_free(request);
+    while (xQueueReceive(task->queue, &request, 0) == pdTRUE) {
+        heap_caps_free(request);
+        request = NULL;
+    }
+    vTaskDeleteWithCaps(NULL);
 }

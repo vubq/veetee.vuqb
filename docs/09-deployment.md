@@ -134,6 +134,7 @@ Service requirements:
 | `VEETEE_LOG_LEVEL` | no | Enum validated. |
 | `VEETEE_METRICS_BIND` | no | Loopback mặc định. |
 | `VEETEE_HELLO_TIMEOUT_MS` | no | Deadline client hello sau HTTP upgrade; mặc định `10000`, bounded `1000..60000`, quá hạn đóng `1002`. |
+| `VEETEE_WS_SEND_TIMEOUT_MS` | no | Deadline cho từng outbound text/binary WebSocket write; mặc định `5000`, bounded `100..60000`. Khi peer không đọc kịp, session đóng fail-closed và cleanup nhả turn lease. |
 
 ### 5.2 Manager API
 

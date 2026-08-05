@@ -37,6 +37,7 @@ import type {
   Versioned,
   VoicePreview,
   VoiceProfile,
+  VoiceProfileInput,
   ProviderConfigRecord,
   ProviderProbeResult,
   ProviderInstallationView,
@@ -458,6 +459,38 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
       .filter((voice) => voice.locale === locale)
       .map((voice) => clone(voice))
     return this.success({ items, total: items.length }, request)
+  }
+
+  async createVoiceProfile(input: VoiceProfileInput): Promise<GatewayResult<VoiceProfile, ValidationProblem | OfflineProblem>> {
+    const request = await this.begin('mutation')
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    const value: VoiceProfile = { id: `voice-${this.state.voices.length + 1}`, name: input.name, providerName: 'VieNeu', locale: input.locale, description: input.description ?? '', previewDurationMs: 0, available: input.enabled !== false, managed: true, providerConfigId: input.providerConfigId, voiceCode: input.voiceCode, enabled: input.enabled ?? true, sort: input.sort ?? 0, demoUrl: input.demoUrl ?? null, etag: '"preview-voice-1"', updatedAt: this.now() }
+    this.state.voices.push(value)
+    return this.success(clone(value), request)
+  }
+
+  async updateVoiceProfile(id: string, input: Partial<VoiceProfileInput>, expectedEtag: string): Promise<GatewayResult<VoiceProfile, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<VoiceProfile, unknown>>> {
+    const request = await this.begin('mutation')
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    const current = this.state.voices.find((voice) => voice.id === id)
+    if (!current) return this.failure(this.notFound('voice', id, request.requestId), request)
+    if (current.etag !== expectedEtag) return this.failure(this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)!, request)
+    const next: VoiceProfile = { ...current, ...input, available: input.enabled ?? current.available, enabled: input.enabled ?? current.enabled, etag: `"preview-voice-${Date.now()}"`, updatedAt: this.now() }
+    this.state.voices = this.state.voices.map((voice) => voice.id === id ? next : voice)
+    return this.success(clone(next), request)
+  }
+
+  async deleteVoiceProfile(id: string, expectedEtag: string): Promise<GatewayResult<void, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<VoiceProfile, unknown>>> {
+    const request = await this.begin('mutation')
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    const current = this.state.voices.find((voice) => voice.id === id)
+    if (!current) return this.failure(this.notFound('voice', id, request.requestId), request)
+    if (current.etag !== expectedEtag) return this.failure(this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)!, request)
+    this.state.voices = this.state.voices.filter((voice) => voice.id !== id)
+    return this.success(undefined, request)
   }
 
   async previewVoice(

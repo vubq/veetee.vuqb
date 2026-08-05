@@ -127,6 +127,38 @@ test('PostgreSQL provider edits create immutable revisions and reject stale writ
   }
 })
 
+test('PostgreSQL voice catalog aliases persist with ETag lifecycle', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8013, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
+  }
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const configs = await app.inject({ method: 'GET', url: '/api/v1/provider-configs?kind=tts' })
+    const providerConfigId = configs.json().items[0]?.id as string | undefined
+    assert.ok(providerConfigId)
+    const created = await app.inject({ method: 'POST', url: '/api/v1/voices', payload: {
+      providerConfigId, name: 'Postgres catalog alias', locale: 'vi-VN', voiceCode: `pg-alias-${Date.now()}`, description: 'Persisted provider alias', enabled: true,
+    } })
+    assert.equal(created.statusCode, 201)
+    const value = created.json() as { id: string; etag: string }
+    const updated = await app.inject({ method: 'PATCH', url: `/api/v1/voices/${value.id}`, headers: { 'if-match': value.etag }, payload: { description: 'Updated alias' } })
+    assert.equal(updated.statusCode, 200)
+    const stale = await app.inject({ method: 'PATCH', url: `/api/v1/voices/${value.id}`, headers: { 'if-match': value.etag }, payload: { description: 'Stale alias' } })
+    assert.equal(stale.statusCode, 409)
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/voices?locale=vi-VN' })
+    assert.equal(listed.statusCode, 200)
+    assert.ok(listed.json().items.some((item: { id: string; description: string }) => item.id === value.id && item.description === 'Updated alias'))
+    const removed = await app.inject({ method: 'DELETE', url: `/api/v1/voices/${value.id}`, headers: { 'if-match': updated.headers.etag } })
+    assert.equal(removed.statusCode, 204)
+  } finally {
+    await app.close()
+  }
+})
+
 test('PostgreSQL provider selection validates config ownership and kind before writing a revision', { skip: !databaseUrlFile }, async () => {
   const env: Environment = {
     VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8022, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,

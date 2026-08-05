@@ -1,14 +1,15 @@
 import { createRouter, createWebHistory, type RouteRecordRaw, type RouterHistory } from 'vue-router'
 
 import { authSession, type AuthSession } from '@/auth/auth-session'
-import AssistantIndexView from '@/views/AssistantIndexView.vue'
-import AssistantModelMemoryView from '@/views/AssistantModelMemoryView.vue'
-import AssistantRoleView from '@/views/AssistantRoleView.vue'
-import AssistantDevicesView from '@/views/AssistantDevicesView.vue'
-import AssistantHistoryView from '@/views/AssistantHistoryView.vue'
 import LoginView from '@/views/LoginView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
-import ProviderRegistryView from '@/views/ProviderRegistryView.vue'
+
+const AssistantIndexView = () => import('@/views/AssistantIndexView.vue')
+const AssistantModelMemoryView = () => import('@/views/AssistantModelMemoryView.vue')
+const AssistantRoleView = () => import('@/views/AssistantRoleView.vue')
+const AssistantDevicesView = () => import('@/views/AssistantDevicesView.vue')
+const AssistantHistoryView = () => import('@/views/AssistantHistoryView.vue')
+const ProviderRegistryView = () => import('@/views/ProviderRegistryView.vue')
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/assistants' },

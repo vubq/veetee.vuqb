@@ -1,8 +1,61 @@
 # Trạng thái thực thi hiện tại
 
+## Current execution lock — host-only continuation (2026-08-05)
+
+- Ở lượt làm việc hiện tại, chủ dự án yêu cầu **không phát audio và không test
+  microphone/loa thực tế với ESP32**. Mọi physical audio run đều dừng; không dùng
+  `wake_audio_test.py`, không phát clip và không tạo acceptance mới. Chỉ tiếp tục
+  host/server/web tests, static checks và firmware build/CTest không audio.
+- Voice Server hiện **187 passed**; thêm regression transport cho outbound WebSocket
+  serialization và stalled peer. `VEETEE_WS_SEND_TIMEOUT_MS` mặc định 5.000 ms,
+  bounded 100..60.000 ms; timeout/reset đóng session fail-closed, cancel task và
+  để cleanup release turn lease. Ruff và compileall pass.
+- Manager API hiện **51/51 passed** khi dùng dedicated PostgreSQL test database
+  `veetee_vubq_test`; InMemory subset **38 passed / 13 skip có chủ đích** khi không
+  truyền DSN. Lint/build/OpenAPI export/check pass.
+- Manager Web hiện **97/97 unit** và **15/15 Chromium E2E**; typecheck/lint/build
+  pass. Route-level code splitting giảm entry JS từ khoảng 516 kB xuống 172 kB.
+- Firmware host CTest **9/9** và ESP-IDF 6.0.2 build pass; không flash/reset board
+  trong lượt này vì không cần thiết cho host hardening. Không đổi Wi-Fi/NVS,
+  NetworkManager, route, firewall hoặc Tailscale.
+
+## Resource hardening, catalog scope và no-speech board evidence (2026-08-05)
+
+- Firmware image hiện tại đã flash không erase NVS và boot ổn định: ST7789,
+  startup chime, WakeNet, Wi-Fi NVS, MCP owner và WebSocket v3 đều sẵn sàng;
+  serial soak ngắn không có panic/reboot/stack overflow/WS allocation error.
+- Regression mới nhất: firmware CTest **9/9**; Voice Server **181 passed**;
+  Manager API **37 passed / 12 skip có chủ đích**; Manager Web **97/97 unit**,
+  typecheck/lint/build và **15/15 Chromium E2E**; OpenAPI artifact in sync.
+- Physical no-speech flow đã pass ở boundary lifecycle sau khi được cấp quyền audio:
+  `wake detected → wake start → NO_SPEECH_TIMEOUT → wake detector armed`,
+  server `activeTurns=0`. Report redact chỉ nằm ngoài Git tại
+  `/tmp/veetee-no-speech-20260806.json`.
+- Lát cắt voice chỉ quản lý provider catalog/alias; voice cloning/reference audio
+  vẫn deferred đúng tài liệu, không có UI/API field clone trong source hiện tại.
+  Migration 007 đã được áp dụng vào `veetee_vubq` (0 custom voice profile), không
+  đụng database checkout cũ.
+- Một normal audio run đang chờ đã bị dừng ngay khi chủ dự án thu hồi quyền; không
+  dùng kết quả dở dang làm acceptance và không phát audio thêm sau đó.
+
 > Đây là snapshot evidence, không phải lịch hoàn thành. Phần trăm (nếu có trong
 > chat) chỉ là ước lượng định hướng; DoD và evidence trong roadmap mới quyết định
 > milestone đã đạt hay chưa.
+
+## MCP hardware owner slice and live discovery policy (2026-08-05)
+
+- Firmware BoardHal đã nối capability thật từ Kconfig: WS2812-compatible status
+  LED GPIO48 và lamp GPIO18 theo board profile đã có evidence; descriptor không
+  có pin/BOM hợp lệ sẽ bị ẩn. `CONFIG_VEETEE_MCP_ENABLED=y` chỉ áp dụng cho image
+  build này, không tự thay đổi Wi-Fi/NVS.
+- Server `tools/list` không còn bị bỏ qua: descriptor được normalize và merge
+  vào danh sách tool sống của pipeline. Mặc định chỉ cập nhật tên allow-listed;
+  `toolPolicy.allowDeviceDiscovery=true` là opt-in owner để nhận tool mới từ
+  firmware. Manager Web đã có công tắc dễ hiểu, không lộ JSON schema/raw ID.
+- Host evidence: Voice **180 passed**, MCP/app targeted **22 passed**, Manager
+  Web targeted **12 passed**, firmware CTest **9/9**, ESP-IDF **1273/1273**;
+  `led_strip 3.0.3` đã pin. Physical LED/lamp/MCP round-trip vẫn cần flash và
+  kiểm tra trên board, chưa được coi là đã pass.
 
 ## Snapshot
 
@@ -152,7 +205,7 @@
 | M1 — realtime conversation | Đang làm, **chưa đóng DoD** | Streaming/cancellation/tool loop, v1/v2/v3 fixture, WakeNet, noise suppression, multi-key fixture 10/10, AEC lifecycle/resource 10/10; stale `tts/stop` barrier đã sửa; normal wake 2 lượt, wake-word interrupt lifecycle physical, policy acoustic-duplex control lifecycle và corpus smoke 1 negative/1 positive; host TTFA warm p95 `1481,4 ms` pass. | Acoustic echo-only, false accept/reject corpus đủ lớn, voice-onset quality/time-to-silence p95, 100 repetition, provider promotion và cross-peer physical conformance. Các lần timeout AEC/bypass trước guard vẫn là diagnostic history, không coi là acoustic verdict. Xem [`M1.md`](M1.md). |
 | Groq multi-key | Hoàn tất cho **test harness** | `VEETEE_TEST_GROQ_KEYS_FILE` chỉ với fixture; round-robin; chỉ retry `429` trước delta đầu; không replay partial stream; firmware không chứa key. | Không phải production fallback/key rotation; nhiều key vẫn có thể cùng dính quota account/org/model/IP. |
 | M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary, TTL freshness, privacy export, async conversation delete/tombstone và host regression. | Promotion provider/model/VRAM, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
-| M3 — transport/hardware/OTA | Đang mở ở host-only slice | MQTT control/bridge/session, firmware UDP header/crypto codec, UDP v3 AES/reorder/barrier, deterministic loss/soak, firmware MCP registry/wire/JSON-RPC dispatcher, shared MCP cross-conformance fixture, feature-gated owner-task queue và BoardHal capability manifest validation đã có host/ESP-IDF build-only golden/test evidence; MCP flag vẫn tắt mặc định, chưa nối carrier/hardware. | MQTT client/gateway/socket, firmware encrypted carrier, BoardHal descriptor thật + peripheral owner tools, real-peer/real-network comparison, assets/OTA và transport-promotion cần mở sau. |
+| M3 — transport/hardware/OTA | Đang mở ở host/build slice; MCP hardware đã nối capability đầu tiên | MQTT control/bridge/session, firmware UDP header/crypto codec, UDP v3 AES/reorder/barrier, deterministic loss/soak, firmware MCP registry/wire/JSON-RPC dispatcher, shared MCP cross-conformance fixture, bounded owner-task queue, BoardHal manifest và config-driven WS2812 LED/lamp descriptors đã có host/ESP-IDF evidence. Server discovery merge có allow-list/policy; Manager Web có công tắc owner. | MQTT client/gateway/socket, firmware encrypted carrier, physical MCP LED/lamp round-trip, real-peer/real-network comparison, exact BOM cho OLED/IR/mmWave/MQTT/HA, assets/OTA và transport-promotion cần mở sau. |
 | M4 — hardening/multilingual | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | Capacity, backup/restore, security, locale thứ hai và soak dài. |
 
 ## Nơi xem trực tiếp

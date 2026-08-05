@@ -22,6 +22,7 @@ TRUNCATE TABLE
   "${TEST_SCHEMA}"."audit_event",
   "${TEST_SCHEMA}"."manager_session",
   "${TEST_SCHEMA}"."provider_secret_binding",
+  "${TEST_SCHEMA}"."voice_profile",
   "${TEST_SCHEMA}"."runtime_publication",
   "${TEST_SCHEMA}"."assistant_revision",
   "${TEST_SCHEMA}"."assistant",

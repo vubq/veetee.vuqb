@@ -22,12 +22,30 @@ def test_hello_timeout_defaults_to_ten_seconds(monkeypatch):
     assert config.hello_timeout_ms == 10_000
 
 
+def test_ws_send_timeout_defaults_to_five_seconds(monkeypatch):
+    _set_fixture_env(monkeypatch)
+    monkeypatch.delenv("VEETEE_WS_SEND_TIMEOUT_MS", raising=False)
+
+    config = ServerConfig.from_env()
+
+    assert config.ws_send_timeout_ms == 5_000
+
+
 @pytest.mark.parametrize("value", ["999", "60001", "not-an-int"])
 def test_hello_timeout_is_bounded(monkeypatch, value):
     _set_fixture_env(monkeypatch)
     monkeypatch.setenv("VEETEE_HELLO_TIMEOUT_MS", value)
 
     with pytest.raises(ConfigurationError, match="VEETEE_HELLO_TIMEOUT_MS"):
+        ServerConfig.from_env()
+
+
+@pytest.mark.parametrize("value", ["99", "60001", "not-an-int"])
+def test_ws_send_timeout_is_bounded(monkeypatch, value):
+    _set_fixture_env(monkeypatch)
+    monkeypatch.setenv("VEETEE_WS_SEND_TIMEOUT_MS", value)
+
+    with pytest.raises(ConfigurationError, match="VEETEE_WS_SEND_TIMEOUT_MS"):
         ServerConfig.from_env()
 
 

@@ -6,7 +6,30 @@
 #include "esp_err.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
+#include "lvgl.h"
 #include "veetee_state.h"
+
+/* Text is supplied as a resource bundle instead of being coupled to the
+   renderer.  The default Vietnamese bundle lives in main.c for now; a later
+   locale/config loader can provide another bundle without changing this UI. */
+typedef struct {
+    const char *brand;
+    const char *pairing_title;
+    const char *pairing_subtitle;
+    const char *pairing_hint;
+    const char *connection_label;
+    const char *idle_title;
+    const char *idle_hint;
+    const char *connecting_title;
+    const char *connecting_hint;
+    const char *listening_title;
+    const char *listening_hint;
+    const char *thinking_title;
+    const char *thinking_hint;
+    const char *speaking_title;
+    const char *speaking_hint;
+    const char *online_label;
+} vt_display_texts_t;
 
 typedef struct {
     int spi_host;
@@ -27,13 +50,28 @@ typedef struct {
     bool mirror_x;
     bool mirror_y;
     bool swap_xy;
+    const vt_display_texts_t *texts;
 } vt_display_config_t;
 
 typedef struct {
     esp_lcd_panel_io_handle_t panel_io;
     esp_lcd_panel_handle_t panel;
-    uint16_t *row_buffer;
-    int row_width;
+    lv_display_t *lv_display;
+    lv_obj_t *status_screen;
+    lv_obj_t *pairing_screen;
+    lv_obj_t *status_title;
+    lv_obj_t *status_hint;
+    lv_obj_t *connection_label;
+    lv_obj_t *connection_dot;
+    lv_obj_t *status_orb;
+    lv_obj_t *status_ring;
+    lv_obj_t *pairing_code;
+    lv_obj_t *pairing_title;
+    lv_obj_t *pairing_subtitle;
+    lv_obj_t *pairing_hint;
+    const vt_display_texts_t *texts;
+    vt_device_state_t last_state;
+    bool showing_pairing;
     int height;
     int spi_host;
     int backlight_gpio;

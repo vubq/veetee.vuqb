@@ -152,11 +152,30 @@ export interface paths {
         /** GET /api/v1/voices */
         get: operations["getApiV1Voices"];
         put?: never;
-        post?: never;
+        /** POST /api/v1/voices */
+        post: operations["postApiV1Voices"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/voices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** DELETE /api/v1/voices/:id */
+        delete: operations["deleteApiV1VoicesById"];
+        options?: never;
+        head?: never;
+        /** PATCH /api/v1/voices/:id */
+        patch: operations["patchApiV1VoicesById"];
         trace?: never;
     };
     "/api/v1/provider-configs": {
@@ -1901,6 +1920,7 @@ export interface operations {
         parameters: {
             query?: {
                 locale?: string;
+                providerConfigId?: string;
             };
             header?: never;
             path?: never;
@@ -1923,8 +1943,513 @@ export interface operations {
                             description: string;
                             previewDurationMs: number;
                             available: boolean;
+                            managed: boolean;
+                            providerConfigId?: null | string;
+                            voiceCode: string;
+                            enabled: boolean;
+                            sort?: number;
+                            demoUrl?: null | string;
+                            etag?: null | string;
+                            updatedAt?: null | string;
                         }[];
                         total: number;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Domain validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Precondition required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+        };
+    };
+    postApiV1Voices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    providerConfigId: string;
+                    name: string;
+                    locale: string;
+                    voiceCode: string;
+                    description?: string;
+                    demoUrl?: string | null;
+                    enabled?: boolean;
+                    sort?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        name: string;
+                        providerName: string;
+                        locale: string;
+                        description: string;
+                        previewDurationMs: number;
+                        available: boolean;
+                        managed: boolean;
+                        providerConfigId?: null | string;
+                        voiceCode: string;
+                        enabled: boolean;
+                        sort?: number;
+                        demoUrl?: null | string;
+                        etag?: null | string;
+                        updatedAt?: null | string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Domain validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Precondition required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+        };
+    };
+    deleteApiV1VoicesById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Domain validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Precondition required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+        };
+    };
+    patchApiV1VoicesById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name?: string;
+                    locale?: string;
+                    voiceCode?: string;
+                    description?: string;
+                    demoUrl?: string | null;
+                    enabled?: boolean;
+                    sort?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        id: string;
+                        name: string;
+                        providerName: string;
+                        locale: string;
+                        description: string;
+                        previewDurationMs: number;
+                        available: boolean;
+                        managed: boolean;
+                        providerConfigId?: null | string;
+                        voiceCode: string;
+                        enabled: boolean;
+                        sort?: number;
+                        demoUrl?: null | string;
+                        etag?: null | string;
+                        updatedAt?: null | string;
                     };
                 };
             };

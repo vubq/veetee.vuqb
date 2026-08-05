@@ -12,6 +12,7 @@ import {
   providerSecretBindingTable,
   providerConfigRevisionTable,
   providerConfigTable,
+  voiceProfileTable,
   runtimePublicationTable,
   retentionDeleteJobTable,
   retentionPolicyTable,
@@ -43,6 +44,7 @@ import {
   type PairingChallenge,
   type ProviderConfig,
   type ProviderProbeResult,
+  type VoiceProfile,
   type ProviderInstallation,
   type ProviderKind,
   type RetentionPolicy,
@@ -56,6 +58,7 @@ import {
   isDeviceIdentityHash,
   roleExtras,
   roleFromSnapshot,
+  validateVoiceValue,
   validateProviderSelectionShape,
 } from './store.js'
 
@@ -64,6 +67,7 @@ type AssistantRow = typeof assistantTable.$inferSelect
 type AssistantRevisionRow = typeof assistantRevisionTable.$inferSelect
 type ProviderConfigRow = typeof providerConfigTable.$inferSelect
 type ProviderConfigRevisionRow = typeof providerConfigRevisionTable.$inferSelect
+type VoiceProfileRow = typeof voiceProfileTable.$inferSelect
 type ManagerSessionRow = typeof managerSessionTable.$inferSelect
 type SecretReferenceRow = typeof secretReferenceTable.$inferSelect
 type DeviceRow = typeof deviceTable.$inferSelect
@@ -215,6 +219,58 @@ export class PostgresStore implements Store {
     checks.push({ id: 'secrets', state: secretsReady ? 'passed' : 'failed', message: secretsReady ? 'Khóa kết nối đã sẵn sàng.' : 'Có khóa kết nối thiếu hoặc không khả dụng.' })
     checks.push({ id: 'manifest', state: 'passed', message: 'Dịch vụ đã được nạp.' })
     return { providerConfigId: id, state: checks.some((check) => check.state === 'failed') ? 'unavailable' : 'ready', checkedAt: new Date().toISOString(), durationMs: Math.max(0, Date.now() - started), checks }
+  }
+
+  async listVoiceProfiles(ownerId: string, options: { locale?: string; providerConfigId?: string } = {}): Promise<VoiceProfile[]> {
+    const conditions = [eq(voiceProfileTable.ownerId, ownerId), isNull(voiceProfileTable.archivedAt)]
+    if (options.locale) conditions.push(eq(voiceProfileTable.locale, options.locale))
+    if (options.providerConfigId) conditions.push(eq(voiceProfileTable.providerConfigId, options.providerConfigId))
+    const rows = await this.handle.db.select().from(voiceProfileTable).where(and(...conditions)).orderBy(asc(voiceProfileTable.sort), asc(voiceProfileTable.name))
+    return rows.map((row) => this.mapVoiceProfile(row))
+  }
+
+  async createVoiceProfile(ownerId: string, value: Omit<VoiceProfile, 'id' | 'ownerId' | 'revision' | 'etag' | 'updatedAt' | 'archivedAt'>): Promise<VoiceProfile> {
+    await this.assertTtsConfig(ownerId, value.providerConfigId)
+    validateVoiceValue(value)
+    const [duplicate] = await this.handle.db.select({ id: voiceProfileTable.id }).from(voiceProfileTable).where(and(eq(voiceProfileTable.ownerId, ownerId), eq(voiceProfileTable.providerConfigId, value.providerConfigId), eq(voiceProfileTable.voiceCode, value.voiceCode), isNull(voiceProfileTable.archivedAt))).limit(1)
+    if (duplicate) throw problem('VOICE_DUPLICATE', 'Voice code already exists for this TTS config', 409)
+    const id = randomUUID()
+    const revision = 1
+    const now = new Date()
+    const nextEtag = etag({ ...value, revision })
+    await this.handle.db.insert(voiceProfileTable).values({ id, ownerId, ...structuredClone(value), revision, etag: nextEtag, createdAt: now, updatedAt: now, archivedAt: null })
+    const row = await this.findVoiceProfile(ownerId, id)
+    if (!row) throw new Error('voice profile insert returned no row')
+    return this.mapVoiceProfile(row)
+  }
+
+  async updateVoiceProfile(ownerId: string, id: string, value: Partial<Pick<VoiceProfile, 'name' | 'locale' | 'voiceCode' | 'description' | 'demoUrl' | 'enabled' | 'sort'>>, ifMatch: string): Promise<VoiceProfile> {
+    const current = await this.findVoiceProfile(ownerId, id)
+    if (!current || current.archivedAt) throw problem('NOT_FOUND', 'Voice profile not found', 404)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Voice profile changed', 409)
+    const next = { ...current, ...structuredClone(value), revision: current.revision + 1 }
+    validateVoiceValue(next)
+    const [duplicate] = await this.handle.db.select({ id: voiceProfileTable.id }).from(voiceProfileTable).where(and(eq(voiceProfileTable.ownerId, ownerId), eq(voiceProfileTable.providerConfigId, current.providerConfigId), eq(voiceProfileTable.voiceCode, next.voiceCode), isNull(voiceProfileTable.archivedAt))).limit(1)
+    if (duplicate && duplicate.id !== id) throw problem('VOICE_DUPLICATE', 'Voice code already exists for this TTS config', 409)
+    const updatedAt = new Date()
+    const nextEtag = etag({ ...next, revision: next.revision })
+    const updated = await this.handle.db.update(voiceProfileTable).set({
+      name: next.name, locale: next.locale, voiceCode: next.voiceCode, description: next.description,
+      demoUrl: next.demoUrl, enabled: next.enabled, sort: next.sort, revision: next.revision,
+      etag: nextEtag, updatedAt,
+    }).where(and(eq(voiceProfileTable.id, id), eq(voiceProfileTable.ownerId, ownerId), eq(voiceProfileTable.etag, ifMatch), isNull(voiceProfileTable.archivedAt))).returning({ id: voiceProfileTable.id })
+    if (!updated.length) throw problem('REVISION_CONFLICT', 'Voice profile changed', 409)
+    const row = await this.findVoiceProfile(ownerId, id)
+    if (!row) throw new Error('voice profile update returned no row')
+    return this.mapVoiceProfile(row)
+  }
+
+  async deleteVoiceProfile(ownerId: string, id: string, ifMatch: string): Promise<void> {
+    const current = await this.findVoiceProfile(ownerId, id)
+    if (!current || current.archivedAt) throw problem('NOT_FOUND', 'Voice profile not found', 404)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Voice profile changed', 409)
+    const updated = await this.handle.db.update(voiceProfileTable).set({ archivedAt: new Date(), updatedAt: new Date() }).where(and(eq(voiceProfileTable.id, id), eq(voiceProfileTable.ownerId, ownerId), eq(voiceProfileTable.etag, ifMatch), isNull(voiceProfileTable.archivedAt))).returning({ id: voiceProfileTable.id })
+    if (!updated.length) throw problem('REVISION_CONFLICT', 'Voice profile changed', 409)
   }
 
   async listAssistants(ownerId: string): Promise<Assistant[]> {
@@ -798,6 +854,17 @@ export class PostgresStore implements Store {
     return row
   }
 
+  private async findVoiceProfile(ownerId: string, id: string): Promise<VoiceProfileRow | undefined> {
+    const [row] = await this.handle.db.select().from(voiceProfileTable).where(and(eq(voiceProfileTable.ownerId, ownerId), eq(voiceProfileTable.id, id))).limit(1)
+    return row
+  }
+
+  private async assertTtsConfig(ownerId: string, providerConfigId: string): Promise<void> {
+    const config = await this.findProviderIdentity(ownerId, providerConfigId)
+    const installation = config ? this.findInstallation(config.installationId) : undefined
+    if (!config || config.archivedAt || installation?.kind !== 'tts') throw problem('CONFIG_INVALID', 'Voice profile requires an active TTS provider config', 422)
+  }
+
   private async assertSecretRefs(ownerId: string, refs: string[]): Promise<void> {
     if (!refs.length) return
     const rows = await this.handle.db.select({ id: secretReferenceTable.id, status: secretReferenceTable.status }).from(secretReferenceTable).where(and(eq(secretReferenceTable.ownerId, ownerId), inArray(secretReferenceTable.id, refs)))
@@ -863,6 +930,15 @@ export class PostgresStore implements Store {
 
   private mapProviderConfig(identity: ProviderConfigRow, revision: ProviderConfigRevisionRow): ProviderConfig {
     return { id: identity.id, ownerId: identity.ownerId, installationId: identity.installationId, name: identity.name, revision: revision.revision, config: asJsonObject(revision.config), secretRefs: asSecretRefs(revision.secretRefs), etag: revision.etag, updatedAt: revision.createdAt.toISOString(), archivedAt: identity.archivedAt?.toISOString() ?? null }
+  }
+
+  private mapVoiceProfile(row: VoiceProfileRow): VoiceProfile {
+    return {
+      id: row.id, ownerId: row.ownerId, providerConfigId: row.providerConfigId, name: row.name,
+      locale: row.locale, voiceCode: row.voiceCode, description: row.description, demoUrl: row.demoUrl,
+      enabled: row.enabled, sort: row.sort, revision: row.revision, etag: row.etag,
+      updatedAt: row.updatedAt.toISOString(), archivedAt: row.archivedAt?.toISOString() ?? null,
+    }
   }
 
   private mapSession(row: ManagerSessionRow): ManagerSession {

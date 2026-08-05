@@ -119,6 +119,25 @@ export interface VoiceProfile {
   description: string
   previewDurationMs: number
   available: boolean
+  managed?: boolean
+  providerConfigId?: string | null
+  voiceCode?: string
+  enabled?: boolean
+  sort?: number
+  demoUrl?: string | null
+  etag?: string | null
+  updatedAt?: IsoDateTime | null
+}
+
+export interface VoiceProfileInput {
+  providerConfigId: string
+  name: string
+  locale: string
+  voiceCode: string
+  description?: string
+  demoUrl?: string | null
+  enabled?: boolean
+  sort?: number
 }
 
 export interface VoicePreview {

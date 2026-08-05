@@ -44,6 +44,7 @@ typedef struct {
     /* Caller-owned copy of enabled BoardHal descriptors. Keeping storage in the
      * task makes the registry lifetime independent from a parsed manifest. */
     vt_mcp_tool_t tool_storage[VT_MCP_MAX_TOOLS];
+    char *output;
     const char *server_name;
     const char *server_version;
     vt_mcp_task_send_fn send;

@@ -3382,6 +3382,16 @@
             "in": "query",
             "name": "locale",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "query",
+            "name": "providerConfigId",
+            "required": false
           }
         ],
         "security": [
@@ -3414,7 +3424,10 @@
                           "locale",
                           "description",
                           "previewDurationMs",
-                          "available"
+                          "available",
+                          "managed",
+                          "voiceCode",
+                          "enabled"
                         ],
                         "properties": {
                           "id": {
@@ -3437,6 +3450,42 @@
                           },
                           "available": {
                             "type": "boolean"
+                          },
+                          "managed": {
+                            "type": "boolean"
+                          },
+                          "providerConfigId": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "voiceCode": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "sort": {
+                            "type": "integer"
+                          },
+                          "demoUrl": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "etag": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           }
                         }
                       }
@@ -3448,6 +3497,1345 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "code": "VALIDATION_ERROR",
+                      "detail": "Request validation failed"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Authentication required",
+                    "value": {
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication required"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Request forbidden",
+                    "value": {
+                      "code": "FORBIDDEN",
+                      "detail": "The authenticated principal is not allowed to perform this operation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Resource not found",
+                    "value": {
+                      "code": "NOT_FOUND",
+                      "detail": "The requested resource was not found"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "State conflict",
+                    "value": {
+                      "code": "REVISION_CONFLICT",
+                      "detail": "The resource changed; reload the current revision"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Domain validation failed",
+                    "value": {
+                      "code": "CONFIG_INVALID",
+                      "detail": "The supplied configuration is not valid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Precondition required",
+                    "value": {
+                      "code": "IF_MATCH_REQUIRED",
+                      "detail": "If-Match header is required"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Unexpected server error",
+                    "value": {
+                      "code": "INTERNAL_ERROR",
+                      "detail": "Unexpected server error"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Dependency unavailable",
+                    "value": {
+                      "code": "SERVICE_UNAVAILABLE",
+                      "detail": "A required dependency is unavailable"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postApiV1Voices",
+        "summary": "POST /api/v1/voices",
+        "tags": [
+          "providers"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "providerConfigId",
+                  "name",
+                  "locale",
+                  "voiceCode"
+                ],
+                "properties": {
+                  "providerConfigId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "locale": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 35
+                  },
+                  "voiceCode": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "demoUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2048
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "sort": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "veeteeSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "name",
+                    "providerName",
+                    "locale",
+                    "description",
+                    "previewDurationMs",
+                    "available",
+                    "managed",
+                    "voiceCode",
+                    "enabled"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "providerName": {
+                      "type": "string"
+                    },
+                    "locale": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "previewDurationMs": {
+                      "type": "integer"
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "managed": {
+                      "type": "boolean"
+                    },
+                    "providerConfigId": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "voiceCode": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "sort": {
+                      "type": "integer"
+                    },
+                    "demoUrl": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "etag": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "code": "VALIDATION_ERROR",
+                      "detail": "Request validation failed"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Authentication required",
+                    "value": {
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication required"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Request forbidden",
+                    "value": {
+                      "code": "FORBIDDEN",
+                      "detail": "The authenticated principal is not allowed to perform this operation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Resource not found",
+                    "value": {
+                      "code": "NOT_FOUND",
+                      "detail": "The requested resource was not found"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "State conflict",
+                    "value": {
+                      "code": "REVISION_CONFLICT",
+                      "detail": "The resource changed; reload the current revision"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Domain validation failed",
+                    "value": {
+                      "code": "CONFIG_INVALID",
+                      "detail": "The supplied configuration is not valid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Precondition required",
+                    "value": {
+                      "code": "IF_MATCH_REQUIRED",
+                      "detail": "If-Match header is required"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Unexpected server error",
+                    "value": {
+                      "code": "INTERNAL_ERROR",
+                      "detail": "Unexpected server error"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Dependency unavailable",
+                    "value": {
+                      "code": "SERVICE_UNAVAILABLE",
+                      "detail": "A required dependency is unavailable"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/voices/{id}": {
+      "patch": {
+        "operationId": "patchApiV1VoicesById",
+        "summary": "PATCH /api/v1/voices/:id",
+        "tags": [
+          "providers"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "locale": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 35
+                  },
+                  "voiceCode": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "demoUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2048
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "sort": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "veeteeSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "name",
+                    "providerName",
+                    "locale",
+                    "description",
+                    "previewDurationMs",
+                    "available",
+                    "managed",
+                    "voiceCode",
+                    "enabled"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "providerName": {
+                      "type": "string"
+                    },
+                    "locale": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "previewDurationMs": {
+                      "type": "integer"
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "managed": {
+                      "type": "boolean"
+                    },
+                    "providerConfigId": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "voiceCode": {
+                      "type": "string"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "sort": {
+                      "type": "integer"
+                    },
+                    "demoUrl": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "etag": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Request validation failed",
+                    "value": {
+                      "code": "VALIDATION_ERROR",
+                      "detail": "Request validation failed"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Authentication required",
+                    "value": {
+                      "code": "UNAUTHORIZED",
+                      "detail": "Authentication required"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Request forbidden",
+                    "value": {
+                      "code": "FORBIDDEN",
+                      "detail": "The authenticated principal is not allowed to perform this operation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Resource not found",
+                    "value": {
+                      "code": "NOT_FOUND",
+                      "detail": "The requested resource was not found"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "State conflict",
+                    "value": {
+                      "code": "REVISION_CONFLICT",
+                      "detail": "The resource changed; reload the current revision"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Domain validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Domain validation failed",
+                    "value": {
+                      "code": "CONFIG_INVALID",
+                      "detail": "The supplied configuration is not valid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Precondition required",
+                    "value": {
+                      "code": "IF_MATCH_REQUIRED",
+                      "detail": "If-Match header is required"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Unexpected server error",
+                    "value": {
+                      "code": "INTERNAL_ERROR",
+                      "detail": "Unexpected server error"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "examples": {
+                  "representative": {
+                    "summary": "Dependency unavailable",
+                    "value": {
+                      "code": "SERVICE_UNAVAILABLE",
+                      "detail": "A required dependency is unavailable"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteApiV1VoicesById",
+        "summary": "DELETE /api/v1/voices/:id",
+        "tags": [
+          "providers"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "veeteeSession": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
           },
           "400": {
             "description": "Invalid request",

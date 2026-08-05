@@ -2,6 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 import time
+from types import SimpleNamespace
 
 import pytest
 from aiohttp import WSMsgType
@@ -11,6 +12,84 @@ from veetee_server.app import VoiceApplication
 from veetee_server.config import ServerConfig
 from veetee_server.runtime import RuntimeConfigManager
 from veetee_server.providers import AudioChunk, LLMDelta
+
+
+class _RecordingWebSocket:
+    def __init__(self, *, delay: float = 0.0, stalled: bool = False) -> None:
+        self.delay = delay
+        self.stalled = stalled
+        self.active_sends = 0
+        self.max_active_sends = 0
+        self.events: list[tuple[str, object]] = []
+        self.closed = False
+
+    async def send_str(self, value: str) -> None:
+        self.active_sends += 1
+        self.max_active_sends = max(self.max_active_sends, self.active_sends)
+        try:
+            if self.stalled:
+                await asyncio.Event().wait()
+            if self.delay:
+                await asyncio.sleep(self.delay)
+            self.events.append(("text", value))
+        finally:
+            self.active_sends -= 1
+
+    async def send_bytes(self, value: bytes) -> None:
+        self.active_sends += 1
+        self.max_active_sends = max(self.max_active_sends, self.active_sends)
+        try:
+            if self.stalled:
+                await asyncio.Event().wait()
+            if self.delay:
+                await asyncio.sleep(self.delay)
+            self.events.append(("binary", value))
+        finally:
+            self.active_sends -= 1
+
+    async def close(self, *, code: int, message: bytes) -> None:
+        del code, message
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_outbound_websocket_frames_are_serialized_without_audio(monkeypatch):
+    """Text and binary writes share one lock; this is a transport-only test."""
+
+    config = SimpleNamespace(ws_send_timeout_ms=500)
+    app = VoiceApplication(config, object())
+    ws = _RecordingWebSocket(delay=0.01)
+    from veetee_server.app import VoiceSession
+
+    session = VoiceSession(app, ws, device_id="send-lock", client_id="client", profile="ws-v3")
+    await asyncio.gather(
+        session.send_text({"type": "ping"}),
+        session.send_binary(b"frame"),
+        session.send_text({"type": "pong"}),
+    )
+
+    assert ws.max_active_sends == 1
+    assert [kind for kind, _ in ws.events] == ["text", "binary", "text"]
+    assert app.metrics["ws_send_failures"] == 0
+
+
+@pytest.mark.asyncio
+async def test_stalled_websocket_send_closes_session_and_marks_transport_failed():
+    """A peer that never accepts a frame cannot keep a turn lease alive."""
+
+    config = SimpleNamespace(ws_send_timeout_ms=100)
+    app = VoiceApplication(config, object())
+    ws = _RecordingWebSocket(stalled=True)
+    from veetee_server.app import VoiceSession
+
+    session = VoiceSession(app, ws, device_id="stalled-send", client_id="client", profile="ws-v3")
+    await session.send_text({"type": "alert", "code": "TEST"})
+
+    assert session._closed is True
+    assert session._transport_failed is True
+    assert ws.closed is True
+    assert app.metrics["ws_send_failures"] == 1
+    assert app.metrics["ws_send_timeouts"] == 1
 
 
 @pytest.mark.asyncio
@@ -1077,6 +1156,62 @@ async def test_reference_mcp_peer_gets_ordered_initialize_then_tools_list(monkey
         )
         await asyncio.sleep(0)
         assert service.metrics.get("mcp_discovery_failures", 0) == 0
+        await ws.close()
+    finally:
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_mcp_discovery_can_publish_device_tools_to_live_turn_catalog(monkeypatch, tmp_path):
+    """An explicit discovery policy makes device descriptors available to LLM turns."""
+
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    snapshot = json.loads(fixture.read_text(encoding="utf-8"))
+    snapshot["toolPolicy"] = {"allowDeviceDiscovery": True, "maxRounds": 2, "timeoutMs": 1000}
+    configured = tmp_path / "mcp-discovery.json"
+    configured.write_text(json.dumps(snapshot), encoding="utf-8")
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(configured))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "dynamic-mcp-device", "Client-Id": "dynamic-mcp-client", "Protocol-Version": "3"},
+        )
+        await ws.send_json({
+            "type": "hello", "version": 3, "transport": "websocket", "features": {"mcp": True},
+            "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+        })
+        hello = await ws.receive_json()
+        initialize = await ws.receive_json()
+        await ws.send_json({
+            "type": "mcp", "session_id": hello["session_id"],
+            "payload": {"jsonrpc": "2.0", "id": initialize["payload"]["id"], "result": {"protocolVersion": "2024-11-05"}},
+        })
+        tools_list = await ws.receive_json()
+        await ws.send_json({
+            "type": "mcp", "session_id": hello["session_id"],
+            "payload": {
+                "jsonrpc": "2.0", "id": tools_list["payload"]["id"],
+                "result": {"tools": [{
+                    "name": "device.led.set", "description": "Set status LED",
+                    "inputSchema": {"type": "object", "additionalProperties": False},
+                }]},
+            },
+        })
+        await asyncio.sleep(0.01)
+        session = next(iter(service._sessions))
+        assert session._tool_descriptors == [{
+            "name": "device.led.set", "description": "Set status LED",
+            "inputSchema": {"type": "object", "additionalProperties": False},
+        }]
         await ws.close()
     finally:
         await client.close()
