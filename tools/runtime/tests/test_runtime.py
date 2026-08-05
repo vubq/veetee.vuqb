@@ -1,6 +1,8 @@
 import json
 import os
 from pathlib import Path
+import sys
+import time
 
 import pytest
 
@@ -54,6 +56,59 @@ def test_manifest_accepts_tcp_readiness_probe(tmp_path):
 def test_manifest_accepts_one_shot_service(tmp_path):
     path = write_manifest(tmp_path, [{"name": "migration", "command": ["python3"], "waitForExit": True}])
     assert RuntimeSupervisor(path).specs[0].wait_for_exit is True
+
+
+def test_manifest_parses_bounded_restart_policy(tmp_path):
+    path = write_manifest(
+        tmp_path,
+        [{
+            "name": "voice",
+            "command": ["python3"],
+            "restartPolicy": {"maxAttempts": 3, "windowSeconds": 45, "backoffSeconds": 2},
+        }],
+    )
+    policy = RuntimeSupervisor(path).specs[0].restart_policy
+    assert policy.max_attempts == 3
+    assert policy.window_s == 45
+    assert policy.backoff_s == 2
+
+
+def test_manifest_rejects_restart_for_one_shot_service(tmp_path):
+    path = write_manifest(
+        tmp_path,
+        [{"name": "migration", "command": ["python3"], "waitForExit": True, "restartPolicy": {"maxAttempts": 1}}],
+    )
+    with pytest.raises(ManifestError, match="one-shot"):
+        RuntimeSupervisor(path)
+
+
+def test_supervisor_restarts_only_with_bounded_policy(tmp_path):
+    path = write_manifest(
+        tmp_path,
+        [{
+            "name": "crashy",
+            "command": [sys.executable, "-c", "import sys\nsys.exit(7)"],
+            "restartPolicy": {"maxAttempts": 1, "windowSeconds": 5, "backoffSeconds": 0},
+        }],
+    )
+    supervisor = RuntimeSupervisor(path)
+    try:
+        supervisor.start()
+        deadline = time.monotonic() + 2
+        while supervisor.restart_counts.get("crashy", 0) < 1 and time.monotonic() < deadline:
+            supervisor.monitor_once()
+            time.sleep(0.02)
+        assert supervisor.restart_counts["crashy"] == 1
+        # The second crash is observed but does not exceed maxAttempts.
+        for _ in range(20):
+            supervisor.monitor_once()
+            time.sleep(0.01)
+        assert supervisor.restart_counts["crashy"] == 1
+        state = supervisor.status()["services"][0]
+        assert state["restartCount"] == 1
+        assert state["lastExitCode"] == 7
+    finally:
+        supervisor.stop()
 
 
 def test_runtime_discovers_nvm_node_for_minimal_service_path(tmp_path):

@@ -21,6 +21,27 @@ Supervisor tự bổ sung Node bin vào `PATH` cho service không tương tác: 
 user-systemd không cần dựa vào shell profile; deployment production vẫn nên đặt
 `VEETEE_NODE_BIN` rõ ràng trong unit/environment của máy.
 
+## Bounded restart policy
+
+Service dài hạn có thể khai báo policy explicit trong manifest:
+
+```json
+{
+  "restartPolicy": {
+    "maxAttempts": 3,
+    "windowSeconds": 60,
+    "backoffSeconds": 2
+  }
+}
+```
+
+`maxAttempts=0` là mặc định và giữ process chết để operator kiểm tra. Supervisor
+chỉ monitor/restart khi `--once` đang giữ vòng chạy; mỗi attempt nằm trong
+`windowSeconds` và chờ `backoffSeconds`. Policy bị giới hạn bounded, không nhận
+shell command, và `waitForExit=true` luôn bị cấm restart để migration/seed lỗi
+không bị lặp âm thầm. Exit code/restart count được đưa vào status report, không
+ghi command hoặc secret.
+
 ## PostgreSQL riêng cho Veetee
 
 Veetee không dùng PostgreSQL/data directory/port của bất kỳ project khác. Trên

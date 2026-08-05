@@ -126,6 +126,15 @@
   owner task hay hardware mutation. M3 vẫn mở; không flash/reset, audio, serial,
   Wi‑Fi/Tailscale hoặc production database.
 
+### Host supervisor bounded restart policy (host-only)
+
+- `tools/runtime/veetee_runtime.py` đã parse `restartPolicy` bounded và monitor
+  process khi chạy `--once`; mặc định `maxAttempts=0` nên behavior cũ không đổi.
+- One-shot migration/seed (`waitForExit=true`) bị reject nếu có restart attempt;
+  status report thêm `restartCount`/`lastExitCode`, không ghi command/secret.
+- Runtime tests **27 passed**, compileall pass. Không restart stack đang chạy,
+  không mutate PostgreSQL, không đổi port/Wi‑Fi/Tailscale và không audio.
+
 ## Cập nhật gần nhất (2026-08-04)
 
 ### Regression revalidation hiện tại

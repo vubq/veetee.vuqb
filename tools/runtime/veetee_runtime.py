@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -24,6 +25,13 @@ class ManifestError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class RestartPolicy:
+    max_attempts: int
+    window_s: float
+    backoff_s: float
+
+
+@dataclass(frozen=True, slots=True)
 class ServiceSpec:
     name: str
     command: tuple[str, ...]
@@ -34,6 +42,7 @@ class ServiceSpec:
     ready_timeout_s: float
     wait_for_exit: bool
     environment: dict[str, str]
+    restart_policy: RestartPolicy
 
 
 class RuntimeSupervisor:
@@ -42,6 +51,10 @@ class RuntimeSupervisor:
         self.root = manifest_path.resolve().parents[3]
         self.specs = self._load()
         self.processes: dict[str, subprocess.Popen[bytes]] = {}
+        self.restart_history: dict[str, list[float]] = {}
+        self.next_restart_at: dict[str, float] = {}
+        self.restart_counts: dict[str, int] = {}
+        self.last_exit_codes: dict[str, int | None] = {}
 
     def _load(self) -> list[ServiceSpec]:
         try:
@@ -87,7 +100,14 @@ class RuntimeSupervisor:
             wait_for_exit = value.get("waitForExit", False)
             if not isinstance(wait_for_exit, bool):
                 raise ManifestError(f"{name}: waitForExit must be boolean")
-            specs.append(ServiceSpec(name, tuple(_expand(part, self.root) for part in command), cwd, tuple(deps), health_url, health_tcp, float(value.get("readyTimeoutSeconds", 20)), wait_for_exit, {k: _expand(v, self.root) for k, v in env.items()}))
+            restart_policy = _parse_restart_policy(name, value.get("restartPolicy"), wait_for_exit)
+            try:
+                ready_timeout_s = float(value.get("readyTimeoutSeconds", 20))
+            except (TypeError, ValueError) as exc:
+                raise ManifestError(f"{name}: readyTimeoutSeconds must be numeric") from exc
+            if not math.isfinite(ready_timeout_s) or ready_timeout_s <= 0:
+                raise ManifestError(f"{name}: readyTimeoutSeconds must be positive and finite")
+            specs.append(ServiceSpec(name, tuple(_expand(part, self.root) for part in command), cwd, tuple(deps), health_url, health_tcp, ready_timeout_s, wait_for_exit, {k: _expand(v, self.root) for k, v in env.items()}, restart_policy))
             names.add(name)
         by_name = {spec.name for spec in specs}
         for spec in specs:
@@ -98,21 +118,7 @@ class RuntimeSupervisor:
 
     def start(self) -> None:
         for spec in self._order():
-            env = os.environ.copy()
-            env.update(spec.environment)
-            env = _with_node_path(env)
-            env.setdefault("PYTHONUNBUFFERED", "1")
-            process = subprocess.Popen(
-                list(spec.command),
-                cwd=spec.cwd,
-                env=env,
-                start_new_session=True,
-                stdout=None,
-                stderr=None,
-            )
-            self.processes[spec.name] = process
-            if spec.health_url or spec.health_tcp:
-                self._wait_ready(spec, process)
+            process = self._spawn(spec)
             if spec.wait_for_exit:
                 try:
                     result = process.wait(timeout=spec.ready_timeout_s)
@@ -120,6 +126,38 @@ class RuntimeSupervisor:
                     raise TimeoutError(f"one-shot service timeout: {spec.name}") from exc
                 if result != 0:
                     raise RuntimeError(f"one-shot service failed: {spec.name} ({result})")
+
+    def monitor_once(self) -> None:
+        """Restart only services with an explicit bounded restart policy.
+
+        A dead service without policy remains dead for operator inspection. This
+        avoids silently converting provider/configuration failures into a restart
+        loop and keeps one-shot migrations outside the restart path.
+        """
+
+        now = time.monotonic()
+        for spec in self._order():
+            process = self.processes.get(spec.name)
+            if process is None or process.poll() is None or spec.wait_for_exit:
+                continue
+            self.last_exit_codes[spec.name] = process.returncode
+            policy = spec.restart_policy
+            if policy.max_attempts <= 0:
+                continue
+            history = [stamp for stamp in self.restart_history.get(spec.name, []) if now - stamp <= policy.window_s]
+            self.restart_history[spec.name] = history
+            if len(history) >= policy.max_attempts:
+                continue
+            scheduled_at = self.next_restart_at.get(spec.name)
+            if scheduled_at is None:
+                scheduled_at = now + policy.backoff_s
+                self.next_restart_at[spec.name] = scheduled_at
+            if now < scheduled_at:
+                continue
+            self.next_restart_at.pop(spec.name, None)
+            history.append(now)
+            self.restart_counts[spec.name] = self.restart_counts.get(spec.name, 0) + 1
+            self.processes[spec.name] = self._spawn(spec)
 
     def stop(self) -> None:
         for name, process in reversed(list(self.processes.items())):
@@ -141,7 +179,31 @@ class RuntimeSupervisor:
                     pass
 
     def status(self) -> dict[str, object]:
-        return {"services": [{"name": spec.name, "pid": self.processes.get(spec.name).pid if spec.name in self.processes else None, "running": self.processes.get(spec.name) is not None and self.processes[spec.name].poll() is None} for spec in self.specs]}
+        return {"services": [{
+            "name": spec.name,
+            "pid": self.processes.get(spec.name).pid if spec.name in self.processes else None,
+            "running": self.processes.get(spec.name) is not None and self.processes[spec.name].poll() is None,
+            "restartCount": self.restart_counts.get(spec.name, 0),
+            "lastExitCode": self.last_exit_codes.get(spec.name),
+        } for spec in self.specs]}
+
+    def _spawn(self, spec: ServiceSpec) -> subprocess.Popen[bytes]:
+        env = os.environ.copy()
+        env.update(spec.environment)
+        env = _with_node_path(env)
+        env.setdefault("PYTHONUNBUFFERED", "1")
+        process = subprocess.Popen(
+            list(spec.command),
+            cwd=spec.cwd,
+            env=env,
+            start_new_session=True,
+            stdout=None,
+            stderr=None,
+        )
+        self.processes[spec.name] = process
+        if spec.health_url or spec.health_tcp:
+            self._wait_ready(spec, process)
+        return process
 
     def _wait_ready(self, spec: ServiceSpec, process: subprocess.Popen[bytes]) -> None:
         if spec.health_url is None and spec.health_tcp is None:
@@ -187,6 +249,40 @@ class RuntimeSupervisor:
         for spec in self.specs:
             visit(spec.name)
         return ordered
+
+
+def _parse_restart_policy(
+    name: str,
+    raw: object,
+    wait_for_exit: bool,
+) -> RestartPolicy:
+    if raw is None:
+        return RestartPolicy(0, 60.0, 0.0)
+    if not isinstance(raw, dict):
+        raise ManifestError(f"{name}: restartPolicy must be an object")
+    allowed = {"maxAttempts", "windowSeconds", "backoffSeconds"}
+    unknown = set(raw) - allowed
+    if unknown:
+        raise ManifestError(f"{name}: restartPolicy has unknown fields {sorted(unknown)}")
+
+    def bounded_number(field: str, default: float, minimum: float, maximum: float) -> float:
+        value = raw.get(field, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            raise ManifestError(f"{name}: restartPolicy.{field} must be numeric")
+        result = float(value)
+        if result < minimum or result > maximum:
+            raise ManifestError(f"{name}: restartPolicy.{field} must be between {minimum} and {maximum}")
+        return result
+
+    max_attempts_value = bounded_number("maxAttempts", 0, 0, 10)
+    if not max_attempts_value.is_integer():
+        raise ManifestError(f"{name}: restartPolicy.maxAttempts must be an integer")
+    max_attempts = int(max_attempts_value)
+    window_s = bounded_number("windowSeconds", 60, 1, 3600)
+    backoff_s = bounded_number("backoffSeconds", 0, 0, 60)
+    if wait_for_exit and max_attempts > 0:
+        raise ManifestError(f"{name}: one-shot service cannot have restart attempts")
+    return RestartPolicy(max_attempts, window_s, backoff_s)
 
 
 def _expand(value: str, root: Path) -> str:
@@ -265,6 +361,7 @@ def main() -> int:
         print(json.dumps(supervisor.status(), ensure_ascii=False), flush=True)
         if args.once:
             while True:
+                supervisor.monitor_once()
                 time.sleep(1)
     except KeyboardInterrupt:
         return 0

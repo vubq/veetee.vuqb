@@ -101,8 +101,11 @@ Service requirements:
 - Versioned release directory + atomic `current` pointer; không chạy unpinned
   dependency từ global environment.
 - Dependency dựa vào readiness, không dùng fixed sleep.
-- Supervisor restart có bounded burst/backoff; không restart loop khi CUDA OOM hoặc
-  migration fail.
+- Supervisor chỉ restart khi manifest khai báo `restartPolicy` bounded
+  (`maxAttempts`, `windowSeconds`, `backoffSeconds`); mặc định không restart để
+  giữ lỗi provider/configuration cho operator. `waitForExit` migration/seed bị
+  cấm restart, vì vậy failure không tạo loop âm thầm. CUDA OOM vẫn phải được
+  phân loại/disable policy ở service unit, không tự suy đoán thành lỗi tạm thời.
 - Dedicated non-root identity nơi phù hợp; writable directory allowlist và backup
   policy rõ.
 - Secret đọc từ owner-only file hoặc OS credential facility; không commit vào env
