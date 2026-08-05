@@ -15,7 +15,7 @@
   resource bundle/config boundary; không có provider/wake phrase literal trong
   renderer.
 - Verification host-only: Manager API 38 pass + 13 skip có chủ đích; Manager Web
-  97 unit, Chromium E2E pass, typecheck/lint/build pass; firmware CTest 9/9 và
+  100 unit, Chromium E2E pass, typecheck/lint/build pass; firmware CTest 9/9 và
   ESP-IDF 6.0.2 build pass. Không flash/reset, không mở microphone/loa và không
   phát audio trong lát cắt này.
 
@@ -32,7 +32,7 @@
 - Manager API hiện **51/51 passed** khi dùng dedicated PostgreSQL test database
   `veetee_vubq_test`; InMemory subset **38 passed / 13 skip có chủ đích** khi không
   truyền DSN. Lint/build/OpenAPI export/check pass.
-- Manager Web hiện **97/97 unit** và **15/15 Chromium E2E**; typecheck/lint/build
+- Manager Web hiện **100/100 unit** và **15/15 Chromium E2E**; typecheck/lint/build
   pass. Route-level code splitting giảm entry JS từ khoảng 516 kB xuống 172 kB.
 - QA cloud Browser Use không chạy trong lượt này vì `browser-harness` yêu cầu
   `browser-harness auth login`; không tự mượn credential hoặc mở local Chrome.
