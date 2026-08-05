@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from veetee_server.config import ConfigurationError, load_snapshot
-from veetee_server.providers import AudioChunk, GroqLLM, GroqTestKeyPool, PatternIntent, PhoWhisperASR, ProviderError, ProviderRegistry, SessionWindowMemory, SileroVAD, VieNeuTTS, discover_provider_factories, provider_factory
+from veetee_server.providers import AudioChunk, EnergyVAD, GroqLLM, GroqTestKeyPool, PatternIntent, PhoWhisperASR, ProviderError, ProviderRegistry, SessionWindowMemory, SileroVAD, VieNeuTTS, discover_provider_factories, provider_factory
 
 
 @pytest.mark.asyncio
@@ -183,6 +183,60 @@ def test_silero_vad_streams_recurrent_state_and_endpoints(monkeypatch):
     assert calls[0]["input"].shape == (1, 576)
     assert calls[0]["state"].shape == (2, 1, 128)
     assert int(calls[0]["sr"]) == 16_000
+
+
+def test_silero_vad_supports_split_h_c_onnx_state(monkeypatch):
+    calls = []
+
+    class FakeSession:
+        def get_inputs(self):
+            return [types.SimpleNamespace(name=name) for name in ("input", "h", "c")]
+
+        def get_outputs(self):
+            return [types.SimpleNamespace(name=name) for name in ("speech_probs", "hn", "cn")]
+
+        def run(self, _outputs, inputs):
+            calls.append(inputs)
+            return (
+                np.asarray([[0.9 if len(calls) == 1 else 0.05]], dtype=np.float32),
+                np.zeros((1, 1, 128), dtype=np.float32),
+                np.zeros((1, 1, 128), dtype=np.float32),
+            )
+
+    monkeypatch.setitem(sys.modules, "onnxruntime", types.SimpleNamespace(InferenceSession=lambda path, providers: FakeSession()))
+    provider = SileroVAD({
+        "modelPath": "fixture-silero-v6.onnx",
+        "sampleRate": 16_000,
+        "windowSamples": 512,
+        "contextSamples": 64,
+        "speechThreshold": 0.6,
+        "releaseThreshold": 0.2,
+        "minSpeechMs": 32,
+        "minSilenceMs": 32,
+    })
+    speech = np.full(512, 12_000, dtype="<i2").tobytes()
+    silence = np.zeros(512, dtype="<i2").tobytes()
+    assert provider.accept(speech, 16_000) is True
+    assert provider.accept(silence, 16_000) is True
+    assert provider.endpoint() is True
+    assert set(calls[0]) == {"input", "h", "c"}
+
+
+def test_energy_vad_endpoints_when_noise_is_between_hysteresis_levels():
+    provider = EnergyVAD({
+        "speechThreshold": 0.006,
+        "releaseThreshold": 0.003,
+        "minSpeechMs": 60,
+        "minSilenceMs": 120,
+    })
+    speech = np.full(960, 500, dtype="<i2").tobytes()
+    steady_noise = np.full(960, 128, dtype="<i2").tobytes()
+
+    assert provider.accept(speech, 16_000) is True
+    assert provider.accept(steady_noise, 16_000) is True
+    assert provider.endpoint() is False
+    assert provider.accept(steady_noise, 16_000) is True
+    assert provider.endpoint() is True
 
 
 def test_groq_provider_resolves_one_secret_ref_without_file(tmp_path):

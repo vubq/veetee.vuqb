@@ -1743,3 +1743,24 @@
 - Physical LCD backlight/orientation, âm lượng loa, PTT và barge-in vẫn cần chủ
   dự án nhìn/nghe/chạm để đóng gate; serial/host evidence không thay thế các
   kiểm tra này.
+
+### Real provider activation và ESP32 end-to-end (2026-08-05, cập nhật)
+
+- Assistant `Veetee` đã publish Manager revision `9` trong PostgreSQL
+  `veetee_vubq`: Silero VAD ONNX, PhoWhisper-small CUDA `int8_float16`, Groq
+  Llama 3.3 70B streaming/tool calling, VieNeu v3 Turbo ONNX INT8; Groq dùng
+  một encrypted `secretRef`, không lưu plaintext. Memory/intent/progress/auto-turn
+  cũng đã bật bằng role/provider config.
+- Voice Server đã restart bằng source hiện tại và board reconnect vào revision 9;
+  readiness `200`, `activationFailures=0`, `activeConnections=1`. Không flash,
+  erase NVS, đổi Wi-Fi, đổi route hoặc đổi wire protocol.
+- Host lab revision 9 pass 1 turn, TTFA `1484,8 ms`, có binary downlink và
+  `tts.stop` không lỗi protocol. ESP32 audio harness chạy **2/2** pass; DB
+  transcript cho thấy PhoWhisper thật (không phải fixture), timings TTFA
+  `1102/1467 ms`, ASR `507/595 ms`, LLM first token `773/1026 ms`, TTS start
+  `784/1026 ms`, tổng 829 downlink frames; cuối run `active_turns=0`,
+  `protocol_errors=0`.
+- Barge-in acoustic duplex đã A/B thật và phát hiện echo loa gây interrupt sớm.
+  Production giữ `bargeIn.enabled=true` nhưng `deviceDuplex=false` để half-duplex
+  ổn định; acoustic duplex/voice-onset/false accept/time-to-silence vẫn là gate
+  opt-in chưa promotion. Report redacted: `/tmp/veetee-real-provider-esp32-revision9-20260805.json`.

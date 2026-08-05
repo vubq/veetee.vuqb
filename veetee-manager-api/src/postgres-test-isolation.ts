@@ -1,5 +1,8 @@
 import { afterEach, beforeEach } from 'node:test'
+import { resolve } from 'node:path'
 import { Pool, type PoolClient } from 'pg'
+
+import { runMigrations } from './db/migrate.js'
 
 /**
  * PostgreSQL integration tests are deliberately destructive inside their own
@@ -30,6 +33,7 @@ RESTART IDENTITY CASCADE`
 
 let databaseUrlFile: string | undefined
 let lease: { client: PoolClient; pool: Pool } | undefined
+let migratedDatabaseUrl: string | undefined
 
 export function configurePostgresTestIsolation(urlFile: string | undefined): void {
   databaseUrlFile = urlFile
@@ -44,6 +48,7 @@ export function configurePostgresTestIsolation(urlFile: string | undefined): voi
       // Serialize setup and test bodies across test files that share one DSN.
       // The session holds the advisory lock until afterEach releases it.
       await client.query('select pg_advisory_lock($1::bigint)', [TEST_LOCK_KEY])
+      await ensureMigrations(databaseUrl)
       await resetDatabase(client)
       lease = { client, pool }
     } catch (error) {
@@ -68,6 +73,22 @@ export function configurePostgresTestIsolation(urlFile: string | undefined): voi
       await current.pool.end()
     }
   })
+}
+
+async function ensureMigrations(databaseUrl: string): Promise<void> {
+  if (migratedDatabaseUrl === databaseUrl) return
+
+  // Keep the test lease's connection holding the advisory lock while a second
+  // connection applies any missing migration. This makes `npm test` safe on a
+  // freshly-created or stale `_test` database without requiring a manual
+  // migration command, while still serializing concurrent test workers.
+  const migrationPool = new Pool({ connectionString: databaseUrl, max: 1, connectionTimeoutMillis: 5_000 })
+  try {
+    await runMigrations(migrationPool, resolve(import.meta.dirname, '../migrations'))
+    migratedDatabaseUrl = databaseUrl
+  } finally {
+    await migrationPool.end()
+  }
 }
 
 export function assertSafeTestDatabaseUrl(databaseUrl: string): void {

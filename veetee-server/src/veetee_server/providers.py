@@ -147,7 +147,11 @@ class EnergyVAD:
         if rms >= self._speech_threshold:
             self._speech_ms += duration_ms
             self._silence_ms = 0
-        elif rms <= self._release_threshold:
+        elif self._speech_ms >= self._min_speech_ms or rms <= self._release_threshold:
+            # Once speech is confirmed, every frame below the start threshold
+            # contributes to endpointing. Holding the silence counter only for
+            # the lower hysteresis threshold can wedge a turn forever when
+            # steady microphone noise sits between release and speech levels.
             self._silence_ms += duration_ms
         return self._active or self._speech_ms >= self._min_speech_ms
 
@@ -175,6 +179,11 @@ class SileroVAD:
             self._session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
         except Exception as exc:  # noqa: BLE001
             raise ProviderError("VAD_MODEL_LOAD_FAILED", "Silero VAD model could not be loaded") from exc
+        self._input_names = self._io_names("get_inputs")
+        self._output_names = self._io_names("get_outputs")
+        self._split_state = {"h", "c"}.issubset(self._input_names)
+        self._state_h = np.zeros((1, 1, 128), dtype=np.float32)
+        self._state_c = np.zeros((1, 1, 128), dtype=np.float32)
         self._sample_rate = _positive_int(config, "sampleRate", fallback=16_000)
         self._window_samples = _positive_int(config, "windowSamples", fallback=512)
         self._context_samples = _positive_int(config, "contextSamples", fallback=max(1, self._window_samples // 8))
@@ -193,6 +202,8 @@ class SileroVAD:
 
     def reset(self) -> None:
         self._state = self._np.zeros((2, 1, 128), dtype=self._np.float32)
+        self._state_h = self._np.zeros((1, 1, 128), dtype=self._np.float32)
+        self._state_c = self._np.zeros((1, 1, 128), dtype=self._np.float32)
         self._context = self._np.zeros((1, self._context_samples), dtype=self._np.float32)
         self._carry.clear()
         self._speech_ms = 0
@@ -204,6 +215,17 @@ class SileroVAD:
 
         self._carry.clear()
         self._session = None
+
+    def _io_names(self, method_name: str) -> set[str]:
+        method = getattr(self._session, method_name, None)
+        if not callable(method):
+            return set()
+        try:
+            return {str(item.name) for item in method() if getattr(item, "name", None)}
+        except Exception:  # noqa: BLE001
+            # Keep compatibility with the small fake sessions used by host
+            # tests and with older ONNX wrappers that expose only ``run``.
+            return set()
 
     def accept(self, pcm: bytes, sample_rate: int) -> bool:
         if sample_rate != self._sample_rate:
@@ -230,22 +252,36 @@ class SileroVAD:
             (self._context.reshape(-1), samples),
             axis=0,
         ).reshape(1, -1)
+        feed: dict[str, Any] = {"input": model_input}
+        if self._split_state:
+            feed.update({"h": self._state_h, "c": self._state_c})
+        else:
+            feed["state"] = self._state
+        if "sr" in self._input_names or not self._input_names:
+            feed["sr"] = self._np.asarray(self._sample_rate, dtype=self._np.int64)
         try:
-            output, state = self._session.run(
-                None,
-                {
-                    "input": model_input,
-                    "state": self._state,
-                    "sr": self._np.asarray(self._sample_rate, dtype=self._np.int64),
-                },
-            )
+            results = self._session.run(None, feed)
         except Exception as exc:  # noqa: BLE001
             raise ProviderError("VAD_INFERENCE_FAILED", "Silero VAD inference failed") from exc
+        if self._split_state:
+            if len(results) < 3:
+                raise ProviderError("VAD_STATE_INVALID", "Silero VAD returned incomplete recurrent state")
+            output, next_h, next_c = results[0], results[1], results[2]
+            next_h = self._np.asarray(next_h, dtype=self._np.float32)
+            next_c = self._np.asarray(next_c, dtype=self._np.float32)
+            if next_h.shape != self._state_h.shape or next_c.shape != self._state_c.shape:
+                raise ProviderError("VAD_STATE_INVALID", "Silero VAD returned an invalid recurrent state")
+            self._state_h = next_h
+            self._state_c = next_c
+        else:
+            if len(results) < 2:
+                raise ProviderError("VAD_STATE_INVALID", "Silero VAD returned incomplete recurrent state")
+            output, state = results[0], results[1]
+            next_state = self._np.asarray(state, dtype=self._np.float32)
+            if next_state.shape != self._state.shape:
+                raise ProviderError("VAD_STATE_INVALID", "Silero VAD returned an invalid recurrent state")
+            self._state = next_state
         probability = float(self._np.asarray(output).reshape(-1)[0])
-        next_state = self._np.asarray(state, dtype=self._np.float32)
-        if next_state.shape != self._state.shape:
-            raise ProviderError("VAD_STATE_INVALID", "Silero VAD returned an invalid recurrent state")
-        self._state = next_state
         self._context = model_input[:, -self._context_samples:]
         duration_ms = round(self._window_samples * 1000 / self._sample_rate)
         if probability >= self._speech_threshold:
