@@ -23,6 +23,7 @@ import {
   defaultRetentionPolicy,
   deviceEtag,
   DEFAULT_DEVICE_ONLINE_TTL_SECONDS,
+  DEFAULT_CONVERSATION_POLICY,
   hashPairingCode,
   isPresenceFresh,
   problem,
@@ -34,6 +35,7 @@ import {
   type ConversationTurn,
   type ConversationTurnInput,
   type Device,
+  type DiscoverableDevice,
   type DevicePresenceInput,
   type DevicePresenceResult,
   type ManagerSession,
@@ -364,6 +366,7 @@ export class PostgresStore implements Store {
         speech: asJsonObject(role.speech),
         providers: resolvedProviders,
         wire: { profile: 'ws-v3', uplinkSampleRate: 16000, downlinkSampleRate: 24000, frameDurationMs: 60 },
+        conversation: role.conversation && typeof role.conversation === 'object' && !Array.isArray(role.conversation) ? structuredClone(role.conversation) : structuredClone(DEFAULT_CONVERSATION_POLICY),
       }
       const publicationEtag = etag(snapshot)
       const conditions = [eq(assistantTable.id, id), eq(assistantTable.ownerId, ownerId), eq(assistantTable.draftRevision, identity.draftRevision)]
@@ -459,6 +462,25 @@ export class PostgresStore implements Store {
     return rows.map((row) => this.mapDevice(row, now))
   }
 
+  async listDiscoverableDevices(ownerId: string): Promise<DiscoverableDevice[]> {
+    void ownerId
+    const now = this.clock()
+    const cutoff = new Date(now.getTime() - this.presenceTtlMs)
+    const devices = await this.handle.db.select().from(deviceTable).where(and(isNull(deviceTable.ownerId), isNull(deviceTable.assistantId), eq(deviceTable.onlineState, 'online'), gt(deviceTable.lastSeenAt, cutoff))).orderBy(desc(deviceTable.lastSeenAt))
+    if (!devices.length) return []
+    const challenges = await this.handle.db.select().from(pairingChallengeTable).where(and(inArray(pairingChallengeTable.deviceId, devices.map((device) => device.id)), eq(pairingChallengeTable.state, 'pending'), gt(pairingChallengeTable.expiresAt, now)))
+    const latest = new Map<string, typeof challenges[number]>()
+    for (const challenge of challenges) {
+      const current = latest.get(challenge.deviceId)
+      if (!current || challenge.expiresAt.getTime() > current.expiresAt.getTime()) latest.set(challenge.deviceId, challenge)
+    }
+    return devices.flatMap((device) => {
+      const challenge = latest.get(device.id)
+      if (!challenge) return []
+      return [{ id: device.id, maskedMac: device.maskedMac, board: device.board, firmwareVersion: device.firmwareVersion, onlineState: 'online' as const, lastSeenAt: device.lastSeenAt.toISOString(), pairingExpiresAt: challenge.expiresAt.toISOString() }]
+    })
+  }
+
   async reportDevicePresence(value: DevicePresenceInput): Promise<DevicePresenceResult> {
     const now = new Date()
     const [existing] = await this.handle.db.select().from(deviceTable).where(and(eq(deviceTable.identityHash, value.identityHash), eq(deviceTable.clientIdHash, value.clientIdHash))).limit(1)
@@ -490,6 +512,15 @@ export class PostgresStore implements Store {
         updatedAt: now,
       })
     }
+    if (value.onlineState === 'online' && !existing?.ownerId && !existing?.assistantId && value.pairingCodeHash && /^[0-9a-f]{64}$/i.test(value.pairingCodeHash)) {
+      const expiresAt = new Date(now.getTime() + 10 * 60 * 1000)
+      const [pending] = await this.handle.db.select().from(pairingChallengeTable).where(and(eq(pairingChallengeTable.deviceId, deviceId), eq(pairingChallengeTable.state, 'pending'))).orderBy(desc(pairingChallengeTable.createdAt)).limit(1)
+      if (pending) {
+        await this.handle.db.update(pairingChallengeTable).set({ codeHash: value.pairingCodeHash.toLowerCase(), attempts: 0, expiresAt }).where(eq(pairingChallengeTable.id, pending.id))
+      } else {
+        await this.handle.db.insert(pairingChallengeTable).values({ id: randomUUID(), deviceId, codeHash: value.pairingCodeHash.toLowerCase(), state: 'pending', attempts: 0, expiresAt, createdAt: now, usedAt: null })
+      }
+    }
     return { id: deviceId, paired: Boolean(existing?.ownerId && existing.assistantId), onlineState: value.onlineState, lastSeenAt: now.toISOString() }
   }
 
@@ -509,12 +540,14 @@ export class PostgresStore implements Store {
     return { id, deviceId, verificationCode, expiresAt: expiresAt.toISOString() }
   }
 
-  async pairDevice(ownerId: string, value: { assistantId: string; verificationCode: string; displayName?: string }): Promise<Device> {
+  async pairDevice(ownerId: string, value: { assistantId: string; deviceId?: string; verificationCode: string; displayName?: string }): Promise<Device> {
     return this.handle.db.transaction(async (tx) => {
       const [assistant] = await tx.select({ id: assistantTable.id }).from(assistantTable).where(and(eq(assistantTable.id, value.assistantId), eq(assistantTable.ownerId, ownerId))).limit(1)
       if (!assistant) throw problem('NOT_FOUND', 'Assistant not found', 404)
       const codeHash = hashPairingCode(value.verificationCode.trim().toUpperCase())
-      const [challenge] = await tx.select().from(pairingChallengeTable).where(and(eq(pairingChallengeTable.codeHash, codeHash), eq(pairingChallengeTable.state, 'pending'), lt(pairingChallengeTable.attempts, 5), gt(pairingChallengeTable.expiresAt, new Date()))).limit(1)
+      const challengeConditions = [eq(pairingChallengeTable.codeHash, codeHash), eq(pairingChallengeTable.state, 'pending'), lt(pairingChallengeTable.attempts, 5), gt(pairingChallengeTable.expiresAt, new Date())]
+      if (value.deviceId) challengeConditions.push(eq(pairingChallengeTable.deviceId, value.deviceId))
+      const [challenge] = await tx.select().from(pairingChallengeTable).where(and(...challengeConditions)).limit(1)
       if (!challenge) throw problem('PAIRING_CODE_INVALID', 'Pairing code is invalid or expired', 422)
       const [device] = await tx.select().from(deviceTable).where(eq(deviceTable.id, challenge.deviceId)).limit(1)
       if (!device || (device.ownerId && device.ownerId !== ownerId)) throw problem('PAIRING_CODE_INVALID', 'Pairing device is already owned', 422)

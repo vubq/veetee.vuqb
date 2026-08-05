@@ -75,6 +75,8 @@ export interface DevicePresenceInput {
   firmwareVersion: string
   board: string
   onlineState: 'online' | 'offline'
+  /** SHA-256 of the six-digit code displayed by firmware; never plaintext. */
+  pairingCodeHash?: string
 }
 
 export interface DevicePresenceResult {
@@ -82,6 +84,16 @@ export interface DevicePresenceResult {
   paired: boolean
   onlineState: 'online' | 'offline'
   lastSeenAt: string
+}
+
+export interface DiscoverableDevice {
+  id: string
+  maskedMac: string
+  board: string
+  firmwareVersion: string
+  onlineState: 'online' | 'offline'
+  lastSeenAt: string
+  pairingExpiresAt: string | null
 }
 
 export const DEFAULT_DEVICE_ONLINE_TTL_SECONDS = 120
@@ -236,6 +248,12 @@ export interface RuntimeSnapshot {
   [key: string]: unknown
 }
 
+export const DEFAULT_CONVERSATION_POLICY: Record<string, unknown> = {
+  continuous: false,
+  idleTimeoutMs: 180000,
+  idleAlert: { status: 'ok', message: '', emotion: 'neutral' },
+}
+
 /*
  * A snapshot carries both the runtime envelope and assistant-owned policy. Keep
  * the envelope keys out of `role`, but preserve every additive policy field so
@@ -341,9 +359,10 @@ export interface Store {
   updateSecretReference(ownerId: string, id: string, value: SecretReferenceUpdate, ifMatch: string): Promise<SecretReference>
   deleteSecretReference(ownerId: string, id: string, ifMatch: string): Promise<void>
   listDevices(ownerId: string, assistantId: string): Promise<Device[]>
+  listDiscoverableDevices(ownerId: string): Promise<DiscoverableDevice[]>
   reportDevicePresence(value: DevicePresenceInput): Promise<DevicePresenceResult>
   createPairingChallenge(value: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string }): Promise<PairingChallenge>
-  pairDevice(ownerId: string, value: { assistantId: string; verificationCode: string; displayName?: string }): Promise<Device>
+  pairDevice(ownerId: string, value: { assistantId: string; deviceId?: string; verificationCode: string; displayName?: string }): Promise<Device>
   unlinkDevice(ownerId: string, id: string, ifMatch: string): Promise<void>
   getRetentionPolicy(ownerId: string): Promise<RetentionPolicy>
   updateRetentionPolicy(ownerId: string, value: Pick<RetentionPolicy, 'captureTranscript' | 'transcriptDays' | 'captureAudio' | 'audioDays'>, ifMatch: string): Promise<RetentionPolicy>
@@ -585,6 +604,7 @@ export class InMemoryStore implements Store {
       speech: (current.role.speech as Record<string, unknown> | undefined) ?? {},
       providers: resolvedProviders,
       wire: { profile: 'ws-v3', uplinkSampleRate: 16000, downlinkSampleRate: 24000, frameDurationMs: 60 },
+      conversation: isRecord(current.role.conversation) ? structuredClone(current.role.conversation) : structuredClone(DEFAULT_CONVERSATION_POLICY),
     }
     current.publishedRevision = revision
     current.updatedAt = new Date().toISOString()
@@ -671,6 +691,21 @@ export class InMemoryStore implements Store {
       .map((item) => publicDevice(item, now, this.presenceTtlMs))
   }
 
+  async listDiscoverableDevices(ownerId: string): Promise<DiscoverableDevice[]> {
+    void ownerId
+    const now = this.clock()
+    const result: DiscoverableDevice[] = []
+    for (const device of this.devices.values()) {
+      if (device.ownerId || device.assistantId || !isPresenceFresh(device.lastSeenAt, device.onlineState, now, this.presenceTtlMs)) continue
+      const challenge = [...this.pairingChallenges.values()]
+        .filter((item) => item.deviceId === device.id && item.state === 'pending' && Date.parse(item.expiresAt) > now.getTime())
+        .sort((left, right) => Date.parse(right.expiresAt) - Date.parse(left.expiresAt))[0]
+      if (!challenge) continue
+      result.push({ id: device.id, maskedMac: device.maskedMac, board: device.board, firmwareVersion: device.firmwareVersion, onlineState: 'online', lastSeenAt: device.lastSeenAt, pairingExpiresAt: challenge.expiresAt })
+    }
+    return result.sort((left, right) => Date.parse(right.lastSeenAt) - Date.parse(left.lastSeenAt))
+  }
+
   async reportDevicePresence(value: DevicePresenceInput): Promise<DevicePresenceResult> {
     const now = this.clock().toISOString()
     const existing = [...this.devices.values()].find((item) => item.identityHash === value.identityHash && item.clientIdHash === value.clientIdHash)
@@ -686,6 +721,18 @@ export class InMemoryStore implements Store {
     device.onlineState = value.onlineState
     device.lastSeenAt = now
     this.devices.set(device.id, device)
+    if (value.onlineState === 'online' && !device.ownerId && !device.assistantId && value.pairingCodeHash && /^[0-9a-f]{64}$/i.test(value.pairingCodeHash)) {
+      const expiresAt = new Date(this.clock().getTime() + 10 * 60 * 1000).toISOString()
+      const pending = [...this.pairingChallenges.values()].find((item) => item.deviceId === device.id && item.state === 'pending')
+      if (pending) {
+        pending.codeHash = value.pairingCodeHash.toLowerCase()
+        pending.expiresAt = expiresAt
+        pending.attempts = 0
+      } else {
+        const id = randomUUID()
+        this.pairingChallenges.set(id, { id, deviceId: device.id, codeHash: value.pairingCodeHash.toLowerCase(), expiresAt, attempts: 0, state: 'pending' })
+      }
+    }
     return { id: device.id, paired: Boolean(device.ownerId && device.assistantId), onlineState: device.onlineState, lastSeenAt: now }
   }
 
@@ -710,12 +757,12 @@ export class InMemoryStore implements Store {
     return { id, deviceId: device.id, verificationCode, expiresAt }
   }
 
-  async pairDevice(ownerId: string, value: { assistantId: string; verificationCode: string; displayName?: string }): Promise<Device> {
+  async pairDevice(ownerId: string, value: { assistantId: string; deviceId?: string; verificationCode: string; displayName?: string }): Promise<Device> {
     const assistant = this.assistants.get(value.assistantId)
     if (!assistant || assistant.ownerId !== ownerId) throw problem('NOT_FOUND', 'Assistant not found', 404)
     const codeHash = hashPairingCode(value.verificationCode.trim().toUpperCase())
     const now = this.clock().getTime()
-    const challenge = [...this.pairingChallenges.values()].find((item) => item.state === 'pending' && item.attempts < 5 && Date.parse(item.expiresAt) > now && item.codeHash === codeHash)
+    const challenge = [...this.pairingChallenges.values()].find((item) => item.state === 'pending' && item.attempts < 5 && Date.parse(item.expiresAt) > now && item.codeHash === codeHash && (!value.deviceId || item.deviceId === value.deviceId))
     if (!challenge) throw problem('PAIRING_CODE_INVALID', 'Pairing code is invalid or expired', 422)
     const device = this.devices.get(challenge.deviceId)
     if (!device) throw problem('PAIRING_CODE_INVALID', 'Pairing device is unavailable', 422)

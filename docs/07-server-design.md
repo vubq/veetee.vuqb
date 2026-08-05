@@ -416,6 +416,16 @@ Sink có local spool bounded nếu Manager API unavailable. Khi full, ưu tiên 
   configurable `alert` với `code="NO_SPEECH_TIMEOUT"`. Watchdog sở hữu bởi
   `(session_id, turn_id, generation)` và bị hủy khi có speech/abort/stop/endpoint/
   disconnect/turn mới.
+- `snapshot.conversation` là policy additive cho phiên hội thoại liên tục. Khi
+  `continuous=true`, `_finish_turn` release turn lease rồi arm một bounded
+  `conversation_idle` task và gửi `listen.ready mode:"auto"`; audio đầu tiên
+  sau ready mở turn auto mới trên cùng WebSocket. Mọi generation/cancellation
+  boundary đều hủy task cũ trước khi tạo task mới.
+- `conversation.idleTimeoutMs` (1.000–86.400.000 ms) chỉ đo im lặng giữa các
+  turn, không cắt LLM/TTS đang chạy hay giới hạn số lượt. Hết hạn gửi
+  `alert.code="CONVERSATION_IDLE_TIMEOUT"`, clear armed state và để firmware
+  re-arm wake word. `tts/stop.continue_listening` và `listen.ready` đều optional
+  additive nên peer cũ vẫn drain về state cũ.
 - Disconnect luôn cancel task tree và join cleanup; soak test theo dõi live task count, file descriptor, RSS và VRAM.
 - Baseline long-answer soak dùng deterministic long-text fixture có checksum để
   drive segmenter → VieNeu → Opus → paced egress trong ≥ 30 phút audio. Nó không

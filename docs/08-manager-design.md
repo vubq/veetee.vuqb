@@ -41,8 +41,10 @@ microservice, không thêm message broker và không thiết kế multi-region �
 - Extension catalog và per-assistant enable/config.
 - Conversation sessions, transcript, audio play/download, tool-call detail,
   latency và retention notice.
-- Device pairing bằng verification code, masked MAC, online/version/last
-  conversation, OTA toggle, unlink, display/theme entry.
+- Device pairing bằng mã sáu chữ số do firmware sở hữu, danh sách discoverable
+  online, masked MAC, online/version/last conversation, OTA toggle, unlink,
+  display/theme entry. Plaintext mã chỉ xuất hiện trên LCD/portal và ô nhập Web;
+  control plane chỉ nhận SHA-256 hash.
 - Firmware asset wizard: chip, display dimensions, wake word, font, subtitle,
   preview, build và download `assets.bin`.
 

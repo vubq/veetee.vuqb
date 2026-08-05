@@ -57,6 +57,38 @@ def test_barge_in_policy_defaults_cooldown_for_device_duplex(tmp_path):
     assert policy.cooldown_ms == 2_000
 
 
+def test_conversation_policy_is_bounded_and_configurable(tmp_path):
+    import json
+    from veetee_server.config import load_snapshot
+
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    raw["conversation"] = {
+        "continuous": True,
+        "idleTimeoutMs": 180000,
+        "idleAlert": {"status": "ok", "message": "Mình sẽ chờ bạn gọi lại.", "emotion": "neutral"},
+    }
+    path = tmp_path / "conversation.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    policy = load_snapshot(path).conversation_policy()
+
+    assert policy.continuous is True
+    assert policy.idle_timeout_ms == 180000
+
+
+def test_conversation_policy_rejects_empty_idle_message_when_enabled(tmp_path):
+    import json
+    from veetee_server.config import ConfigurationError, load_snapshot
+
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    raw["conversation"] = {"continuous": True, "idleAlert": {"message": ""}}
+    path = tmp_path / "conversation-invalid.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="conversation.idleAlert.message"):
+        load_snapshot(path).conversation_policy()
+
+
 @pytest.mark.parametrize("field,value", [("enabled", "bad"), ("deviceDuplex", 1), ("minSpeechFrames", 0), ("minSpeechFrames", 33), ("cooldownMs", -1), ("cooldownMs", 5001)])
 def test_barge_in_policy_rejects_invalid_values(tmp_path, field, value):
     import json

@@ -83,6 +83,11 @@ export function createRoleConfigFixtures(): Record<
           noSpeechTimeoutMs: 5000,
           noSpeechAlert: { status: 'warning', message: '', emotion: 'neutral' },
         },
+        conversation: {
+          continuous: true,
+          idleTimeoutMs: 180000,
+          idleAlert: { status: 'ok', message: 'Mình sẽ chờ bạn gọi lại.', emotion: 'neutral' },
+        },
         progress: { enabled: true, acknowledgementId: 'processing', deadlineMs: 900 },
         segmentation: { minimumCharacters: 2, maximumCharacters: 120 },
         bargeIn: { minSpeechFrames: 2 },
@@ -114,6 +119,11 @@ export function createRoleConfigFixtures(): Record<
           enabled: false,
           noSpeechTimeoutMs: 5000,
           noSpeechAlert: { status: 'warning', message: '', emotion: 'neutral' },
+        },
+        conversation: {
+          continuous: true,
+          idleTimeoutMs: 180000,
+          idleAlert: { status: 'ok', message: 'Mình sẽ chờ bạn gọi lại.', emotion: 'neutral' },
         },
       },
       revision: 2,

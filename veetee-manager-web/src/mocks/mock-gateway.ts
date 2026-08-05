@@ -8,6 +8,7 @@ import type {
   CreateAssistantInput,
   DemoResetSummary,
   DeviceCard,
+  DiscoverableDevice,
   FieldProblem,
   GatewayFailure,
   GatewayProblem,
@@ -658,6 +659,16 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
       .filter((device) => device.assistantId === assistantId)
       .map((device) => clone(device))
     return this.success({ items, total: items.length }, request)
+  }
+
+  async listDiscoverableDevices(): Promise<GatewayResult<Page<DiscoverableDevice>, OfflineProblem>> {
+    const request = await this.begin('read')
+    const offline = this.offlineProblem(request.requestId)
+    if (offline) return this.failure(offline, request)
+    return this.success({
+      items: [{ id: '73333333-3333-4333-8333-333333333333', maskedMac: 'A4:CF:12:••:••:4F', board: 'ESP32-S3 N16R8', firmwareVersion: '0.1.0-preview.4', onlineState: 'online', lastSeenAt: this.now(), pairingExpiresAt: '2026-08-03T09:10:00.000Z' }],
+      total: 1,
+    }, request)
   }
 
   async pairDevice(

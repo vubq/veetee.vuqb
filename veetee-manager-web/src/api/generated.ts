@@ -350,6 +350,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/devices/discoverable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/v1/devices/discoverable */
+        get: operations["getApiV1DevicesDiscoverable"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/devices/pair": {
         parameters: {
             query?: never;
@@ -3419,6 +3436,15 @@ export interface operations {
                                 emotion?: string;
                             };
                         };
+                        conversation?: {
+                            continuous?: boolean;
+                            idleTimeoutMs?: number;
+                            idleAlert?: {
+                                status?: string;
+                                message?: string;
+                                emotion?: string;
+                            };
+                        };
                         tools?: {
                             [key: string]: unknown;
                         }[];
@@ -3613,6 +3639,15 @@ export interface operations {
                             emotion: string;
                         };
                     };
+                    conversation?: {
+                        continuous?: boolean;
+                        idleTimeoutMs?: number;
+                        idleAlert?: {
+                            status?: string;
+                            message?: string;
+                            emotion?: string;
+                        };
+                    };
                     tools?: {
                         [key: string]: unknown;
                     }[];
@@ -3668,6 +3703,15 @@ export interface operations {
                             enabled?: boolean;
                             noSpeechTimeoutMs?: number;
                             noSpeechAlert?: {
+                                status?: string;
+                                message?: string;
+                                emotion?: string;
+                            };
+                        };
+                        conversation?: {
+                            continuous?: boolean;
+                            idleTimeoutMs?: number;
+                            idleAlert?: {
                                 status?: string;
                                 message?: string;
                                 emotion?: string;
@@ -4716,6 +4760,164 @@ export interface operations {
             };
         };
     };
+    getApiV1DevicesDiscoverable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            id: string;
+                            maskedMac: string;
+                            board: string;
+                            firmwareVersion: string;
+                            /** @enum {string} */
+                            onlineState: "online" | "offline";
+                            lastSeenAt: string;
+                            pairingExpiresAt: null | string;
+                        }[];
+                        total: number;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Domain validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Precondition required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Unexpected server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        type?: string;
+                        code: string;
+                        title?: string;
+                        detail?: string;
+                    };
+                };
+            };
+        };
+    };
     postApiV1DevicesPair: {
         parameters: {
             query?: never;
@@ -4727,7 +4929,8 @@ export interface operations {
             content: {
                 "application/json": {
                     assistantId: string;
-                    verificationCode: string;
+                    deviceId?: string;
+                    verificationCode: string | unknown | unknown;
                     displayName?: string;
                 };
             };
@@ -6489,6 +6692,7 @@ export interface operations {
                     firmwareVersion: string;
                     /** @enum {string} */
                     onlineState: "online" | "offline";
+                    pairingCodeHash?: string;
                 };
             };
         };

@@ -45,7 +45,7 @@ const actionError = ref('')
 const stateHeading = ref<HTMLElement | null>(null)
 const actionErrorHeading = ref<HTMLElement | null>(null)
 const progressValid = ref(true)
-const advancedSectionsOpen = reactive({ limits: false, autoTurn: false, bargeIn: false, progress: false })
+const advancedSectionsOpen = reactive({ limits: false, autoTurn: false, conversation: false, bargeIn: false, progress: false })
 let loadGeneration = 0
 let voiceGeneration = 0
 
@@ -67,6 +67,15 @@ function toDraft(config: RoleConfig): RoleConfigDraft {
         status: config.autoTurn?.noSpeechAlert?.status ?? 'warning',
         message: config.autoTurn?.noSpeechAlert?.message ?? '',
         emotion: config.autoTurn?.noSpeechAlert?.emotion ?? 'neutral',
+      },
+    },
+    conversation: {
+      continuous: config.conversation?.continuous ?? true,
+      idleTimeoutMs: config.conversation?.idleTimeoutMs ?? 180000,
+      idleAlert: {
+        status: config.conversation?.idleAlert.status ?? 'ok',
+        message: config.conversation?.idleAlert.message ?? 'Mình sẽ chờ bạn gọi lại.',
+        emotion: config.conversation?.idleAlert.emotion ?? 'neutral',
       },
     },
     ...(config.progress ? { progress: clonePolicy(config.progress) } : {}),
@@ -123,6 +132,15 @@ const noSpeechAlertInvalid = computed(() => {
   return !alert?.status.trim() || alert.status.length > 32 || !alert.message.trim() || alert.message.length > 512 || !alert.emotion.trim() || alert.emotion.length > 64
 })
 const autoTurnError = computed(() => Boolean(draft.value?.autoTurn.enabled && (noSpeechTimeoutInvalid.value || noSpeechAlertInvalid.value)))
+const conversationTimeoutInvalid = computed(() => {
+  const value = draft.value?.conversation?.idleTimeoutMs
+  return value === undefined || !Number.isInteger(value) || value < 1000 || value > 86400000
+})
+const conversationAlertInvalid = computed(() => {
+  const alert = draft.value?.conversation?.idleAlert
+  return !alert?.status.trim() || !alert.message.trim() || alert.status.length > 32 || alert.message.length > 512 || alert.emotion.length > 64
+})
+const conversationError = computed(() => Boolean(draft.value?.conversation?.continuous && (conversationTimeoutInvalid.value || conversationAlertInvalid.value)))
 const bargeInError = computed(() => {
   const value = draft.value?.bargeIn?.minSpeechFrames
   return value === undefined || !Number.isInteger(value) || value < 1 || value > 32
@@ -250,6 +268,7 @@ async function save() {
         speech: { ...draft.value.speech },
         admission: { ...draft.value.admission },
         autoTurn: { ...draft.value.autoTurn, noSpeechAlert: { ...draft.value.autoTurn.noSpeechAlert } },
+        ...(draft.value.conversation ? { conversation: clonePolicy(draft.value.conversation) } : {}),
         ...(draft.value.progress ? { progress: clonePolicy(draft.value.progress) } : {}),
         ...(draft.value.segmentation ? { segmentation: clonePolicy(draft.value.segmentation) } : {}),
         bargeIn: clonePolicy(draft.value.bargeIn),
@@ -650,6 +669,61 @@ onMounted(load)
     </FormSection>
 
     <FormSection
+      title="Hội thoại liên tục"
+      description="Sau mỗi câu trả lời, robot tiếp tục nghe trong cùng phiên. Phiên chỉ ngủ sau khoảng im lặng bạn chọn."
+      collapsible
+      :open="advancedSectionsOpen.conversation"
+      @update:open="advancedSectionsOpen.conversation = $event"
+    >
+      <template #trailing>
+        <VtSwitch
+          v-model="draft.conversation!.continuous"
+          label="Tiếp tục nghe"
+        />
+      </template>
+      <div class="two-columns">
+        <VtFormField
+          label="Thời gian im lặng (mili giây)"
+          for-id="role-conversation-idle-timeout"
+          :error="draft.conversation!.continuous && conversationTimeoutInvalid ? 'Chọn từ 1.000 đến 86.400.000 ms.' : undefined"
+          hint="Mặc định 180.000 ms (3 phút); không giới hạn số lượt trong phiên."
+        >
+          <VtInput
+            id="role-conversation-idle-timeout"
+            type="number"
+            autocomplete="off"
+            min="1000"
+            max="86400000"
+            step="1000"
+            inputmode="numeric"
+            :model-value="String(draft.conversation!.idleTimeoutMs)"
+            name="conversation-idle-timeout-ms"
+            :invalid="draft.conversation!.continuous && conversationTimeoutInvalid"
+            :disabled="!draft.conversation!.continuous"
+            aria-label="Thời gian im lặng"
+            @update:model-value="draft!.conversation!.idleTimeoutMs = Number($event)"
+          />
+        </VtFormField>
+        <VtFormField
+          label="Thông báo khi phiên ngủ"
+          for-id="role-conversation-idle-message"
+          :error="draft.conversation!.continuous && conversationAlertInvalid ? 'Nhập thông báo hợp lệ (tối đa 512 ký tự).' : undefined"
+          hint="Câu này cũng là cấu hình locale, có thể đổi theo ngôn ngữ."
+        >
+          <VtInput
+            id="role-conversation-idle-message"
+            v-model="draft.conversation!.idleAlert.message"
+            name="conversation-idle-message"
+            autocomplete="off"
+            :invalid="draft.conversation!.continuous && conversationAlertInvalid"
+            :disabled="!draft.conversation!.continuous"
+            aria-label="Thông báo khi phiên ngủ"
+          />
+        </VtFormField>
+      </div>
+    </FormSection>
+
+    <FormSection
       title="Ngắt khi robot đang nói"
       description="Cho phép robot dừng câu trả lời khi nhận ra bạn đang nói. Mặc định ưu tiên ổn định để tránh nghe nhầm."
       collapsible
@@ -748,7 +822,7 @@ onMounted(load)
       <VtButton
         type="submit"
         variant="primary"
-        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError) || autoTurnError || bargeInError || bargeInCooldownError || !progressValid"
+        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError) || autoTurnError || conversationError || bargeInError || bargeInCooldownError || !progressValid"
         :loading="saving"
       >
         <template #leading>

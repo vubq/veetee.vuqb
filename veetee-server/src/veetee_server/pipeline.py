@@ -31,6 +31,10 @@ class Turn:
     sequence: int = 1
     started_at: str = ""
     conversation_started_at: str = ""
+    # True when this turn was opened by the continuous-listening arm that
+    # follows a previous answer. It lets a no-speech timeout recover without
+    # confusing the initial wake-word turn with a follow-up turn.
+    continuous_followup: bool = False
     started_monotonic: float = field(default_factory=time.perf_counter)
     ended_at: str | None = None
     state: str = "completed"
@@ -382,7 +386,22 @@ class TurnPipeline:
         if not self._tts_started or self._tts_stop_sent:
             return
         self._tts_stop_sent = True
-        await self._send_text(control_message("tts", session_id=self.session_id, state="stop", reason=reason, turn_id=self.turn.turn_id))
+        message = control_message(
+            "tts",
+            session_id=self.session_id,
+            state="stop",
+            reason=reason,
+            turn_id=self.turn.turn_id,
+        )
+        try:
+            continuous = self.snapshot.conversation_policy().continuous
+        except Exception:  # noqa: BLE001 - malformed optional policy is handled at session admission
+            continuous = False
+        if continuous and self.turn.mode in {"auto", "realtime", "manual"} and reason == "complete":
+            # Additive field: older firmware ignores it and still follows the
+            # ordinary tts stop path.
+            message["continue_listening"] = True
+        await self._send_text(message)
 
     def _memory_answer_limit(self) -> int:
         providers = self.snapshot.raw.get("providers")

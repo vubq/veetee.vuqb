@@ -4,6 +4,7 @@ import type {
   CreateAssistantInput,
   DemoResetSummary,
   DeviceCard,
+  DiscoverableDevice,
   ConversationDetail,
   ConversationExport,
   RetentionDeleteJob,
@@ -146,6 +147,8 @@ export interface DeviceGateway {
   listDevices(
     assistantId: string,
   ): Promise<GatewayResult<Page<DeviceCard>, NotFoundProblem>>
+
+  listDiscoverableDevices(): Promise<GatewayResult<Page<DiscoverableDevice>, OfflineProblem>>
 
   pairDevice(
     input: PairDeviceInput,

@@ -72,6 +72,21 @@ const roleBodySchema = {
         },
       },
     },
+    conversation: {
+      type: 'object', additionalProperties: false, maxProperties: 3,
+      properties: {
+        continuous: { type: 'boolean' },
+        idleTimeoutMs: { type: 'integer', minimum: 1000, maximum: 86400000 },
+        idleAlert: {
+          type: 'object', additionalProperties: false, maxProperties: 3,
+          properties: {
+            status: { type: 'string', maxLength: 32 },
+            message: { type: 'string', maxLength: 512 },
+            emotion: { type: 'string', maxLength: 64 },
+          },
+        },
+      },
+    },
     tools: { type: 'array', maxItems: 128, items: { type: 'object', additionalProperties: true } },
     memoryEnabled: { type: 'boolean' },
   },
@@ -123,6 +138,13 @@ const roleResponseSchema = {
             emotion: { type: 'string' },
           },
         },
+      },
+    },
+    conversation: {
+      type: 'object', additionalProperties: false,
+      properties: {
+        continuous: { type: 'boolean' }, idleTimeoutMs: { type: 'integer', minimum: 1000, maximum: 86400000 },
+        idleAlert: { type: 'object', additionalProperties: false, properties: { status: { type: 'string' }, message: { type: 'string' }, emotion: { type: 'string' } } },
       },
     },
     tools: { type: 'array', items: { type: 'object', additionalProperties: true } },
@@ -238,7 +260,7 @@ const deviceResponseSchema = {
 } as const
 const pairDeviceBodySchema = {
   type: 'object', additionalProperties: false, required: ['assistantId', 'verificationCode'],
-  properties: { assistantId: { type: 'string', minLength: 1, maxLength: 128 }, verificationCode: { type: 'string', minLength: 7, maxLength: 7 }, displayName: { type: 'string', minLength: 1, maxLength: 80 } },
+  properties: { assistantId: { type: 'string', minLength: 1, maxLength: 128 }, deviceId: { type: 'string', minLength: 1, maxLength: 128 }, verificationCode: { type: 'string', anyOf: [{ pattern: '^\\d{6}$' }, { pattern: '^VT-\\d{4}$' }], minLength: 6, maxLength: 7 }, displayName: { type: 'string', minLength: 1, maxLength: 80 } },
 } as const
 const resourceIdParamsSchema = {
   type: 'object', additionalProperties: false, required: ['id'],
@@ -261,6 +283,14 @@ const devicePresenceBodySchema = {
     board: { type: 'string', minLength: 1, maxLength: 120 },
     firmwareVersion: { type: 'string', minLength: 1, maxLength: 80 },
     onlineState: { type: 'string', enum: ['online', 'offline'] },
+    pairingCodeHash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+  },
+} as const
+const discoverableDeviceResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'maskedMac', 'board', 'firmwareVersion', 'onlineState', 'lastSeenAt', 'pairingExpiresAt'],
+  properties: {
+    id: { type: 'string' }, maskedMac: { type: 'string' }, board: { type: 'string' }, firmwareVersion: { type: 'string' },
+    onlineState: { type: 'string', enum: ['online', 'offline'] }, lastSeenAt: { type: 'string' }, pairingExpiresAt: { type: ['string', 'null'] },
   },
 } as const
 const devicePresenceResponseSchema = {
@@ -731,7 +761,11 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     const items = await store.listDevices(owner(request), request.params.id)
     return { items, total: items.length }
   })
-  app.post<{ Body: { assistantId: string; verificationCode: string; displayName?: string } }>('/api/v1/devices/pair', { schema: { body: pairDeviceBodySchema, response: { 201: deviceResponseSchema } } }, async (request, reply) => {
+  app.get('/api/v1/devices/discoverable', { schema: { response: { 200: listResponse(discoverableDeviceResponseSchema, true) } } }, async (request) => {
+    const items = await store.listDiscoverableDevices(owner(request))
+    return { items, total: items.length }
+  })
+  app.post<{ Body: { assistantId: string; deviceId?: string; verificationCode: string; displayName?: string } }>('/api/v1/devices/pair', { schema: { body: pairDeviceBodySchema, response: { 201: deviceResponseSchema } } }, async (request, reply) => {
     try {
       const device = await store.pairDevice(owner(request), request.body)
       return reply.code(201).send(device)
@@ -806,7 +840,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     const challenge = await store.createPairingChallenge(request.body)
     return reply.code(201).send(challenge)
   })
-  app.post<{ Body: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string; onlineState: 'online' | 'offline' } }>('/internal/v1/devices/presence', { schema: {
+  app.post<{ Body: { identityHash: string; clientIdHash: string; maskedMac: string; board: string; firmwareVersion: string; onlineState: 'online' | 'offline'; pairingCodeHash?: string } }>('/internal/v1/devices/presence', { schema: {
     body: devicePresenceBodySchema,
     response: { 202: devicePresenceResponseSchema, 401: problemBodySchema },
   } }, async (request, reply) => {

@@ -8,10 +8,12 @@
 #include "veetee_wake.h"
 #include "veetee_wire_guard.h"
 #include "veetee_ptt.h"
+#include "veetee_pairing.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "cJSON.h"
 #include "driver/gpio.h"
@@ -22,12 +24,17 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "esp_http_server.h"
+#include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "psa/crypto.h"
+#include "lwip/inet.h"
+#include "lwip/sockets.h"
 
 #ifndef CONFIG_VEETEE_PROTOCOL_PROFILE
 #define CONFIG_VEETEE_PROTOCOL_PROFILE 3
@@ -49,6 +56,12 @@
 #endif
 #ifndef CONFIG_VEETEE_WIFI_OVERRIDE_NVS
 #define CONFIG_VEETEE_WIFI_OVERRIDE_NVS 0
+#endif
+#ifndef CONFIG_VEETEE_AP_SSID_PREFIX
+#define CONFIG_VEETEE_AP_SSID_PREFIX "Veetee"
+#endif
+#ifndef CONFIG_VEETEE_AP_CHANNEL
+#define CONFIG_VEETEE_AP_CHANNEL 6
 #endif
 #ifndef CONFIG_VEETEE_LCD_ENABLED
 #define CONFIG_VEETEE_LCD_ENABLED 0
@@ -197,12 +210,21 @@ typedef struct {
     SemaphoreHandle_t audio_encoder_lock;
     SemaphoreHandle_t audio_decoder_lock;
     EventGroupHandle_t wifi_events;
+    esp_netif_t *sta_netif;
+    esp_netif_t *ap_netif;
+    httpd_handle_t provisioning_http;
+    TaskHandle_t provisioning_dns_task;
     volatile bool capture_active;
     volatile bool duplex_capture;
     volatile bool playback_busy;
     volatile bool wake_rearm_pending;
+    volatile bool continuous_capture_pending;
     volatile bool stop_requested;
     volatile bool wifi_stop_requested;
+    volatile bool provisioning_active;
+    volatile bool provisioning_submitted;
+    char pairing_code[VT_PAIRING_CODE_LENGTH + 1U];
+    char pairing_code_hash[65];
     bool tts_stop_pending;
     bool wake_auto_capture;
     volatile vt_interaction_mode_t interaction_mode;
@@ -213,6 +235,7 @@ typedef struct {
 } vt_app_t;
 
 #define VT_WIFI_CONNECTED_BIT BIT0
+#define VT_WIFI_PROVISIONED_BIT BIT1
 #define VT_WS_RETRY_DELAY_MS 2000
 #define VT_PTT_POLL_MS 10
 #define VT_PTT_DEBOUNCE_SAMPLES 3
@@ -221,6 +244,13 @@ typedef struct {
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static int wifi_start(vt_app_t *app);
+static int provisioning_start(vt_app_t *app);
+static void provisioning_stop(vt_app_t *app);
+static int pairing_load_or_create(vt_app_t *app);
+static int pairing_hash(const char *code, char output[65]);
+static esp_err_t provisioning_index_handler(httpd_req_t *request);
+static esp_err_t provisioning_save_handler(httpd_req_t *request);
+static void provisioning_dns_task(void *context);
 static void websocket_text_callback(const cJSON *message, void *context);
 static void websocket_audio_callback(const uint8_t *payload, size_t payload_size, void *context);
 static void network_task(void *context);
@@ -275,6 +305,7 @@ static void clear_pending_tts_stop(vt_app_t *app) {
     }
     app->tts_stop_pending = false;
     app->wake_rearm_pending = false;
+    app->continuous_capture_pending = false;
     app->duplex_capture = false;
     app->tts_turn_id[0] = '\0';
     xSemaphoreGive(app->state_lock);
@@ -292,7 +323,7 @@ static bool schedule_graceful_tts_stop(vt_app_t *app, vt_interaction_mode_t mode
         app->pending_tts_stop_mode = mode;
         /* Only an auto interaction needs a fresh detector after draining.
            A manual PTT turn never consumed the detector in the first place. */
-        app->wake_rearm_pending = mode == VT_INTERACTION_AUTO;
+        app->wake_rearm_pending = mode == VT_INTERACTION_AUTO && !app->continuous_capture_pending;
     }
     xSemaphoreGive(app->state_lock);
     if (!speaking) return false;
@@ -304,6 +335,7 @@ static void service_playback_idle(vt_app_t *app) {
     if (app == NULL || app->state_lock == NULL || !playback_is_idle(app)) return;
 
     bool request_arm = false;
+    bool start_continuous_capture = false;
     bool stop_applied = false;
     vt_device_state_t stop_state = VT_DEVICE_IDLE;
     uint32_t stop_generation = 0U;
@@ -320,9 +352,22 @@ static void service_playback_idle(vt_app_t *app) {
             if (stop_applied) {
                 stop_state = app->state.state;
                 stop_generation = app->state.generation;
-                request_arm = mode == VT_INTERACTION_AUTO;
+                if (app->continuous_capture_pending) {
+                    app->continuous_capture_pending = false;
+                    start_continuous_capture = true;
+                } else {
+                    request_arm = mode == VT_INTERACTION_AUTO;
+                }
             }
         }
+    }
+
+    /* A provider may finish without producing a TTS stream. In that case
+       there is no speaking/drain barrier, so `listen.ready` itself is the
+       ordered arm point once playback is already idle. */
+    if (!app->tts_stop_pending && app->continuous_capture_pending && app->state.state != VT_DEVICE_SPEAKING) {
+        app->continuous_capture_pending = false;
+        start_continuous_capture = true;
     }
 
     if (app->wake_rearm_pending) {
@@ -334,6 +379,14 @@ static void service_playback_idle(vt_app_t *app) {
     if (stop_applied) {
         ESP_LOGI(TAG, "graceful tts drain complete state=%s generation=%lu",
                  vt_state_name(stop_state), (unsigned long)stop_generation);
+    }
+    if (start_continuous_capture) {
+        app->interaction_mode = VT_INTERACTION_AUTO;
+        if (state_read(app) == VT_DEVICE_THINKING) (void)state_apply(app, VT_EVENT_ABORT);
+        (void)state_apply(app, VT_EVENT_LISTEN_START);
+        app->capture_active = true;
+        app->wake_auto_capture = true;
+        ESP_LOGI(TAG, "continuous conversation capture armed after playback drain");
     }
     if (request_arm) {
         request_wake_arm(app);
@@ -390,7 +443,10 @@ static void display_task(void *context) {
     while (!app->stop_requested) {
         vt_device_state_t current = state_read(app);
         if (current != previous) {
-            if (vt_display_show_state(&app->display, current) != ESP_OK && app->display.ready) {
+            esp_err_t render_result = app->pairing_code[0] != '\0'
+                ? vt_display_show_pairing_code(&app->display, app->pairing_code)
+                : vt_display_show_state(&app->display, current);
+            if (render_result != ESP_OK && app->display.ready) {
                 ESP_LOGW(TAG, "LCD state render failed state=%s", vt_state_name(current));
             }
             previous = current;
@@ -537,6 +593,13 @@ static void websocket_text_callback(const cJSON *message, void *context) {
 #endif
         } else if (strcmp(tts_state->valuestring, "stop") == 0) {
             const vt_interaction_mode_t mode = app->interaction_mode;
+            cJSON *continue_listening = cJSON_GetObjectItemCaseSensitive(message, "continue_listening");
+            if (cJSON_IsTrue(continue_listening) && app->state_lock != NULL &&
+                xSemaphoreTake(app->state_lock, pdMS_TO_TICKS(100)) == pdTRUE) {
+                app->continuous_capture_pending = true;
+                app->wake_rearm_pending = false;
+                xSemaphoreGive(app->state_lock);
+            }
             cJSON *reason = cJSON_GetObjectItemCaseSensitive(message, "reason");
             const bool acoustic_abort = cJSON_IsString(reason) && reason->valuestring != NULL &&
                                         strcmp(reason->valuestring, "barge_in") == 0 && app->duplex_capture;
@@ -567,6 +630,20 @@ static void websocket_text_callback(const cJSON *message, void *context) {
             } else {
                 ESP_LOGW(TAG, "ignoring stale tts stop outside speaking state");
             }
+        }
+        return;
+    }
+    if (strcmp(type->valuestring, "listen") == 0) {
+        cJSON *listen_state = cJSON_GetObjectItemCaseSensitive(message, "state");
+        cJSON *mode = cJSON_GetObjectItemCaseSensitive(message, "mode");
+        if (cJSON_IsString(listen_state) && strcmp(listen_state->valuestring, "ready") == 0 &&
+            cJSON_IsString(mode) && strcmp(mode->valuestring, "auto") == 0 && app->state_lock != NULL &&
+            xSemaphoreTake(app->state_lock, pdMS_TO_TICKS(100)) == pdTRUE) {
+            app->continuous_capture_pending = true;
+            app->wake_rearm_pending = false;
+            xSemaphoreGive(app->state_lock);
+            service_playback_idle(app);
+            ESP_LOGI(TAG, "server armed continuous conversation");
         }
         return;
     }
@@ -896,6 +973,7 @@ static void network_task(void *context) {
             .client_id = app->client_id,
             .firmware_version = esp_app_get_description()->version,
             .board_profile = CONFIG_VEETEE_BOARD_PROFILE,
+            .pairing_code_hash = app->pairing_code_hash,
             .profile = (vt_protocol_profile_t)CONFIG_VEETEE_PROTOCOL_PROFILE,
             .input_sample_rate = CONFIG_VEETEE_MIC_SAMPLE_RATE,
             .output_sample_rate = CONFIG_VEETEE_SPK_SAMPLE_RATE,
@@ -953,6 +1031,282 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     }
 }
 
+static int pairing_hash(const char *code, char output[65]) {
+    if (output == NULL || !vt_pairing_code_is_valid(code)) return ESP_ERR_INVALID_ARG;
+    unsigned char digest[32] = {0};
+    size_t digest_length = 0U;
+    psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
+    if (psa_crypto_init() != PSA_SUCCESS ||
+        psa_hash_setup(&operation, PSA_ALG_SHA_256) != PSA_SUCCESS ||
+        psa_hash_update(&operation, (const unsigned char *)code, VT_PAIRING_CODE_LENGTH) != PSA_SUCCESS ||
+        psa_hash_finish(&operation, digest, sizeof(digest), &digest_length) != PSA_SUCCESS ||
+        digest_length != sizeof(digest)) {
+        psa_hash_abort(&operation);
+        return ESP_FAIL;
+    }
+    for (size_t index = 0; index < sizeof(digest); ++index) {
+        const int written = snprintf(output + index * 2U, 65U - index * 2U, "%02x", digest[index]);
+        if (written != 2) return ESP_FAIL;
+    }
+    output[64] = '\0';
+    return ESP_OK;
+}
+
+static int pairing_load_or_create(vt_app_t *app) {
+    if (app == NULL) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t handle = 0;
+    esp_err_t error = nvs_open("veetee", NVS_READWRITE, &handle);
+    if (error != ESP_OK) return error;
+    size_t required = sizeof(app->pairing_code);
+    error = nvs_get_str(handle, "pair_code", app->pairing_code, &required);
+    if (error == ESP_ERR_NVS_NOT_FOUND || !vt_pairing_code_is_valid(app->pairing_code)) {
+        if (!vt_pairing_code_from_entropy(esp_random(), app->pairing_code)) {
+            nvs_close(handle);
+            return ESP_FAIL;
+        }
+        error = nvs_set_str(handle, "pair_code", app->pairing_code);
+        if (error == ESP_OK) error = nvs_commit(handle);
+    }
+    nvs_close(handle);
+    if (error != ESP_OK) return error;
+    error = (esp_err_t)pairing_hash(app->pairing_code, app->pairing_code_hash);
+    if (error == ESP_OK) ESP_LOGI(TAG, "pairing code ready digits=%u", (unsigned)VT_PAIRING_CODE_LENGTH);
+    return error;
+}
+
+static bool form_decode(const char *input, size_t input_length, char *output, size_t output_capacity) {
+    if (input == NULL || output == NULL || output_capacity == 0U) return false;
+    size_t written = 0U;
+    for (size_t index = 0U; index < input_length; ++index) {
+        if (written + 1U >= output_capacity) return false;
+        char value = input[index];
+        if (value == '+') {
+            value = ' ';
+        } else if (value == '%' && index + 2U < input_length) {
+            const char high = input[index + 1U];
+            const char low = input[index + 2U];
+            if (!isxdigit((unsigned char)high) || !isxdigit((unsigned char)low)) return false;
+            const int high_value = high <= '9' ? high - '0' : (tolower((unsigned char)high) - 'a' + 10);
+            const int low_value = low <= '9' ? low - '0' : (tolower((unsigned char)low) - 'a' + 10);
+            value = (char)((high_value << 4) | low_value);
+            index += 2U;
+        } else if (value == '%') {
+            return false;
+        }
+        output[written++] = value;
+    }
+    output[written] = '\0';
+    return true;
+}
+
+static bool form_field(const char *body, size_t body_length, const char *name, char *output, size_t output_capacity) {
+    if (body == NULL || name == NULL || output == NULL) return false;
+    const size_t name_length = strlen(name);
+    size_t offset = 0U;
+    while (offset < body_length) {
+        const bool at_field_start = offset == 0U || body[offset - 1U] == '&';
+        if (at_field_start && offset + name_length + 1U <= body_length &&
+            memcmp(body + offset, name, name_length) == 0 && body[offset + name_length] == '=') {
+            const size_t value_start = offset + name_length + 1U;
+            size_t value_end = value_start;
+            while (value_end < body_length && body[value_end] != '&') ++value_end;
+            return form_decode(body + value_start, value_end - value_start, output, output_capacity);
+        }
+        while (offset < body_length && body[offset] != '&') ++offset;
+        if (offset < body_length) ++offset;
+    }
+    return false;
+}
+
+static esp_err_t provisioning_index_handler(httpd_req_t *request) {
+    static const char page[] =
+        "<!doctype html><html lang=\"vi\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>Cài đặt Wi-Fi Veetee</title><style>body{font:16px system-ui;max-width:520px;margin:40px auto;padding:0 20px}"
+        "label{display:block;margin:18px 0 6px}input,button{box-sizing:border-box;width:100%;padding:12px;border:1px solid #b8c5d6;border-radius:8px;font:inherit}"
+        "button{margin-top:22px;background:#126b53;color:#fff;border:0;font-weight:700}</style>"
+        "<h1>Kết nối Veetee</h1><p>Nhập Wi-Fi nhà bạn. Robot sẽ lưu cấu hình an toàn và tự kết nối.</p>"
+        "<form method=post action=/save><label for=ssid>Tên Wi-Fi</label><input id=ssid name=ssid maxlength=31 required autocomplete=off>"
+        "<label for=password>Mật khẩu</label><input id=password name=password maxlength=63 type=password autocomplete=new-password>"
+        "<button type=submit>Lưu và kết nối</button></form></html>";
+    httpd_resp_set_type(request, "text/html; charset=utf-8");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    return httpd_resp_send(request, page, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t provisioning_save_handler(httpd_req_t *request) {
+    vt_app_t *app = (vt_app_t *)request->user_ctx;
+    if (app == NULL || request->content_len == 0U || request->content_len > 512U) {
+        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "Form khong hop le");
+    }
+    char body[513] = {0};
+    size_t received = 0U;
+    while (received < request->content_len) {
+        const int count = httpd_req_recv(request, body + received, request->content_len - received);
+        if (count <= 0) return httpd_resp_send_err(request, HTTPD_408_REQ_TIMEOUT, "Khong doc duoc form");
+        received += (size_t)count;
+    }
+    char ssid[33] = {0};
+    char password[65] = {0};
+    wifi_config_t station = {0};
+    if (!form_field(body, received, "ssid", ssid, sizeof(ssid)) || ssid[0] == '\0' ||
+        strlen(ssid) >= sizeof(station.sta.ssid) ||
+        !form_field(body, received, "password", password, sizeof(password)) ||
+        strlen(password) >= sizeof(station.sta.password)) {
+        return httpd_resp_send_err(request, HTTPD_400_BAD_REQUEST, "SSID hoac mat khau khong hop le");
+    }
+    memcpy(station.sta.ssid, ssid, strlen(ssid));
+    memcpy(station.sta.password, password, strlen(password));
+    station.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    station.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
+    if (esp_wifi_set_config(WIFI_IF_STA, &station) != ESP_OK) {
+        return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Khong luu duoc Wi-Fi");
+    }
+    app->provisioning_submitted = true;
+    app->wifi_stop_requested = false;
+    xEventGroupSetBits(app->wifi_events, VT_WIFI_PROVISIONED_BIT);
+    (void)esp_wifi_set_mode(WIFI_MODE_STA);
+    (void)esp_wifi_connect();
+    static const char accepted[] = "<p>Da luu Wi-Fi. Robot dang ket noi, ban co the dong trang nay.</p>";
+    httpd_resp_set_type(request, "text/html; charset=utf-8");
+    return httpd_resp_send(request, accepted, HTTPD_RESP_USE_STRLEN);
+}
+
+static void provisioning_dns_task(void *context) {
+    vt_app_t *app = (vt_app_t *)context;
+    int socket_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socket_fd < 0) {
+        vTaskDelete(NULL);
+        return;
+    }
+    struct timeval timeout = {.tv_sec = 1, .tv_usec = 0};
+    (void)setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    struct sockaddr_in address = {0};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(53);
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind(socket_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        close(socket_fd);
+        vTaskDelete(NULL);
+        return;
+    }
+    uint8_t query[512];
+    uint8_t response[512];
+    while (app->provisioning_active) {
+        struct sockaddr_in peer = {0};
+        socklen_t peer_length = sizeof(peer);
+        const int length = recvfrom(socket_fd, query, sizeof(query), 0, (struct sockaddr *)&peer, &peer_length);
+        if (length < 12 || length > (int)(sizeof(response) - 16U)) continue;
+        memcpy(response, query, (size_t)length);
+        response[2] = 0x81U;
+        response[3] = 0x80U;
+        response[4] = 0;
+        response[5] = 1;
+        response[6] = 0;
+        response[7] = 1;
+        size_t answer_offset = (size_t)length;
+        response[answer_offset++] = 0xC0U;
+        response[answer_offset++] = 0x0CU;
+        response[answer_offset++] = 0;
+        response[answer_offset++] = 1;
+        response[answer_offset++] = 0;
+        response[answer_offset++] = 1;
+        response[answer_offset++] = 0;
+        response[answer_offset++] = 0;
+        response[answer_offset++] = 0;
+        response[answer_offset++] = 60;
+        response[answer_offset++] = 0;
+        response[answer_offset++] = 4;
+        response[answer_offset++] = 192;
+        response[answer_offset++] = 168;
+        response[answer_offset++] = 4;
+        response[answer_offset++] = 1;
+        (void)sendto(socket_fd, response, answer_offset, 0, (struct sockaddr *)&peer, peer_length);
+    }
+    close(socket_fd);
+    app->provisioning_dns_task = NULL;
+    vTaskDelete(NULL);
+}
+
+static int provisioning_start(vt_app_t *app) {
+    if (app == NULL || app->wifi_events == NULL) return ESP_ERR_INVALID_ARG;
+    if (app->ap_netif == NULL) {
+        app->ap_netif = esp_netif_create_default_wifi_ap();
+        if (app->ap_netif == NULL) return ESP_ERR_NO_MEM;
+    }
+    wifi_config_t access_point = {0};
+    uint8_t mac[6] = {0};
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) return ESP_FAIL;
+    int written = snprintf((char *)access_point.ap.ssid, sizeof(access_point.ap.ssid), "%s-%02X%02X%02X",
+                           CONFIG_VEETEE_AP_SSID_PREFIX, mac[3], mac[4], mac[5]);
+    if (written <= 0 || written >= (int)sizeof(access_point.ap.ssid)) return ESP_ERR_INVALID_SIZE;
+    access_point.ap.ssid_len = (uint8_t)written;
+    access_point.ap.channel = CONFIG_VEETEE_AP_CHANNEL;
+    access_point.ap.max_connection = 4;
+    access_point.ap.authmode = WIFI_AUTH_OPEN;
+    if (esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK || esp_wifi_set_config(WIFI_IF_AP, &access_point) != ESP_OK) return ESP_FAIL;
+    app->provisioning_active = true;
+    app->provisioning_submitted = false;
+    httpd_config_t server_config = HTTPD_DEFAULT_CONFIG();
+    server_config.max_uri_handlers = 8;
+    server_config.stack_size = 6144;
+    server_config.uri_match_fn = httpd_uri_match_wildcard;
+    if (httpd_start(&app->provisioning_http, &server_config) != ESP_OK) return ESP_FAIL;
+    httpd_uri_t index_uri = {.uri = "/*", .method = HTTP_GET, .handler = provisioning_index_handler, .user_ctx = app};
+    httpd_uri_t save_uri = {.uri = "/save", .method = HTTP_POST, .handler = provisioning_save_handler, .user_ctx = app};
+    if (httpd_register_uri_handler(app->provisioning_http, &index_uri) != ESP_OK || httpd_register_uri_handler(app->provisioning_http, &save_uri) != ESP_OK) {
+        (void)httpd_stop(app->provisioning_http);
+        app->provisioning_http = NULL;
+        return ESP_FAIL;
+    }
+    BaseType_t result = xTaskCreate(provisioning_dns_task, "vt_dns", 4096, app, 3, &app->provisioning_dns_task);
+    if (result != pdPASS) {
+        (void)httpd_stop(app->provisioning_http);
+        app->provisioning_http = NULL;
+        app->provisioning_active = false;
+        return ESP_ERR_NO_MEM;
+    }
+    ESP_LOGW(TAG, "WiFi provisioning AP active; connect to the Veetee setup network and open http://192.168.4.1/");
+    return ESP_OK;
+}
+
+static void provisioning_stop(vt_app_t *app) {
+    if (app == NULL) return;
+    app->provisioning_active = false;
+    if (app->provisioning_http != NULL) {
+        (void)httpd_stop(app->provisioning_http);
+        app->provisioning_http = NULL;
+    }
+    for (unsigned int attempt = 0U; attempt < 20U && app->provisioning_dns_task != NULL; ++attempt) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+static int wifi_wait_for_portal(vt_app_t *app) {
+    if (provisioning_start(app) != ESP_OK) return ESP_FAIL;
+    while (!app->stop_requested) {
+        EventBits_t bits = xEventGroupWaitBits(app->wifi_events, VT_WIFI_CONNECTED_BIT | VT_WIFI_PROVISIONED_BIT,
+                                               pdFALSE, pdFALSE, pdMS_TO_TICKS(1000));
+        if ((bits & VT_WIFI_CONNECTED_BIT) != 0) {
+            provisioning_stop(app);
+            return ESP_OK;
+        }
+        if ((bits & VT_WIFI_PROVISIONED_BIT) != 0) {
+            xEventGroupClearBits(app->wifi_events, VT_WIFI_PROVISIONED_BIT);
+            app->provisioning_submitted = false;
+            EventBits_t connected = xEventGroupWaitBits(app->wifi_events, VT_WIFI_CONNECTED_BIT,
+                                                        pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
+            if ((connected & VT_WIFI_CONNECTED_BIT) != 0) {
+                provisioning_stop(app);
+                return ESP_OK;
+            }
+            ESP_LOGW(TAG, "WiFi credentials did not obtain an IP; keeping provisioning portal available");
+            (void)esp_wifi_set_mode(WIFI_MODE_APSTA);
+        }
+    }
+    provisioning_stop(app);
+    return ESP_ERR_INVALID_STATE;
+}
+
 static int wifi_start(vt_app_t *app) {
     app->wifi_events = xEventGroupCreate();
     if (app->wifi_events == NULL) return ESP_ERR_NO_MEM;
@@ -960,12 +1314,12 @@ static int wifi_start(vt_app_t *app) {
     if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) return error;
     error = esp_event_loop_create_default();
     if (error != ESP_OK && error != ESP_ERR_INVALID_STATE) return error;
-    if (esp_netif_create_default_wifi_sta() == NULL) return ESP_ERR_NO_MEM;
+    app->sta_netif = esp_netif_create_default_wifi_sta();
+    if (app->sta_netif == NULL) return ESP_ERR_NO_MEM;
     wifi_init_config_t wifi_config = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&wifi_config));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, app));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, app));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     wifi_config_t station_config = {0};
     ESP_ERROR_CHECK(esp_wifi_get_config(WIFI_IF_STA, &station_config));
     if ((station_config.sta.ssid[0] == '\0' || CONFIG_VEETEE_WIFI_OVERRIDE_NVS) &&
@@ -977,15 +1331,18 @@ static int wifi_start(vt_app_t *app) {
     } else {
         ESP_LOGI(TAG, "WiFi station profile loaded from NVS");
     }
+    const bool has_station_profile = station_config.sta.ssid[0] != '\0';
+    ESP_ERROR_CHECK(esp_wifi_set_mode(has_station_profile ? WIFI_MODE_STA : WIFI_MODE_APSTA));
     ESP_ERROR_CHECK(esp_wifi_start());
+    if (!has_station_profile) return wifi_wait_for_portal(app);
     EventBits_t bits = xEventGroupWaitBits(app->wifi_events, VT_WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(30000));
     if ((bits & VT_WIFI_CONNECTED_BIT) != 0) return ESP_OK;
-    /* Initial provisioning failure is operator-visible and terminal for this
-       network task. Do not keep reconnecting in the background or erase NVS. */
+    /* A stale or unreachable station profile falls back to the local portal.
+       The profile remains in NVS until the owner submits a replacement. */
     app->wifi_stop_requested = true;
     (void)esp_wifi_disconnect();
-    (void)esp_wifi_stop();
-    return ESP_ERR_TIMEOUT;
+    xEventGroupClearBits(app->wifi_events, VT_WIFI_CONNECTED_BIT | VT_WIFI_PROVISIONED_BIT);
+    return wifi_wait_for_portal(app);
 }
 
 static int device_identity(vt_app_t *app) {
@@ -1017,7 +1374,7 @@ void app_main(void) {
     app->wake_command_queue = xQueueCreate(4, sizeof(vt_wake_command_t));
     if (app->state_lock == NULL || app->audio_encoder_lock == NULL || app->audio_decoder_lock == NULL ||
         app->playback_queue == NULL || app->wake_event_queue == NULL ||
-        app->wake_command_queue == NULL || device_identity(app) != ESP_OK) {
+        app->wake_command_queue == NULL || device_identity(app) != ESP_OK || pairing_load_or_create(app) != ESP_OK) {
         ESP_LOGE(TAG, "firmware bootstrap allocation failed");
         return;
     }

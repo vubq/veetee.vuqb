@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 from aiohttp import WSMsgType, web
 
-from .config import AutoTurnPolicy, ServerConfig
+from .config import AutoTurnPolicy, ConversationPolicy, ServerConfig
 from .history import ConversationHistoryReporter
 from .pipeline import Turn, TurnPipeline
 from .presence import DevicePresenceReporter
@@ -223,6 +223,8 @@ class VoiceSession:
         self._finished = asyncio.Event()
         self._turn_lease_id: str | None = None
         self._no_speech_task: asyncio.Task[None] | None = None
+        self._conversation_idle_task: asyncio.Task[None] | None = None
+        self._continuous_armed = False
         self._lock = asyncio.Lock()
         self.conversation_id = str(uuid4())
         self.conversation_started_at: str | None = None
@@ -295,6 +297,7 @@ class VoiceSession:
                 await asyncio.gather(self._mcp_discovery_task, return_exceptions=True)
             if self.mcp is not None:
                 self.mcp.cancel_all()
+            await self._cancel_conversation_idle()
             # Presence enqueue is intentionally synchronous and best-effort;
             # the reporter owns delivery in its background worker.  Awaiting
             # this boolean return would raise during every normal disconnect.
@@ -345,6 +348,10 @@ class VoiceSession:
         wire = snapshot.raw.get("wire") or {}
         self.codec = OpusCodec(int(wire.get("uplinkSampleRate", 16000)), int(wire.get("downlinkSampleRate", 24000)))
         self.memory = self.view.registry.memory.create_session() if self.view.registry.memory else None
+        # Validate optional additive policy once per session. A malformed
+        # published snapshot must fail activation rather than crash the first
+        # follow-up turn.
+        snapshot.conversation_policy()
         await self.send_text(
             {
                 "type": "hello",
@@ -432,6 +439,10 @@ class VoiceSession:
                 turn = self.turn
                 pipeline = self.pipeline
                 turn.task = asyncio.create_task(self._finish_turn(turn, pipeline), name=f"turn-{turn.turn_id}")
+            elif self._continuous_armed:
+                await self._cancel_conversation_idle()
+                self._continuous_armed = False
+                self.phase = "ready_idle"
         elif state == "detect":
             text = message.get("text")
             view = self._session_view()
@@ -445,6 +456,9 @@ class VoiceSession:
             raise ProtocolError("unsupported listen state")
 
     async def _start_turn(self, mode: str) -> None:
+        continuous_followup = self._continuous_armed
+        await self._cancel_conversation_idle()
+        self._continuous_armed = False
         await self._abort(reason="new_turn", send_stop=False)
         self._barge_in_cooldown_until = 0.0
         self.generation += 1
@@ -479,6 +493,7 @@ class VoiceSession:
                 sequence=self.turn_sequence,
                 started_at=now,
                 conversation_started_at=self.conversation_started_at,
+                continuous_followup=continuous_followup,
                 started_monotonic=time.perf_counter(),
             )
             self.phase = "listening"
@@ -558,6 +573,53 @@ class VoiceSession:
                 # leave an unobserved watchdog exception behind.
                 return
 
+    async def _arm_continuous(self) -> None:
+        """Keep one ordered WebSocket session ready for another utterance."""
+
+        if not self.ready or self._closed or self.view is None:
+            return
+        policy = self.view.snapshot.conversation_policy()
+        if not policy.continuous:
+            return
+        await self._cancel_conversation_idle()
+        self._continuous_armed = True
+        self.phase = "listening"
+        generation = self.generation
+        await self.send_text({"type": "listen", "state": "ready", "mode": "auto", "session_id": self.session_id})
+        self._conversation_idle_task = asyncio.create_task(
+            self._watch_conversation_idle(generation, policy),
+            name=f"conversation-idle-{self.session_id}",
+        )
+
+    async def _watch_conversation_idle(self, generation: int, policy: ConversationPolicy) -> None:
+        try:
+            await asyncio.sleep(policy.idle_timeout_ms / 1000)
+        except asyncio.CancelledError:
+            raise
+        if self._closed or not self._continuous_armed or self.generation != generation or self.turn is not None:
+            return
+        self._continuous_armed = False
+        self.phase = "ready_idle"
+        self.app.metrics["conversation_idle_timeouts"] = self.app.metrics.get("conversation_idle_timeouts", 0) + 1
+        await self.send_text(
+            control_message(
+                "alert",
+                session_id=self.session_id,
+                status=policy.alert_status,
+                message=policy.alert_message,
+                emotion=policy.alert_emotion,
+                code="CONVERSATION_IDLE_TIMEOUT",
+            )
+        )
+
+    async def _cancel_conversation_idle(self) -> None:
+        task = self._conversation_idle_task
+        self._conversation_idle_task = None
+        if task is None or task.done() or task is asyncio.current_task():
+            return
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
     async def _cancel_no_speech_watchdog(self) -> None:
         task = self._no_speech_task
         self._no_speech_task = None
@@ -578,10 +640,31 @@ class VoiceSession:
             if not cancelled:
                 await self._report_turn(turn)
             await self._release_turn(turn)
+            if self.turn is turn:
+                self.turn = None
+                self.pipeline = None
+                self.phase = "ready_idle"
+            if (
+                not cancelled
+                and self.ready
+                and not self._closed
+                and turn.mode in {"auto", "realtime", "manual"}
+                and turn.finish_reason not in {"no_speech", "no_speech_timeout", "conversation.exit", "turn.cancel"}
+            ):
+                await self._arm_continuous()
 
     async def _audio(self, raw: bytes) -> None:
         pipeline = self.pipeline
         turn = self.turn
+        if pipeline is None and turn is None and self.ready and self._continuous_armed:
+            # A frame arriving after `listen/ready` opens the next automatic
+            # turn. The first frame is then ingested below, preserving stream
+            # ordering without requiring another control message from device.
+            await self._cancel_conversation_idle()
+            self._continuous_armed = False
+            await self._start_turn("auto")
+            pipeline = self.pipeline
+            turn = self.turn
         if not self.ready or self.codec is None:
             raise ProtocolError("audio received outside listening turn")
         if pipeline is None or turn is None:
@@ -678,6 +761,8 @@ class VoiceSession:
 
     async def _abort(self, *, reason: str, send_stop: bool = True) -> None:
         await self._cancel_no_speech_watchdog()
+        await self._cancel_conversation_idle()
+        self._continuous_armed = False
         pipeline = self.pipeline
         turn = self.turn
         task = turn.task if turn else None
@@ -762,6 +847,9 @@ class VoiceSession:
             "firmwareVersion": self.device_info["firmwareVersion"],
             "onlineState": state,
         }
+        pairing_hash = self.device_info.get("pairingCodeHash")
+        if pairing_hash:
+            event["pairingCodeHash"] = pairing_hash
         if not reporter.enqueue(event):
             self.app.metrics["presence_enqueue_dropped"] = self.app.metrics.get("presence_enqueue_dropped", 0) + 1
             return False
@@ -777,7 +865,11 @@ class VoiceSession:
             return None
         if not isinstance(firmware, str) or not firmware.strip() or len(firmware) > 80:
             return None
-        return {"board": board.strip(), "firmwareVersion": firmware.strip()}
+        result = {"board": board.strip(), "firmwareVersion": firmware.strip()}
+        pairing_hash = value.get("pairingCodeHash")
+        if isinstance(pairing_hash, str) and len(pairing_hash) == 64 and all(char in "0123456789abcdefABCDEF" for char in pairing_hash):
+            result["pairingCodeHash"] = pairing_hash.lower()
+        return result
 
     async def send_text(self, value: dict[str, Any]) -> None:
         if not self._closed:

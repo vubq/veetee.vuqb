@@ -43,6 +43,20 @@ config VEETEE_WIFI_OVERRIDE_NVS
         Use only for an explicit local provisioning test. When disabled, a
         non-empty NVS SSID always wins over build-time values.
 
+config VEETEE_AP_SSID_PREFIX
+    string "Wi-Fi provisioning network prefix"
+    default "Veetee"
+    help
+        Prefix for the temporary local setup network. The firmware appends a
+        masked device suffix; do not include secrets or a user identity.
+
+config VEETEE_AP_CHANNEL
+    int "Wi-Fi provisioning channel"
+    range 1 13
+    default 6
+    help
+        Channel used only while the local setup SoftAP is active.
+
 config VEETEE_ENABLE_HARDWARE
     bool "Enable verified board audio and PTT hardware"
     default n

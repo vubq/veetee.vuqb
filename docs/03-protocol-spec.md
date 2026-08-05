@@ -229,7 +229,8 @@ Client MUST gửi `hello` ngay sau upgrade và trước audio/control khác:
   },
   "device_info": {
     "board": "ESP32-S3 N16R8",
-    "firmwareVersion": "0.1.0"
+    "firmwareVersion": "0.1.0",
+    "pairingCodeHash": "<sha256-of-six-digits>"
   },
   "transport": "websocket",
   "audio_params": {
@@ -246,6 +247,10 @@ Required: `type`, `version`, `transport`, toàn bộ bốn field trong `audio_pa
 `device_info` là optional additive object; nếu có, `board` và `firmwareVersion`
 là non-empty strings và chỉ dùng cho Manager device presence, không tham gia
 handshake compatibility hoặc audio routing. Peer cũ được phép bỏ qua field này.
+`pairingCodeHash` là optional lowercase SHA-256 hex của mã sáu chữ số do firmware
+hiển thị; plaintext không đi qua WebSocket, server, Manager API, log hay database.
+Server chỉ chuyển hash vào presence control-plane để Web discoverable device; peer
+cũ bỏ qua field này.
 `text_font`
 chỉ được gửi khi `glyph_push:true`. Shape này được tạo ở firmware tham chiếu
 (`references/xiaozhi-esp32/main/protocols/websocket_protocol.cc:198-221`,
@@ -735,7 +740,8 @@ cancel hardware side effect
 | `stt` | `text` | `session_id`, glyph | hiển thị user transcript |
 | `tts` start | `state:"start"` | `session_id`, `turn_id`, `barge_in` | vào `speaking` trước audio; `barge_in` chỉ là capability/policy additive |
 | `tts` sentence_start | `state`, `text` | `session_id`, glyph | subtitle hiện tại |
-| `tts` stop | `state:"stop"` | `session_id`, `turn_id`, `reason` | graceful drain / kết thúc turn; `reason:"barge_in"` là cancellation barrier additive |
+| `tts` stop | `state:"stop"` | `session_id`, `turn_id`, `reason`, `continue_listening` | graceful drain; `continue_listening:true` giữ phiên auto sau khi drain; `reason:"barge_in"` là cancellation barrier additive |
+| `listen` ready | `state:"ready"`, `mode:"auto"` | `session_id` | arm capture cho lượt tiếp theo trong cùng WebSocket; peer cũ bỏ qua |
 | `llm` | `text`, `emotion` | `session_id` | cập nhật emotion/UI |
 | `mcp` | `session_id`, object `payload` | — | dispatch device JSON-RPC server |
 | `iot` | array `commands` | — | legacy-only hardware command |
@@ -811,6 +817,23 @@ Sau đó là nhiều binary Opus frames, rồi:
 ```json
 {"type":"tts","state":"stop","session_id":"<session>"}
 ```
+
+Khi snapshot bật hội thoại liên tục, server gửi thêm field additive trước khi
+arm lượt kế tiếp:
+
+```json
+{"type":"tts","state":"stop","session_id":"<session>","turn_id":"<turn>","reason":"complete","continue_listening":true}
+```
+
+Sau khi binary playback drain, server gửi:
+
+```json
+{"type":"listen","state":"ready","mode":"auto","session_id":"<session>"}
+```
+
+Device giữ WebSocket và bắt đầu một `listen/start mode:"auto"` nội bộ khi nhận
+audio đầu tiên; không yêu cầu wake word lần hai. Peer cũ bỏ qua
+`continue_listening`/`listen.ready` và vẫn xử lý stop theo state cũ.
 
 Emotion có thể interleave:
 
@@ -904,6 +927,24 @@ rỗng; nó gửi:
 `code` là field additive optional; peer cũ bỏ qua field này nhưng vẫn xử lý ba
 field alert bắt buộc và dừng capture/re-arm. Policy chỉ là first-speech watchdog,
 không phải timeout của conversation đã bắt đầu.
+
+`conversation` là policy additive cấp phiên:
+
+```json
+{
+  "continuous": true,
+  "idleTimeoutMs": 180000,
+  "idleAlert": {"status":"ok","message":"<localized>","emotion":"neutral"}
+}
+```
+
+Khi `continuous=true`, turn đã hoàn tất (manual/auto/realtime) gửi
+`continue_listening:true` và `listen.ready`; server không đặt giới hạn số lượt
+hay độ dài câu trả lời. Timer chỉ bắt đầu khi không còn active turn và bị hủy
+ngay khi nhận audio/`listen/start`/abort/exit. Hết timer gửi
+`alert.code="CONVERSATION_IDLE_TIMEOUT"`, release phiên về idle và firmware
+re-arm wake word. `idleTimeoutMs` được giới hạn 1.000–86.400.000 ms; thông báo
+lấy từ snapshot locale, không hardcode trong pipeline.
 
 Nếu pipeline đã nhận `listen/stop` (hoặc endpoint tương đương) nhưng ASR trả về
 transcript rỗng/whitespace, server MUST dừng lượt trước khi gọi Intent, LLM hoặc

@@ -305,7 +305,7 @@ transition table generated/tested từ spec này; self-transition là no-op idem
 | `Listening + PTT release` | `listen/stop` → stop uplink after final 60 ms frame | `Idle` while server thinks |
 | `Listening + tts/start` | new playback generation → reset decoder → enable output | `Speaking` |
 | `Idle + tts/start` | accept delayed response for current session → enable output | `Speaking` |
-| `Speaking + graceful tts/stop` | mark `draining`; wait decode/output idle | manual: `Idle`; else `Listening` |
+| `Speaking + graceful tts/stop` | mark `draining`; wait decode/output idle | `continue_listening:true` → capture auto in same session; otherwise manual: `Idle`, auto: `Listening` |
 | `Speaking + button/wake/barge` | generation++ → mute/flush → send one abort → start new listen if requested | `Listening` or `Idle` |
 | any conversational state + channel close | cancel turn → flush audio → redact session | `Idle` |
 | any allowed + OTA request | close channel → stop audio owners → verify image | `Upgrading` |
@@ -718,6 +718,16 @@ asset khi audio owners stopped hoặc sau reboot.
 
 - Nếu thiếu Wi-Fi/identity, vào `WifiConfiguring`; captive portal không chạy cùng
   conversation channel.
+- SoftAP dùng SSID prefix cấu hình được và form bounded tại `192.168.4.1`; DNS
+  wildcard trả về địa chỉ portal để Android/iOS/desktop tự mở trang. SSID/password
+  được ghi NVS bằng `esp_wifi_set_config`/commit, không erase flash; station nối
+  lại thành công thì tắt AP.
+- Firmware sinh một mã pairing sáu chữ số từ entropy, lưu trong NVS namespace
+  riêng và chỉ render plaintext trên LCD/portal. Hello gửi
+  `device_info.pairingCodeHash` SHA-256; không log hoặc gửi plaintext.
+- Khi `tts/stop.continue_listening:true` hoặc `listen.ready mode:auto` đến, state
+  owner chờ playback drain rồi bật capture liên tục; audio đầu tiên mở lượt auto
+  tiếp theo. `alert.code=CONVERSATION_IDLE_TIMEOUT` dừng capture và re-arm wake.
 - Credential/token write vào protected NVS namespace; UI/serial chỉ hiện masked ID.
 - Provisioning payload validate length/schema trước write; atomic commit revision.
 - Transport URL/version là config; default new device `ws-v3`.

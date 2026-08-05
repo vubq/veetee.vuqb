@@ -43,4 +43,5 @@ typedef struct {
 
 esp_err_t vt_display_init(vt_display_t *display, const vt_display_config_t *config);
 esp_err_t vt_display_show_state(vt_display_t *display, vt_device_state_t state);
+esp_err_t vt_display_show_pairing_code(vt_display_t *display, const char *code);
 void vt_display_deinit(vt_display_t *display);

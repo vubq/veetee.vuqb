@@ -3,6 +3,7 @@
 #include "veetee_state.h"
 #include "veetee_wire_guard.h"
 #include "veetee_ptt.h"
+#include "veetee_pairing.h"
 
 #include <assert.h>
 #include <ctype.h>
@@ -317,6 +318,18 @@ static void test_wire_session_guard(void) {
     assert(!vt_wire_session_matches(NULL, true, "session-a"));
 }
 
+static void test_pairing_code_contract(void) {
+    char code[VT_PAIRING_CODE_LENGTH + 1U] = {0};
+    assert(vt_pairing_code_from_entropy(0U, code));
+    assert(vt_pairing_code_is_valid(code));
+    assert(strlen(code) == VT_PAIRING_CODE_LENGTH);
+    assert(vt_pairing_code_from_entropy(UINT32_MAX, code));
+    assert(vt_pairing_code_is_valid(code));
+    assert(!vt_pairing_code_is_valid("12345"));
+    assert(!vt_pairing_code_is_valid("1234567"));
+    assert(!vt_pairing_code_is_valid("12a456"));
+}
+
 int main(void) {
     test_protocol();
     test_protocol_rejections();
@@ -329,6 +342,7 @@ int main(void) {
     test_ptt_debouncer_edges_and_bounce();
     test_config_gate();
     test_wire_session_guard();
+    test_pairing_code_contract();
     puts("firmware host tests passed");
     return 0;
 }

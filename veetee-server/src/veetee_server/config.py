@@ -25,6 +25,17 @@ class AutoTurnPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class ConversationPolicy:
+    """Session-level continuous listening policy after an auto turn."""
+
+    continuous: bool
+    idle_timeout_ms: int
+    alert_status: str
+    alert_message: str
+    alert_emotion: str
+
+
+@dataclass(frozen=True, slots=True)
 class BargeInPolicy:
     """Validated policy shared by server acoustic gating and device metadata."""
 
@@ -219,6 +230,30 @@ class RuntimeSnapshot:
             cooldown_ms=cooldown,
         )
 
+    def conversation_policy(self) -> ConversationPolicy:
+        """Read additive multi-turn session policy from the snapshot."""
+
+        raw = self.raw.get("conversation")
+        if raw is None:
+            return ConversationPolicy(False, 180_000, "ok", "", "neutral")
+        if not isinstance(raw, dict):
+            raise ConfigurationError("snapshot.conversation must be an object")
+        continuous = raw.get("continuous", False)
+        if not isinstance(continuous, bool):
+            raise ConfigurationError("snapshot.conversation.continuous must be a boolean")
+        timeout = raw.get("idleTimeoutMs", 180_000)
+        if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1_000 <= timeout <= 86_400_000:
+            raise ConfigurationError("snapshot.conversation.idleTimeoutMs must be between 1000 and 86400000")
+        alert = raw.get("idleAlert", {})
+        if not isinstance(alert, dict):
+            raise ConfigurationError("snapshot.conversation.idleAlert must be an object")
+        status = _optional_bounded_string(alert.get("status", "ok"), 32, "ok")
+        message = _optional_bounded_string(alert.get("message", ""), 512, "")
+        emotion = _optional_bounded_string(alert.get("emotion", "neutral"), 64, "neutral")
+        if continuous and not message:
+            raise ConfigurationError("snapshot.conversation.idleAlert.message must be non-empty when continuous is enabled")
+        return ConversationPolicy(continuous, timeout, status, message, emotion)
+
 
 def load_snapshot(path: Path) -> RuntimeSnapshot:
     try:
@@ -286,3 +321,13 @@ def _required_bounded_string(value: dict[str, Any], name: str, maximum: int, pre
     if not isinstance(result, str) or not result.strip() or len(result) > maximum:
         raise ConfigurationError(f"{prefix}.{name} must be a non-empty string of at most {maximum} characters")
     return result.strip()
+
+
+def _optional_bounded_string(value: Any, maximum: int, default: str) -> str:
+    """Read an additive string policy without allowing unbounded payloads."""
+
+    if value is None:
+        return default
+    if not isinstance(value, str) or len(value) > maximum:
+        raise ConfigurationError(f"conversation alert value must be a string of at most {maximum} characters")
+    return value.strip() or default

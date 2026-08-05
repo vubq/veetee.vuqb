@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { buildApp } from './app.js'
 import type { Environment } from './config.js'
-import { InMemoryStore, isPresenceFresh, parseCatalog } from './store.js'
+import { InMemoryStore, isPresenceFresh, parseCatalog, hashPairingCode } from './store.js'
 
 const root = resolve(import.meta.dirname, '..')
 const env: Environment = {
@@ -691,6 +691,38 @@ test('device presence stores hashed identity and updates paired device state', a
     assert.equal(offline.statusCode, 202)
     assert.equal(offline.json().id, online.json().id)
     assert.equal(offline.json().onlineState, 'offline')
+  } finally {
+    await app.close()
+  }
+})
+
+test('device presence with firmware pairing hash creates a discoverable six-digit device', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistants = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    const assistantId = assistants.json().items[0].id as string
+    const presence = await app.inject({
+      method: 'POST',
+      url: '/internal/v1/devices/presence',
+      payload: {
+        identityHash: 'c'.repeat(64), clientIdHash: 'd'.repeat(64), maskedMac: 'AA:BB:CC:••:••:21',
+        board: 'ESP32-S3 N16R8', firmwareVersion: 'pairing-hash-test', onlineState: 'online', pairingCodeHash: hashPairingCode('123456'),
+      },
+    })
+    assert.equal(presence.statusCode, 202)
+    const discoverable = await app.inject({ method: 'GET', url: '/api/v1/devices/discoverable' })
+    assert.equal(discoverable.statusCode, 200)
+    assert.equal(discoverable.json().total, 1)
+    const candidate = discoverable.json().items[0] as { id: string; maskedMac: string; pairingExpiresAt: string | null }
+    assert.equal(candidate.maskedMac, 'AA:BB:CC:••:••:21')
+    assert.ok(candidate.pairingExpiresAt)
+
+    const paired = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, deviceId: candidate.id, verificationCode: '123456', displayName: 'Robot thử nghiệm' } })
+    assert.equal(paired.statusCode, 201)
+    assert.equal(paired.json().displayName, 'Robot thử nghiệm')
+    const after = await app.inject({ method: 'GET', url: '/api/v1/devices/discoverable' })
+    assert.equal(after.json().total, 0)
   } finally {
     await app.close()
   }

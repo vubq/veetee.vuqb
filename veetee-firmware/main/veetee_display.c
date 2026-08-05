@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_lcd_panel_vendor.h"
 #include "veetee_state.h"
+#include "veetee_pairing.h"
 
 #define TAG "veetee-display"
 
@@ -187,6 +188,81 @@ esp_err_t vt_display_show_state(vt_display_t *display, vt_device_state_t state) 
     for (int row = 0; row < display->height; ++row) {
         for (int column = 0; column < display->row_width; ++column) {
             display->row_buffer[column] = display_pixel(state, column, row, display->row_width, display->height);
+        }
+        esp_err_t error = esp_lcd_panel_draw_bitmap(display->panel, 0, row, display->row_width, row + 1,
+                                                     display->row_buffer);
+        if (error != ESP_OK) return error;
+    }
+    return ESP_OK;
+}
+
+static bool pairing_segment_pixel(unsigned int mask, int segment, int x, int y,
+                                  int left, int top, int width, int height, int thickness) {
+    if ((mask & (1U << (unsigned int)segment)) == 0U) return false;
+    const int right = left + width - 1;
+    const int bottom = top + height - 1;
+    const int mid = top + height / 2;
+    switch (segment) {
+    case 0: return x >= left + thickness && x <= right - thickness && y >= top && y < top + thickness;
+    case 1: return x >= right - thickness + 1 && x <= right && y >= top + thickness && y < mid - thickness / 2;
+    case 2: return x >= right - thickness + 1 && x <= right && y >= mid + thickness / 2 && y <= bottom - thickness;
+    case 3: return x >= left + thickness && x <= right - thickness && y > bottom - thickness && y <= bottom;
+    case 4: return x >= left && x < left + thickness && y >= mid + thickness / 2 && y <= bottom - thickness;
+    case 5: return x >= left && x < left + thickness && y >= top + thickness && y < mid - thickness / 2;
+    case 6: return x >= left + thickness && x <= right - thickness && y >= mid - thickness / 2 && y <= mid + thickness / 2;
+    default: return false;
+    }
+}
+
+static unsigned int pairing_digit_mask(char digit) {
+    static const unsigned int masks[10] = {
+        0x3FU, 0x06U, 0x5BU, 0x4FU, 0x66U,
+        0x6DU, 0x7DU, 0x07U, 0x7FU, 0x6FU,
+    };
+    return (digit >= '0' && digit <= '9') ? masks[(unsigned int)(digit - '0')] : 0U;
+}
+
+esp_err_t vt_display_show_pairing_code(vt_display_t *display, const char *code) {
+    if (display == NULL || !display->ready || display->panel == NULL || display->row_buffer == NULL ||
+        !vt_pairing_code_is_valid(code)) return ESP_ERR_INVALID_ARG;
+    const uint16_t background = rgb565(8, 16, 32);
+    const uint16_t accent = rgb565(54, 218, 150);
+    const uint16_t digit_color = rgb565(236, 247, 255);
+    const int digit_width = 26;
+    const int digit_height = 54;
+    const int gap = 8;
+    const int thickness = 5;
+    const int total_width = (int)VT_PAIRING_CODE_LENGTH * digit_width + ((int)VT_PAIRING_CODE_LENGTH - 1) * gap;
+    const int origin_x = (display->row_width - total_width) / 2;
+    const int origin_y = display->height / 2 - digit_height / 2;
+    for (int row = 0; row < display->height; ++row) {
+        for (int column = 0; column < display->row_width; ++column) {
+            uint16_t pixel = background;
+            if (row < 7 || row >= display->height - 7 || column < 7 || column >= display->row_width - 7) {
+                pixel = accent;
+            } else {
+                for (unsigned int index = 0U; index < VT_PAIRING_CODE_LENGTH; ++index) {
+                    const int left = origin_x + (int)index * (digit_width + gap);
+                    if (pairing_segment_pixel(pairing_digit_mask(code[index]), 0, column, row, left, origin_y,
+                                              digit_width, digit_height, thickness) ||
+                        pairing_segment_pixel(pairing_digit_mask(code[index]), 1, column, row, left, origin_y,
+                                              digit_width, digit_height, thickness) ||
+                        pairing_segment_pixel(pairing_digit_mask(code[index]), 2, column, row, left, origin_y,
+                                              digit_width, digit_height, thickness) ||
+                        pairing_segment_pixel(pairing_digit_mask(code[index]), 3, column, row, left, origin_y,
+                                              digit_width, digit_height, thickness) ||
+                        pairing_segment_pixel(pairing_digit_mask(code[index]), 4, column, row, left, origin_y,
+                                              digit_width, digit_height, thickness) ||
+                        pairing_segment_pixel(pairing_digit_mask(code[index]), 5, column, row, left, origin_y,
+                                              digit_width, digit_height, thickness) ||
+                        pairing_segment_pixel(pairing_digit_mask(code[index]), 6, column, row, left, origin_y,
+                                              digit_width, digit_height, thickness)) {
+                        pixel = digit_color;
+                        break;
+                    }
+                }
+            }
+            display->row_buffer[column] = pixel;
         }
         esp_err_t error = esp_lcd_panel_draw_bitmap(display->panel, 0, row, display->row_width, row + 1,
                                                      display->row_buffer);

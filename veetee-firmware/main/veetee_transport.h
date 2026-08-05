@@ -18,6 +18,7 @@ typedef struct {
     const char *client_id;
     const char *firmware_version;
     const char *board_profile;
+    const char *pairing_code_hash;
     vt_protocol_profile_t profile;
     int input_sample_rate;
     int output_sample_rate;

@@ -36,6 +36,7 @@ static int profile_version_number(vt_protocol_profile_t profile) {
 int vt_transport_init(vt_transport_t *transport, const vt_transport_config_t *config) {
     if (transport == NULL || config == NULL || config->uri == NULL || config->device_id == NULL ||
         config->client_id == NULL || config->firmware_version == NULL || config->board_profile == NULL ||
+        config->pairing_code_hash == NULL ||
         config->on_text == NULL || config->on_audio == NULL ||
         config->input_sample_rate <= 0 || config->output_sample_rate <= 0 || config->frame_duration_ms <= 0) return ESP_ERR_INVALID_ARG;
     memset(transport, 0, sizeof(*transport));
@@ -158,6 +159,9 @@ static int send_hello(vt_transport_t *transport) {
     cJSON_AddItemToObject(root, "audio_params", audio);
     cJSON_AddStringToObject(device_info, "firmwareVersion", transport->config.firmware_version);
     cJSON_AddStringToObject(device_info, "board", transport->config.board_profile);
+    if (strlen(transport->config.pairing_code_hash) == 64U) {
+        cJSON_AddStringToObject(device_info, "pairingCodeHash", transport->config.pairing_code_hash);
+    }
     cJSON_AddItemToObject(root, "device_info", device_info);
     char *serialized = cJSON_PrintUnformatted(root);
     int result = serialized == NULL ? ESP_ERR_NO_MEM : send_raw_text(transport, serialized);

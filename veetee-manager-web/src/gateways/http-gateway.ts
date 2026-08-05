@@ -9,6 +9,7 @@ import type {
   CreateAssistantInput,
   DemoResetSummary,
   DeviceCard,
+  DiscoverableDevice,
   GatewayProblem,
   GatewayResult,
   ModelMemoryWorkspace,
@@ -57,6 +58,7 @@ type ProviderProbeResource = paths['/api/v1/provider-configs/{id}/probe']['post'
 type VoiceResource = paths['/api/v1/voices']['get']['responses'][200]['content']['application/json']['items'][number]
 type ModelMemoryResource = paths['/api/v1/assistants/{id}/model-memory']['get']['responses'][200]['content']['application/json']
 type DeviceResource = paths['/api/v1/assistants/{id}/devices']['get']['responses'][200]['content']['application/json']['items'][number]
+type DiscoverableDeviceResource = paths['/api/v1/devices/discoverable']['get']['responses'][200]['content']['application/json']['items'][number]
 type RetentionResource = paths['/api/v1/retention-policy']['get']['responses'][200]['content']['application/json']
 type ConversationSummaryResource = paths['/api/v1/assistants/{id}/conversations']['get']['responses'][200]['content']['application/json']['items'][number]
 type ConversationDetailResource = paths['/api/v1/conversations/{id}']['get']['responses'][200]['content']['application/json']
@@ -119,6 +121,7 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
         noSpeechTimeoutMs: draft.autoTurn.noSpeechTimeoutMs,
         noSpeechAlert: { ...draft.autoTurn.noSpeechAlert },
       },
+      ...(draft.conversation ? { conversation: cloneJson(draft.conversation) } : {}),
       ...(draft.progress ? { progress: cloneJson(draft.progress) } : {}),
       ...(draft.segmentation ? { segmentation: cloneJson(draft.segmentation) } : {}),
       ...(draft.bargeIn ? { bargeIn: cloneJson(draft.bargeIn) } : {}),
@@ -265,6 +268,12 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     return this.success({ items: result.data.items.map(deviceCard), total: result.data.total })
   }
 
+  async listDiscoverableDevices(): Promise<GatewayResult<Page<DiscoverableDevice>, never>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/devices/discoverable'))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ items: result.data.items.map(discoverableDevice), total: result.data.total })
+  }
+
   async pairDevice(input: PairDeviceInput): Promise<GatewayResult<DeviceCard, never>> {
     const payload: PairDeviceRequest = input
     const result = await this.execute(() => this.client.POST('/api/v1/devices/pair', { body: payload }))
@@ -406,6 +415,7 @@ function roleConfig(assistantId: string, value: Record<string, unknown>): RoleCo
         emotion: isRecord(value.autoTurn) && isRecord(value.autoTurn.noSpeechAlert) && typeof value.autoTurn.noSpeechAlert.emotion === 'string' ? value.autoTurn.noSpeechAlert.emotion : 'neutral',
       },
     },
+    conversation: conversationSettings(value.conversation),
     progress: policyObject(value.progress),
     segmentation: policyObject(value.segmentation),
     bargeIn: policyObject(value.bargeIn),
@@ -422,6 +432,20 @@ function policyTools(value: unknown): RolePolicyObject[] | undefined {
   if (!Array.isArray(value)) return undefined
   const tools = value.filter(isRecord).map((tool) => cloneJson(tool))
   return tools.length ? tools : undefined
+}
+
+function conversationSettings(value: unknown): RoleConfig['conversation'] {
+  if (!isRecord(value)) return undefined
+  const alert = isRecord(value.idleAlert) ? value.idleAlert : {}
+  return {
+    continuous: value.continuous === true,
+    idleTimeoutMs: typeof value.idleTimeoutMs === 'number' ? value.idleTimeoutMs : 180000,
+    idleAlert: {
+      status: typeof alert.status === 'string' ? alert.status : 'ok',
+      message: typeof alert.message === 'string' ? alert.message : '',
+      emotion: typeof alert.emotion === 'string' ? alert.emotion : 'neutral',
+    },
+  }
 }
 
 function cloneJson<T>(value: T): T {
@@ -465,6 +489,10 @@ function modelMemory(value: ModelMemoryResource): ModelMemoryWorkspace {
 
 function deviceCard(value: DeviceResource): DeviceCard {
   return { id: value.id, assistantId: value.assistantId, etag: value.etag, displayName: value.displayName, maskedMac: value.maskedMac, firmwareVersion: value.firmwareVersion, board: value.board, onlineState: value.onlineState, lastSeenAt: value.lastSeenAt, lastConversationAt: value.lastConversationAt }
+}
+
+function discoverableDevice(value: DiscoverableDeviceResource): DiscoverableDevice {
+  return { id: value.id, maskedMac: value.maskedMac, board: value.board, firmwareVersion: value.firmwareVersion, onlineState: value.onlineState, lastSeenAt: value.lastSeenAt, pairingExpiresAt: value.pairingExpiresAt }
 }
 
 function retentionPolicy(value: RetentionResource): RetentionPolicy {

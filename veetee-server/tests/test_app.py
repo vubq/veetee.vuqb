@@ -66,6 +66,79 @@ async def test_websocket_v3_handshake_and_turn(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_continuous_conversation_reuses_socket_and_times_out_after_idle(monkeypatch, tmp_path):
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    snapshot = json.loads(fixture.read_text(encoding="utf-8"))
+    snapshot["autoTurn"]["enabled"] = False
+    snapshot["conversation"] = {
+        "continuous": True,
+        "idleTimeoutMs": 1000,
+        "idleAlert": {"status": "ok", "message": "Mình sẽ chờ bạn gọi lại.", "emotion": "neutral"},
+    }
+    configured = tmp_path / "continuous.json"
+    configured.write_text(json.dumps(snapshot), encoding="utf-8")
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(configured))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    ws = None
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "continuous-test", "Client-Id": "continuous-client", "Protocol-Version": "3"},
+        )
+        await ws.send_json({
+            "type": "hello", "version": 3, "transport": "websocket",
+            "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+        })
+        hello = await ws.receive_json()
+        from veetee_server.protocol import AudioFrame, encode_audio
+
+        encoder = __import__("opuslib").Encoder(16000, 1, __import__("opuslib").APPLICATION_AUDIO)
+        frame = encode_audio(AudioFrame("ws-v3", encoder.encode(b"\0" * 1920, 960)))
+
+        async def finish_turn() -> list[dict[str, object]]:
+            await ws.send_bytes(frame)
+            await ws.send_json({"type": "listen", "state": "stop", "session_id": hello["session_id"]})
+            received: list[dict[str, object]] = []
+            while True:
+                message = await ws.receive(timeout=2)
+                if message.type is WSMsgType.BINARY:
+                    continue
+                if message.type is not WSMsgType.TEXT:
+                    raise AssertionError(f"unexpected WebSocket message: {message.type}")
+                event = json.loads(message.data)
+                received.append(event)
+                if event.get("type") == "listen" and event.get("state") == "ready":
+                    return received
+
+        await ws.send_json({"type": "listen", "state": "start", "mode": "auto", "session_id": hello["session_id"]})
+        first = await finish_turn()
+        stop = next(event for event in first if event.get("type") == "tts" and event.get("state") == "stop")
+        assert stop["continue_listening"] is True
+        assert service.metrics["active_turns"] == 0
+
+        second = await finish_turn()
+        assert any(event.get("type") == "stt" for event in second)
+        assert service.metrics["turn_count"] >= 2
+        idle = await ws.receive_json(timeout=2)
+        assert idle["type"] == "alert"
+        assert idle["code"] == "CONVERSATION_IDLE_TIMEOUT"
+        assert service.metrics["conversation_idle_timeouts"] == 1
+        assert service.metrics["active_turns"] == 0
+    finally:
+        if ws is not None:
+            await ws.close()
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
 async def test_handshake_rejects_non_object_features_without_server_exception(monkeypatch):
     fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
     monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")

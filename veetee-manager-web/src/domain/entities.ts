@@ -65,6 +65,12 @@ export interface AutoTurnSettings {
   noSpeechAlert: AutoTurnAlertSettings
 }
 
+export interface ConversationSettings {
+  continuous: boolean
+  idleTimeoutMs: number
+  idleAlert: AutoTurnAlertSettings
+}
+
 export interface ProgressAcknowledgementSettings extends RolePolicyObject {
   enabled?: boolean
   acknowledgementId?: string
@@ -95,6 +101,7 @@ export interface RoleConfig {
   speech: SpeechSettings
   admission: AdmissionSettings
   autoTurn: AutoTurnSettings
+  conversation?: ConversationSettings
   progress?: ProgressAcknowledgementSettings
   segmentation?: RolePolicyObject
   bargeIn?: BargeInSettings
@@ -340,8 +347,19 @@ export interface RetentionDeleteJob {
 
 export interface PairDeviceInput {
   assistantId: string
+  deviceId?: string
   verificationCode: string
   displayName?: string
+}
+
+export interface DiscoverableDevice {
+  id: string
+  maskedMac: string
+  board: string
+  firmwareVersion: string
+  onlineState: DeviceOnlineState
+  lastSeenAt: IsoDateTime
+  pairingExpiresAt: IsoDateTime | null
 }
 
 export interface DemoResetSummary {

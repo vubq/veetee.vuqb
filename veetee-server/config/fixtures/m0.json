@@ -22,11 +22,20 @@
     "deadlineMs": 900
   },
   "autoTurn": {
-    "enabled": false,
+    "enabled": true,
     "noSpeechTimeoutMs": 5000,
     "noSpeechAlert": {
       "status": "warning",
       "message": "Mình chưa nghe thấy bạn.",
+      "emotion": "neutral"
+    }
+  },
+  "conversation": {
+    "continuous": false,
+    "idleTimeoutMs": 180000,
+    "idleAlert": {
+      "status": "ok",
+      "message": "Mình sẽ chờ bạn gọi lại.",
       "emotion": "neutral"
     }
   },
