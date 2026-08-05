@@ -25,6 +25,19 @@
 - Host evidence không thay thế acceptance nghe/nhìn/chạm trên board; mọi gate
   physical của M0/M1/M2/M3 vẫn được giữ ở trạng thái mở.
 
+### Audio test evidence mới (2026-08-05)
+
+- Normal wake → utterance → TTS chạy lại thành công với Voice revision `87`;
+  player exit `0`, server `activeTurns=0`, `protocol_errors=0` sau drain.
+- Barge-in clip phát ngay sau `state=speaking` chưa bắt được wake lần hai vì
+  cửa sổ re-arm chưa sẵn sàng; cùng scenario với delay cấu hình 2 giây đã đi đủ
+  `wake detected → state=listening → wake interrupt → wake start`.
+- Đây là timing/lifecycle evidence, không đóng acoustic AEC/echo-only,
+  voice-onset hoặc time-to-silence gate. Báo cáo redacted nằm ngoài Git trong
+  `/tmp/veetee-wake-audio-20260805-1.json`,
+  `/tmp/veetee-wake-barge-audio-20260805-1.json` và
+  `/tmp/veetee-wake-barge-delay-20260805.json.report`.
+
 ## Bảng tiến độ theo evidence
 
 | Vùng | Trạng thái | Đã chứng minh | Còn mở |
