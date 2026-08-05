@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 Profile = Literal["ws-v1-compat", "ws-v2", "ws-v3"]
 MAX_WS_OPUS_PAYLOAD_BYTES = 1500
+_PROFILES: tuple[Profile, ...] = ("ws-v1-compat", "ws-v2", "ws-v3")
 
 
 class ProtocolError(ValueError):
@@ -23,6 +24,8 @@ class AudioFrame:
 
 
 def profile_version(profile: Profile) -> int:
+    if profile not in _PROFILES:
+        raise ProtocolError(f"unsupported protocol profile: {profile}")
     return {"ws-v1-compat": 1, "ws-v2": 2, "ws-v3": 3}[profile]
 
 
@@ -35,6 +38,8 @@ def profile_from_version(version: int) -> Profile:
 
 
 def encode_audio(frame: AudioFrame) -> bytes:
+    if frame.profile not in _PROFILES:
+        raise ProtocolError(f"unsupported protocol profile: {frame.profile}")
     payload = bytes(frame.payload)
     if not payload or len(payload) > MAX_WS_OPUS_PAYLOAD_BYTES:
         raise ProtocolError("opus payload length is outside wire limits")
@@ -48,6 +53,8 @@ def encode_audio(frame: AudioFrame) -> bytes:
 
 
 def decode_audio(profile: Profile, raw: bytes) -> AudioFrame:
+    if profile not in _PROFILES:
+        raise ProtocolError(f"unsupported protocol profile: {profile}")
     data = bytes(raw)
     if profile == "ws-v1-compat":
         payload = data

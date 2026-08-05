@@ -37,3 +37,11 @@ def test_rejects_v3_length_mismatch():
 def test_rejects_oversize_payload():
     with pytest.raises(ProtocolError):
         encode_audio(AudioFrame(profile="ws-v3", payload=b"x" * 1501))
+
+
+@pytest.mark.parametrize("profile", ["ws-v0", "", "mqtt-udp-v3"])
+def test_rejects_unknown_profile_in_both_directions(profile: str):
+    with pytest.raises(ProtocolError, match="unsupported protocol profile"):
+        encode_audio(AudioFrame(profile=profile, payload=b"x"))  # type: ignore[arg-type]
+    with pytest.raises(ProtocolError, match="unsupported protocol profile"):
+        decode_audio(profile, b"x")  # type: ignore[arg-type]

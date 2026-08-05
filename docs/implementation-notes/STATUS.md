@@ -104,6 +104,18 @@
   feature **1263/1263 pass** (`0x15ad80`, 66% free). Không flash/reset, không
   audio/serial/network mutation. M3 chưa đóng.
 
+### Python protocol profile fail-closed (2026-08-05, host-only)
+
+- `veetee_server.protocol.encode_audio()` và `decode_audio()` reject profile
+  không thuộc `ws-v1-compat`, `ws-v2`, `ws-v3` trước khi đọc/ghi audio bytes;
+  profile lạ không còn bị diễn giải ngầm như v3.
+- Regression riêng **8 passed**; full Voice Server suite sau hardening
+  **150 passed**, Ruff và compileall pass. Firmware C codec vốn đã fail-closed
+  với profile ngoài range nên invariant giữa hai peer được giữ đồng nhất.
+- Đây là wire-safety evidence host-only, không đổi default WebSocket v3, không
+  mở compatibility downgrade/fallback và không thay thế M0 physical PTT/mic/
+  speaker acceptance. Không audio device, flash/reset ESP32 hoặc đổi mạng.
+
 ## Cập nhật gần nhất (2026-08-04)
 
 ### Regression revalidation hiện tại
