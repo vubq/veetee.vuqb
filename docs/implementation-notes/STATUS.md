@@ -1333,3 +1333,27 @@
 - Không flash/reset/erase ESP32, không đọc serial audio, không phát/thu audio,
   không đổi Wi-Fi/NVS/route/Tailscale và không mutate production database.
   Physical M0 PTT/mic/speaker/LCD acceptance vẫn chờ operator cấp quyền.
+
+### Audio test after hello-timeout reload — physical (2026-08-05)
+
+- Sau khi reload `veetee-voice-18100.service` ở commit `8f769b4`, scenario
+  `wake-test-normal.local.json` đạt **2/2** lượt normal wake. Mỗi lượt đủ
+  `wake detected → wake start → state=speaking → wake detector armed`; wake và
+  utterance player đều exit `0`, không có forbidden serial marker.
+- Metrics sau khi lượt cuối drain: `active_turns=0`, `turn_admissions=2`,
+  `turn_releases=2`, `protocol_errors=0`, `history_sent=2`. TTFA đo được giữa
+  hai lượt là **1905 ms** và **1256 ms**; vì vậy lượt đầu vượt mục tiêu
+  `<1500 ms`, chưa được coi là TTFA gate pass. Đây là measured runtime evidence,
+  không phải benchmark p95.
+- `wake-barge-in.example.json` đạt lifecycle interrupt: `wake detected →
+  state=listening → wake interrupt → wake start`, interrupt player exit `0`,
+  không forbidden marker. `barge_in_count=0` là expected vì clip thứ hai là
+  wake-word interrupt phía firmware, chưa phải acoustic voice-onset barge-in.
+- Sau interrupt, không phát utterance thứ hai nên `auto_no_speech_timeouts=1`
+  là policy timeout đúng; cuối scenario `active_turns=0`,
+  `turn_releases=4`, `protocol_errors=0`. Reports redact chỉ lưu ngoài Git:
+  `/tmp/veetee-wake-normal-after-timeout-20260805.json` và
+  `/tmp/veetee-wake-barge-after-timeout-20260805.json`.
+- Không flash/reset/erase ESP32, không đổi Wi-Fi/NVS/NetworkManager/route/
+  firewall/Tailscale và không ghi raw audio, microphone capture, transcript hay
+  credential.
