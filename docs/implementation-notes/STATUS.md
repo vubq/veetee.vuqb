@@ -1138,3 +1138,16 @@
 - Firmware host CTest **4/4 passed**; ESP-IDF 6.0.2 build pass, binary
   `0x159410`, app partition còn **66%**. Không flash/reset/erase, không serial
   audio, không phát/thu audio và không đổi Wi-Fi/Tailscale.
+
+### Firmware MQTT/UDP AES parity — build-only (2026-08-05)
+
+- Thêm `veetee_mqtt_udp_crypto` dùng PSA Crypto/mbedtls trên ESP-IDF và OpenSSL
+  chỉ ở host oracle; clear header 16 byte được giữ nguyên và dùng làm CTR IV.
+  Session reset wipe key/nonce, sequence bắt đầu từ 1 và chặn wrap/payload sai.
+- Firmware host CTest **5/5 passed**; ESP-IDF 6.0.2 build pass, binary
+  `0x159410`, app partition còn **66%**. Voice targeted UDP **18 passed**, full
+  Voice **145 passed**; Manager API dedicated test DB **43/43**, lint/build/
+  OpenAPI check pass.
+- Đây chỉ là codec/golden evidence: không mở MQTT/UDP socket, không gọi provider,
+  không phát/thu audio, không đọc serial audio, không flash/reset/erase ESP32,
+  không đổi Wi-Fi/Tailscale và không mutate production `veetee_vubq`.
