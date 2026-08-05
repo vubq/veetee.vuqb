@@ -47,6 +47,10 @@ static const vt_display_texts_t fallback_texts = {
     .interaction_hint = "PTT  •  Wake word  •  Barge-in",
     .notice_title = "Thông báo",
     .notice_hint = "Veetee sẽ tiếp tục khi sẵn sàng",
+    .interrupted_title = "Đã ngắt",
+    .interrupted_hint = "Đang chuẩn bị lượt nói mới",
+    .error_title = "Có lỗi",
+    .error_hint = "Kiểm tra kết nối rồi thử lại",
 };
 
 static lv_color_t state_color(vt_device_state_t state) {
@@ -453,8 +457,8 @@ esp_err_t vt_display_show_pairing_code(vt_display_t *display, const char *code) 
     return ESP_OK;
 }
 
-esp_err_t vt_display_show_notice(vt_display_t *display, const char *title, const char *message,
-                                 uint32_t duration_ms) {
+static esp_err_t show_notice_kind(vt_display_t *display, vt_display_screen_t kind,
+                                  const char *title, const char *message, uint32_t duration_ms) {
     if (display == NULL || !display->ready || display->lv_display == NULL || display->notice_screen == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -465,9 +469,31 @@ esp_err_t vt_display_show_notice(vt_display_t *display, const char *title, const
     display->notice_deadline_ms = duration_ms == 0U ? 0U : esp_log_timestamp() + duration_ms;
     display->notice_active = duration_ms != 0U;
     lv_screen_load(display->notice_screen);
-    display->active_screen = VT_DISPLAY_SCREEN_NOTICE;
+    display->active_screen = kind;
     lvgl_port_unlock();
     return ESP_OK;
+}
+
+esp_err_t vt_display_show_notice(vt_display_t *display, const char *title, const char *message,
+                                 uint32_t duration_ms) {
+    return show_notice_kind(display, VT_DISPLAY_SCREEN_NOTICE, title, message, duration_ms);
+}
+
+esp_err_t vt_display_show_interrupted(vt_display_t *display, uint32_t duration_ms) {
+    if (display == NULL) return ESP_ERR_INVALID_ARG;
+    return show_notice_kind(display, VT_DISPLAY_SCREEN_INTERRUPTED,
+                            display->texts != NULL ? display->texts->interrupted_title : NULL,
+                            display->texts != NULL ? display->texts->interrupted_hint : NULL,
+                            duration_ms);
+}
+
+esp_err_t vt_display_show_error(vt_display_t *display, const char *title, const char *message,
+                                uint32_t duration_ms) {
+    if (display == NULL) return ESP_ERR_INVALID_ARG;
+    return show_notice_kind(display, VT_DISPLAY_SCREEN_ERROR,
+                            title != NULL ? title : (display->texts != NULL ? display->texts->error_title : NULL),
+                            message != NULL ? message : (display->texts != NULL ? display->texts->error_hint : NULL),
+                            duration_ms);
 }
 
 esp_err_t vt_display_tick(vt_display_t *display, vt_device_state_t state, uint32_t now_ms) {

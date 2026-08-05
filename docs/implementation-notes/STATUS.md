@@ -11,7 +11,7 @@
   preset OpenAI-compatible; `endpoint` cũ được hiển thị là `Base URL` để giữ
   revision tương thích.
 - Firmware LCD đã có screen model pairing/home/connecting/listening/thinking/
-  speaking/notice và notice timeout do display task tick xử lý. Text vẫn nằm ở
+  speaking/interrupted/error/notice và notice timeout do display task tick xử lý. Text vẫn nằm ở
   resource bundle/config boundary; không có provider/wake phrase literal trong
   renderer.
 - Verification host-only: Manager API 38 pass + 13 skip có chủ đích; Manager Web

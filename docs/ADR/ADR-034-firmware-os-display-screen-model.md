@@ -33,7 +33,7 @@ với màn hình nhỏ cần text rõ.
 ## Quyết định
 
 Chọn **B**. `vt_display_screen_t` tách pairing/home/connecting/listening/
-thinking/speaking/notice; `vt_display_view_t` gom widget dùng chung. Text vẫn
+thinking/speaking/interrupted/error/notice; `vt_display_view_t` gom widget dùng chung. Text vẫn
 đến từ `vt_display_texts_t`; alert message có thể đến từ config snapshot qua
 wire, không hardcode nghiệp vụ trong renderer. `vt_display_tick()` hết hạn
 notice trong display task owner, không dùng LVGL timer callback cạnh tranh với

@@ -32,6 +32,10 @@ typedef struct {
     const char *interaction_hint;
     const char *notice_title;
     const char *notice_hint;
+    const char *interrupted_title;
+    const char *interrupted_hint;
+    const char *error_title;
+    const char *error_hint;
 } vt_display_texts_t;
 
 typedef enum {
@@ -41,6 +45,8 @@ typedef enum {
     VT_DISPLAY_SCREEN_LISTENING,
     VT_DISPLAY_SCREEN_THINKING,
     VT_DISPLAY_SCREEN_SPEAKING,
+    VT_DISPLAY_SCREEN_INTERRUPTED,
+    VT_DISPLAY_SCREEN_ERROR,
     VT_DISPLAY_SCREEN_NOTICE,
 } vt_display_screen_t;
 
@@ -108,5 +114,7 @@ esp_err_t vt_display_init(vt_display_t *display, const vt_display_config_t *conf
 esp_err_t vt_display_show_state(vt_display_t *display, vt_device_state_t state);
 esp_err_t vt_display_show_pairing_code(vt_display_t *display, const char *code);
 esp_err_t vt_display_show_notice(vt_display_t *display, const char *title, const char *message, uint32_t duration_ms);
+esp_err_t vt_display_show_interrupted(vt_display_t *display, uint32_t duration_ms);
+esp_err_t vt_display_show_error(vt_display_t *display, const char *title, const char *message, uint32_t duration_ms);
 esp_err_t vt_display_tick(vt_display_t *display, vt_device_state_t state, uint32_t now_ms);
 void vt_display_deinit(vt_display_t *display);

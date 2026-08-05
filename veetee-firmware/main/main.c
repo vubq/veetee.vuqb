@@ -694,10 +694,10 @@ static void websocket_text_callback(const cJSON *message, void *context) {
         request_wake_arm_when_playback_idle(app);
         cJSON *code = cJSON_GetObjectItemCaseSensitive(message, "code");
         cJSON *notice = cJSON_GetObjectItemCaseSensitive(message, "message");
-        (void)vt_display_show_notice(&app->display,
-                                     cJSON_IsString(code) ? code->valuestring : NULL,
-                                     cJSON_IsString(notice) ? notice->valuestring : NULL,
-                                     2500U);
+        (void)vt_display_show_error(&app->display,
+                                    cJSON_IsString(code) ? code->valuestring : NULL,
+                                    cJSON_IsString(notice) ? notice->valuestring : NULL,
+                                    2500U);
         ESP_LOGW(TAG, "server alert code=%s", cJSON_IsString(code) ? code->valuestring : "unknown");
         return;
     }
@@ -930,6 +930,7 @@ static void ptt_task(void *context) {
                 (void)xQueueReset(app->playback_queue);
                 vt_audio_reset_acoustic_reference(&app->audio);
                 (void)state_apply(app, VT_EVENT_ABORT);
+                (void)vt_display_show_interrupted(&app->display, 900U);
                 request_wake_arm_when_playback_idle(app);
                 ESP_LOGI(TAG, "wake interrupt");
             }
@@ -949,6 +950,7 @@ static void ptt_task(void *context) {
                 (void)xQueueReset(app->playback_queue);
                 vt_audio_reset_acoustic_reference(&app->audio);
                 (void)state_apply(app, VT_EVENT_ABORT);
+                (void)vt_display_show_interrupted(&app->display, 900U);
                 if (was_auto_capture) request_wake_arm_when_playback_idle(app);
                 ESP_LOGI(TAG, "PTT interrupt state=%s", vt_state_name(current));
             }
