@@ -498,13 +498,14 @@ Contract test cài một fake secondary provider với counter. Khi active provi
 Manager Web không xem provider registry như một form duy nhất. Route `/providers`
 là overview theo sáu `kind`; `/providers/:kind` chỉ hiển thị installation và
 config của đúng capability đó; `/providers/tts/voices` là catalog voice riêng.
-Mỗi route dùng cùng typed gateway/JSON Schema nên provider mới không cần thêm
-component vendor-specific. Manifest metadata được normalize ở HTTP boundary thành
-family/protocol/locales/capabilities để người dùng nhìn thấy capability, không
-phải đọc provider ID hay revision.
+Mỗi route dùng cùng typed gateway/JSON Schema; provider mới dùng schema-driven
+editor, còn family có semantics riêng (OpenAI-compatible/VieNeu) đi qua adapter
+typed nhỏ thay vì rải vendor logic trong domain core. Manifest metadata được
+normalize ở HTTP boundary thành family/protocol/locales/capabilities để người dùng
+nhìn thấy capability, không phải đọc provider ID hay revision.
 
-Groq là preset thân thiện của protocol OpenAI-compatible. Snapshot cũ có thể giữ
-field `endpoint`; UI gọi nhãn chung `Base URL`, còn server adapter tiếp tục nhận
-`baseUrl`/`endpoint` để giữ compatibility mà không tạo provider fallback. Voice
-profile chỉ tham chiếu một TTS `providerConfigId`; voice cloning và reference audio
-vẫn ngoài scope.
+Groq là preset thân thiện của protocol OpenAI-compatible. Config mới ghi
+`baseUrl`; store normalize snapshot cũ có field `endpoint` khi đọc/ghi, còn server
+adapter tiếp tục nhận `baseUrl`/`endpoint` để giữ compatibility mà không tạo
+provider fallback. Voice profile chỉ tham chiếu một TTS `providerConfigId`; voice
+cloning và reference audio vẫn ngoài scope.
