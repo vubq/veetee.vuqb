@@ -1269,6 +1269,18 @@
   control omission: Voice Server **157 passed**, Ruff/compileall pass. Đây không
   phải real reference process/socket conformance; §11 checklist vẫn mở.
 
+### WakeNet normal 10-repetition soak — physical (2026-08-05)
+
+- `wake-test-10.local.json` đạt **10/10** lifecycle đầy đủ, player exit lỗi **0**,
+  không có forbidden serial marker. Không flash/reset/erase, không đổi Wi-Fi/NVS/
+  Tailscale hay runtime config.
+- Sau khi lượt cuối drain, Voice metrics có `turn_admissions=13`,
+  `turn_releases=13`, `active_turns=0`, `turn_rejections=0`,
+  `protocol_errors=0`, `turn_count=12`. Đây là bằng chứng positive wake/lifecycle;
+  100-repetition, acoustic AEC/voice-onset barge-in và cross-peer v1 socket vẫn mở.
+- Report redact chỉ ở `/tmp/veetee-wake-10-permission-20260805.json`; không commit
+  raw audio, microphone capture, transcript, serial dump hoặc credential.
+
 ### Voice runtime reload after host-only fix (2026-08-05)
 
 - Đã kiểm tra unit `veetee-voice-18100.service` đúng checkout mới, `activeTurns=0`
