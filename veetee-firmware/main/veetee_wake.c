@@ -292,6 +292,10 @@ bool vt_wake_is_ready(const vt_wake_t *wake) {
     return wake != NULL && wake->ready;
 }
 
+bool vt_wake_is_armed(const vt_wake_t *wake) {
+    return wake != NULL && wake->ready && wake->armed;
+}
+
 const char *vt_wake_model_name(const vt_wake_t *wake) {
     return wake == NULL ? "" : wake->model_name;
 }

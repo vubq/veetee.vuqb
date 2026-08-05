@@ -55,4 +55,5 @@ int vt_wake_feed(vt_wake_t *wake, const int16_t *samples, size_t sample_count, v
 int vt_wake_arm(vt_wake_t *wake);
 int vt_wake_disarm(vt_wake_t *wake);
 bool vt_wake_is_ready(const vt_wake_t *wake);
+bool vt_wake_is_armed(const vt_wake_t *wake);
 const char *vt_wake_model_name(const vt_wake_t *wake);

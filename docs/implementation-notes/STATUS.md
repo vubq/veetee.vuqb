@@ -38,6 +38,17 @@
   `/tmp/veetee-wake-barge-audio-20260805-1.json` và
   `/tmp/veetee-wake-barge-delay-20260805.json.report`.
 
+### Firmware wake pre-arm slice (2026-08-05)
+
+- Wake detector được arm sớm qua capture-owner queue sau wake event; lệnh trùng
+  không recreate model, còn interrupt trong `speaking` giữ playback-drain path.
+- Build/flash image `0x1596b0` pass, host CTest 8/8 pass, serial `wake_ready=1`
+  và board reconnect production sau khi fixture dừng.
+- Fixture 4-key immediate lifecycle pass, nhưng chưa chứng minh acoustic speaker
+  đang phát đủ lớn; AEC/echo-only, voice-onset/time-to-silence và false-reject
+  gate vẫn mở. Production normal probe bị `LLM_RATE_LIMITED` nên không dùng làm
+  firmware verdict.
+
 ## Bảng tiến độ theo evidence
 
 | Vùng | Trạng thái | Đã chứng minh | Còn mở |

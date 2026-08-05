@@ -613,11 +613,19 @@ static void capture_task(void *context) {
         vt_wake_command_t command = 0;
         while (app->wake_command_queue != NULL && xQueueReceive(app->wake_command_queue, &command, 0) == pdTRUE) {
             if (command == VT_WAKE_COMMAND_ARM && vt_wake_is_ready(&app->wake)) {
-                int arm_result = vt_wake_arm(&app->wake);
-                if (arm_result != VT_WAKE_OK) {
-                    ESP_LOGW(TAG, "wake re-arm failed result=%d", arm_result);
+                if (!vt_wake_is_armed(&app->wake)) {
+                    int arm_result = vt_wake_arm(&app->wake);
+                    if (arm_result != VT_WAKE_OK) {
+                        ESP_LOGW(TAG, "wake re-arm failed result=%d", arm_result);
+                    } else {
+                        ESP_LOGI(TAG, "wake detector armed model=%s", vt_wake_model_name(&app->wake));
+                    }
                 } else {
-                    ESP_LOGI(TAG, "wake detector armed model=%s", vt_wake_model_name(&app->wake));
+                    /* Keep the existing marker for harnesses and operators,
+                       while avoiding a destructive model recreate when a
+                       pre-arm already completed before tts/start. */
+                    ESP_LOGI(TAG, "wake detector armed model=%s (already ready)",
+                             vt_wake_model_name(&app->wake));
                 }
             }
         }
@@ -740,6 +748,15 @@ static void ptt_task(void *context) {
             pending_start = true;
             pending_auto = true;
             vt_device_state_t current = state_read(app);
+            /* WakeNet disarms after a hit. Re-arm through the capture owner
+               immediately, while the new utterance is being captured. The
+               detector is not fed while capture_active is true, so the user's
+               utterance cannot self-trigger; by tts/start the model is already
+               warm for an immediate wake interrupt. An event during speaking
+               is already an interrupt; its existing playback-drain path owns
+               the next re-arm and avoids feeding the tail of the same phrase
+               into a fresh model instance. */
+            if (!vt_state_is_interruptible(current)) request_wake_arm(app);
             if (vt_state_is_interruptible(current)) {
                 clear_pending_tts_stop(app);
                 app->capture_active = false;
