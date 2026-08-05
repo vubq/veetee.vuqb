@@ -133,6 +133,7 @@ Service requirements:
 | `VEETEE_GROQ_SECRET_FILE` | yes khi Groq active | Một production key/secretRef resolution. |
 | `VEETEE_LOG_LEVEL` | no | Enum validated. |
 | `VEETEE_METRICS_BIND` | no | Loopback mặc định. |
+| `VEETEE_HELLO_TIMEOUT_MS` | no | Deadline client hello sau HTTP upgrade; mặc định `10000`, bounded `1000..60000`, quá hạn đóng `1002`. |
 
 ### 5.2 Manager API
 

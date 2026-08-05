@@ -14,14 +14,14 @@
   Manager Web `18181`; preview host-native tách riêng có thể dùng `18000/18001/
   18081`. Không dùng process/port của checkout cũ.
 
-## Operator lock — audio/physical test paused (2026-08-05)
+## Operator lock — audio/physical test reopened (2026-08-05)
 
-- Theo yêu cầu chủ dự án, tạm dừng mọi kiểm thử bằng phát audio hoặc microphone:
-  không phát clip/giọng nói, không mở speaker/microphone và không đọc serial để
-  kết luận audio.
-- Không flash, reset hoặc erase ESP32; không đổi Wi-Fi/NVS, NetworkManager,
-  route, firewall hay Tailscale. Chỉ tiếp tục host build, unit/contract test,
-  static quality và health probe read-only cho tới khi chủ dự án cấp quyền lại.
+- Chủ dự án đã cấp lại quyền kiểm thử bằng audio/microphone. Có thể chạy scenario
+  vật lý bounded và đọc serial để thu evidence, nhưng phải note rõ phạm vi và
+  không suy diễn host evidence thành acceptance nghe/nhìn/chạm.
+- Vẫn không flash, reset hoặc erase ESP32 nếu chưa cần thiết; không đổi Wi-Fi/NVS,
+  NetworkManager, route, firewall hay Tailscale. Audio test không ghi raw audio,
+  microphone capture, transcript hoặc credential vào repository.
 - Host evidence không thay thế acceptance nghe/nhìn/chạm trên board; mọi gate
   physical của M0/M1/M2/M3 vẫn được giữ ở trạng thái mở.
 
@@ -1280,6 +1280,17 @@
   100-repetition, acoustic AEC/voice-onset barge-in và cross-peer v1 socket vẫn mở.
 - Report redact chỉ ở `/tmp/veetee-wake-10-permission-20260805.json`; không commit
   raw audio, microphone capture, transcript, serial dump hoặc credential.
+
+### WebSocket hello timeout hardening — host-only (2026-08-05)
+
+- Voice Server bọc lần `receive()` đầu tiên bằng timeout cấu hình
+  `VEETEE_HELLO_TIMEOUT_MS` (mặc định 10.000 ms, bounded 1.000–60.000 ms).
+  Peer đã upgrade nhưng không gửi client `hello` sẽ nhận close `1002`; session
+  lease/provider runtime không được cấp và metric `hello_timeouts` tăng đúng một.
+- Regression idle WebSocket, default/bound validation và malformed hello đều
+  pass; wire shape khi hello hợp lệ không đổi.
+- Đây là host-only transport hardening; không gọi provider/Groq, không phát/thu
+  audio, không flash/reset/erase ESP32 và không đổi Wi-Fi/NVS/Tailscale.
 
 ### Voice runtime reload after host-only fix (2026-08-05)
 

@@ -290,8 +290,10 @@ Validation và negotiation:
    `ws-v1-compat` còn chấp nhận sample rate Opus hợp lệ do peer cũ echo trong
    hello; profile v2/v3 phải khớp decoder config.
 6. `session_id` MUST không rỗng ở Veetee-to-Veetee.
-7. Firmware MUST timeout handshake sau 10 giây, đóng socket và báo lỗi profile;
-   firmware tham chiếu cũng đợi event server hello tối đa 10 giây
+7. Firmware và Voice server MUST timeout handshake sau 10 giây mặc định, đóng
+   socket với code `1002` và báo lỗi profile; server cho phép vận hành điều chỉnh
+   trong khoảng 1–60 giây qua `VEETEE_HELLO_TIMEOUT_MS`. Firmware tham chiếu cũng
+   đợi event server hello tối đa 10 giây
    (`references/xiaozhi-esp32/main/protocols/websocket_protocol.cc:175-195`).
 8. Unknown optional fields MUST bị bỏ qua.
 
@@ -1295,7 +1297,7 @@ thể abort khi phát hiện voice
 | Lỗi | Receiver action |
 |---|---|
 | auth/identity fail trước upgrade | HTTP 400/401/403, không cấp session |
-| không có client hello trong 10 s | close `1002` |
+| không có client hello trong 10 s (hoặc deadline `VEETEE_HELLO_TIMEOUT_MS`) | close `1002`, tăng `hello_timeouts` |
 | malformed UTF-8/JSON | close `1007` |
 | JSON không phải object | ignore; integer echo chỉ thuộc fixture peer cũ |
 | thiếu/invalid `type` | ignore + metric |

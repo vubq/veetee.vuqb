@@ -95,6 +95,12 @@ Health:
 - `GET /metrics` (redacted counters)
 - `WS /veetee/v1/` (path có thể đổi bằng `VEETEE_WS_PATH`)
 
+Handshake WebSocket có deadline 10 giây mặc định. Có thể điều chỉnh trong khoảng
+1–60 giây bằng `VEETEE_HELLO_TIMEOUT_MS`; socket đã upgrade nhưng chưa gửi client
+`hello` trước deadline sẽ đóng với code `1002` và chỉ tăng counter
+`hello_timeouts`. Đây là timeout của handshake, không phải timeout của một lượt
+thoại đã bắt đầu.
+
 ### Staged MQTT/UDP v3 core
 
 `veetee_server.mqtt_udp` cung cấp parser/crypto/reorder primitives cho profile M3;

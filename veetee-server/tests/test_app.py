@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+from aiohttp import WSMsgType
 from aiohttp.test_utils import TestClient, TestServer
 
 from veetee_server.app import VoiceApplication
@@ -99,6 +100,46 @@ async def test_handshake_rejects_non_object_features_without_server_exception(mo
             await asyncio.sleep(0.01)
         assert service.metrics["active_connections"] == 0
     finally:
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_handshake_timeout_closes_idle_peer_without_protocol_exception(monkeypatch):
+    """An upgraded socket that never sends hello must not occupy a session."""
+
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    monkeypatch.setenv("VEETEE_HELLO_TIMEOUT_MS", "1000")
+    config = ServerConfig.from_env()
+    assert config.hello_timeout_ms == 1000
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    ws = None
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "idle-hello-test", "Client-Id": "idle-client", "Protocol-Version": "3"},
+        )
+        message = await ws.receive(timeout=2)
+        assert message.type in {WSMsgType.CLOSE, WSMsgType.CLOSED}
+        assert ws.close_code == 1002
+        assert service.metrics["hello_timeouts"] == 1
+        assert service.metrics["protocol_errors"] == 0
+        for _ in range(100):
+            if service.metrics["active_connections"] == 0:
+                break
+            await asyncio.sleep(0.01)
+        assert service.metrics["active_connections"] == 0
+        assert service.metrics["session_admissions"] == 0
+    finally:
+        if ws is not None:
+            await ws.close()
         await client.close()
         await runtime.stop()
 

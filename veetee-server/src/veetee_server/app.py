@@ -54,6 +54,7 @@ class VoiceApplication:
             "turn_rejections": 0,
             "turn_releases": 0,
             "auto_no_speech_timeouts": 0,
+            "hello_timeouts": 0,
             "protocol_errors": 0,
             "audio_frames_in": 0,
             "audio_frames_out": 0,
@@ -228,7 +229,15 @@ class VoiceSession:
 
     async def run(self) -> None:
         try:
-            first = await self.ws.receive()
+            try:
+                first = await asyncio.wait_for(
+                    self.ws.receive(),
+                    timeout=self.app.config.hello_timeout_ms / 1000,
+                )
+            except asyncio.TimeoutError:
+                self.app.metrics["hello_timeouts"] += 1
+                await self.close(1002, "hello timeout")
+                return
             if first.type != WSMsgType.TEXT:
                 await self.close(1002, "hello required")
                 return
