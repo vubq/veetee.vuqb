@@ -102,5 +102,6 @@ time-to-silence và false accept/reject vẫn là gate đo riêng.
 - Dialog ghép nối không còn hiển thị mã fixture cố định; API/production mode chỉ
   hướng dẫn nhập 6 chữ số trên robot. Mock gateway vẫn giữ fixture riêng để test
   deterministic, không đưa giá trị đó vào runtime hoặc database.
-- Chromium E2E pairing sau thay đổi: **1 passed**; thay đổi chỉ ở UI copy/guard,
-  không ảnh hưởng API, wire contract, DB hay firmware.
+- Chromium E2E pairing sau thay đổi: **1 passed**; full Chromium E2E hiện
+  **15/15 passed**, UI unit **96/96**, typecheck/lint/build pass. Thay đổi chỉ ở
+  UI copy/guard, không ảnh hưởng API, wire contract, DB hay firmware.

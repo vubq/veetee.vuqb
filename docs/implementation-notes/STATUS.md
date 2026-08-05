@@ -1801,5 +1801,6 @@
 - Dialog ghép nối chỉ còn hướng dẫn mã 6 số trên robot; mã fixture `VT-2608`
   không xuất hiện trong API/production mode. Fixture vẫn giữ mã riêng trong mock
   gateway để E2E deterministic.
-- Preview E2E pairing pass; UI unit/typecheck/lint/build vẫn giữ xanh. Không đổi
-  API, wire contract, database runtime hoặc firmware.
+- Full Chromium E2E **15/15 passed** sau thay đổi; UI unit **96/96**,
+  typecheck/lint/build vẫn xanh. Không đổi API, wire contract, database runtime
+  hoặc firmware.
