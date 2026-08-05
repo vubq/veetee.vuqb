@@ -18,6 +18,7 @@ class WakeAudioHarnessTest(unittest.TestCase):
         self.assertIn("--no-reset", monitor.command)
         self.assertNotIn("flash", monitor.command)
         self.assertEqual(scenario.monitor_baud, 115200)
+        self.assertEqual(scenario.startup_wait_seconds, 5)
 
     def test_player_placeholder_is_argv_based(self) -> None:
         command = wake_audio_test._render_player(("pw-play", "{file}"), Path("/tmp/a clip.wav"))

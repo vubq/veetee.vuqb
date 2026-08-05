@@ -1512,3 +1512,24 @@
   và Web `18181` HTTP 200. Không flash/reset/erase, đổi Wi-Fi/NVS/Tailscale,
   hoặc lưu raw audio/transcript/credential. Acoustic AEC/echo-only,
   voice-onset/time-to-silence và 100-repetition gates vẫn mở.
+
+### Current audio permission run and harness timing guard (2026-08-05)
+
+- Production revision `87` chạy normal wake **2/2** với audio thật qua loa máy;
+  mỗi lượt đạt wake/capture/TTS/drain/re-arm, player exit `0`, không forbidden
+  serial marker. Report: `/tmp/veetee-wake-audio-20260805-current-2.json`.
+- Firmware wake interrupt **1/1** đạt đủ `wake detected → state=listening →
+  wake interrupt → wake start`; report
+  `/tmp/veetee-wake-barge-audio-20260805-current.json`. `barge_in_count=0`
+  đúng semantics vì đây không phải server acoustic voice-onset; stale
+  `tts/stop` warning bị barrier loại bỏ.
+- Negative no-speech với monitor wait `5s` đạt wake/capture/
+  `NO_SPEECH_TIMEOUT`/re-arm, report
+  `/tmp/veetee-wake-no-speech-20260805-current-startup5.json`. Attempt wait
+  `1s` timeout trước marker wake do monitor attach timing; không thấy
+  crash/provider error. Scenario mẫu đã tăng wait lên `5s`.
+- Physical harness suites `20 passed`; runtime sau cleanup: Voice/API/Web
+  ready, `active_turns=0`, `protocol_errors=0`, board giữ kết nối. Không flash,
+  reset, erase NVS, đổi Wi-Fi/route/Tailscale hay lưu raw audio/transcript/key.
+  PTT/LCD/loa xác nhận vật lý, acoustic AEC/time-to-silence, false
+  accept/reject, 100-repetition và TTFA p95 vẫn chưa đóng.

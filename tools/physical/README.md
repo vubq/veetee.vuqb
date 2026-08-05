@@ -149,6 +149,12 @@ starting the next repetition. Use
 `--verbose` only when raw serial output is needed; do not commit its output or
 any credential-bearing log.
 
+The tracked wake scenarios use `monitor.startupWaitSeconds: 5`. This delay is
+intentional: `idf.py monitor --no-reset` needs time to attach and the detector
+must be receiving frames before the first clip starts. A shorter value can make
+the host player exit successfully while the board misses the phrase, which is
+a harness timing failure rather than evidence of a provider or firmware crash.
+
 Every completed playback now emits a redacted `audio_player_exit` event in the
 optional report. It contains only `clipRole`, process `exitCode`, bounded player
 duration and at most 512 characters of player `stderr`; it never captures raw

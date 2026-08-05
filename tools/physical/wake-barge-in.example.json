@@ -5,7 +5,7 @@
     "serialPort": "/dev/ttyACM0",
     "baud": 115200,
     "healthUrl": "http://127.0.0.1:18100/health/ready",
-    "startupWaitSeconds": 1
+    "startupWaitSeconds": 5
   },
   "player": {"command": ["pw-play", "{file}"]},
   "clips": {
