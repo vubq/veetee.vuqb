@@ -89,6 +89,10 @@ class MqttControlCarrier(AbstractAsyncContextManager["MqttControlCarrier"]):
         client = self._require_client()
         if publication.topic != self.config.publish_topic:
             raise MqttCarrierError("MQTT_TOPIC_MISMATCH", "publish topic does not match the active session")
+        if publication.qos != self.config.control_qos or publication.retain != self.config.retain:
+            raise MqttCarrierError("MQTT_PUBLISH_POLICY", "publish QoS/retain does not match the active session")
+        if not isinstance(publication.payload, bytes):
+            raise MqttCarrierError("MQTT_PAYLOAD_INVALID", "MQTT control payload must be bytes")
         if len(publication.payload) > MQTT_CONTROL_MAX_PAYLOAD_BYTES:
             raise MqttCarrierError("MQTT_PAYLOAD_TOO_LARGE", "MQTT control payload exceeds 8192 bytes")
         await client.publish(publication.topic, publication.payload, qos=publication.qos, retain=publication.retain)

@@ -1126,7 +1126,7 @@
 - Thêm optional `aiomqtt 2.5.1` extra và `MqttControlCarrier`: connect,
   subscribe exact topic, bounded publish/incoming và cleanup cancellation; JSON
   decode/session/UDP vẫn do các primitive hiện hành xử lý.
-- Fake carrier targeted **4 passed**, control/session targeted **29 passed**,
-  full Voice Server **144 passed**, Ruff/compileall/lock check pass. Không kết
+- Fake carrier targeted **5 passed**, control/session targeted **29 passed**,
+  full Voice Server **145 passed**, Ruff/compileall/lock check pass. Không kết
   nối broker, không mở UDP socket, không phát/thu audio và không đổi transport
   default (WS v3).

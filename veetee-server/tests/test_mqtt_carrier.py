@@ -106,6 +106,13 @@ async def test_carrier_rejects_publish_before_connect_and_oversized_payload():
 
 
 @pytest.mark.asyncio
+async def test_carrier_rejects_publish_policy_mismatch():
+    async with MqttControlCarrier(_config(), client_factory=lambda *args, **kwargs: FakeClient()) as carrier:
+        with pytest.raises(MqttCarrierError, match="QoS/retain"):
+            await carrier.publish(MqttPublish("up/device-1", b"{}", 0, False))
+
+
+@pytest.mark.asyncio
 async def test_carrier_dependency_failure_is_typed():
     def missing_factory(*args, **kwargs):
         raise MqttCarrierError("MQTT_CLIENT_MISSING", "install the optional mqtt extra")
