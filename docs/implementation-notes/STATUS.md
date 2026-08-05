@@ -23,7 +23,7 @@
 | M1 — realtime conversation | Đang làm, **chưa đóng DoD** | Streaming/cancellation/tool loop, v1/v2/v3 fixture, WakeNet, noise suppression, multi-key fixture 10/10, AEC lifecycle/resource 10/10; stale `tts/stop` barrier đã sửa; normal wake 2 lượt, barge-in lifecycle physical, corpus smoke 1 negative/1 positive và host TTFA warm p95 `1481,4 ms` pass. | Acoustic echo-only, false accept/reject corpus đủ lớn, voice-onset barge-in/time-to-silence, 100 repetition, provider promotion và cross-peer physical conformance. Các lần timeout AEC/bypass trước guard vẫn là diagnostic history, không coi là acoustic verdict. Xem [`M1.md`](M1.md). |
 | Groq multi-key | Hoàn tất cho **test harness** | `VEETEE_TEST_GROQ_KEYS_FILE` chỉ với fixture; round-robin; chỉ retry `429` trước delta đầu; không replay partial stream; firmware không chứa key. | Không phải production fallback/key rotation; nhiều key vẫn có thể cùng dính quota account/org/model/IP. |
 | M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary, TTL freshness, privacy export, async conversation delete/tombstone và host regression. | Promotion provider/model/VRAM, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
-| M3 — transport/hardware/OTA | Đang mở ở host-only slice | MQTT control/bridge/session, firmware UDP header/crypto codec, UDP v3 AES/reorder/barrier, deterministic loss/soak, firmware MCP registry/wire/JSON-RPC dispatcher và shared MCP cross-conformance fixture đã có host/ESP-IDF build-only golden/test evidence; chưa nối carrier hoặc owner-task vào runtime. | MQTT client/gateway/socket, firmware encrypted carrier, owner-task + BoardHal MCP phần cứng, real-peer/real-network comparison, assets/OTA và transport-promotion cần mở sau. |
+| M3 — transport/hardware/OTA | Đang mở ở host-only slice | MQTT control/bridge/session, firmware UDP header/crypto codec, UDP v3 AES/reorder/barrier, deterministic loss/soak, firmware MCP registry/wire/JSON-RPC dispatcher, shared MCP cross-conformance fixture và feature-gated owner-task queue đã có host/ESP-IDF build-only golden/test evidence; MCP flag vẫn tắt mặc định, chưa nối carrier/hardware. | MQTT client/gateway/socket, firmware encrypted carrier, BoardHal capability manifest + peripheral owner tools, real-peer/real-network comparison, assets/OTA và transport-promotion cần mở sau. |
 | M4 — hardening/multilingual | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | Capacity, backup/restore, security, locale thứ hai và soak dài. |
 
 ## Nơi xem trực tiếp
@@ -83,6 +83,15 @@
   Đây là host-only cross-conformance evidence; không thay thế hai chiều với peer
   thật hoặc physical MCP. Không mở socket/carrier, không phát/thu audio,
   không flash/reset board và không đổi Wi-Fi/Tailscale.
+
+### MCP owner-task queue (2026-08-05)
+
+- `veetee_mcp_task.[ch]` chuyển parse/dispatch ra owner task qua queue bounded;
+  session guard + registry reset chống stale reconnect. `CONFIG_VEETEE_MCP_ENABLED`
+  vẫn tắt mặc định và chưa có BoardHal tool descriptor.
+- ESP-IDF default build **pass** (`0x159430`, 66% free); build test-only bật
+  feature **1263/1263 pass** (`0x15ad80`, 66% free). Không flash/reset, không
+  audio/serial/network mutation. M3 chưa đóng.
 
 ## Cập nhật gần nhất (2026-08-04)
 

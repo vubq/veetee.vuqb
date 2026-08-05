@@ -22,6 +22,7 @@ typedef struct {
     int input_sample_rate;
     int output_sample_rate;
     int frame_duration_ms;
+    bool mcp_enabled;
     vt_transport_text_callback_t on_text;
     vt_transport_audio_callback_t on_audio;
     void *context;

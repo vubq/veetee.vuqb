@@ -578,10 +578,12 @@ Implementation boundary hiện có:
 - `veetee_mcp_wire.[ch]` serialize response bounded;
 - `veetee_mcp_dispatch.[ch]` parse/validate cJSON envelope và route tới registry.
 
-Ba lớp này đã có host CTest và ESP-IDF compile gate, nhưng chưa được gọi từ
-`wire_dispatch`/`app_main`, chưa có `BoardHal` capability manifest và chưa được
-phép thực hiện hardware mutation. Integration phải đưa request qua queue
-`mcp_requests` và owner task theo §4.2/§10.4; không gọi callback peripheral trực
+Ba lớp này đã có host CTest và ESP-IDF compile gate. Owner boundary
+`veetee_mcp_task.[ch]` đã đưa envelope vào queue `mcp_requests` bounded và chạy
+parser/dispatcher trong task riêng khi `CONFIG_VEETEE_MCP_ENABLED` được bật;
+config mặc định vẫn tắt. Chưa có `BoardHal` capability manifest và chưa được
+phép thực hiện hardware mutation. Integration tiếp theo phải map descriptor
+thật và đưa callback peripheral qua owner matrix §10.4; không gọi callback trực
 tiếp từ parser hoặc transport callback.
 
 ### 10.2 Initial tool catalog

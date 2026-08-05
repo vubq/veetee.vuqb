@@ -149,7 +149,7 @@ static int send_hello(vt_transport_t *transport) {
     cJSON_AddStringToObject(root, "type", "hello");
     cJSON_AddNumberToObject(root, "version", profile_version_number(transport->config.profile));
     cJSON_AddStringToObject(root, "transport", "websocket");
-    cJSON_AddBoolToObject(features, "mcp", false);
+    cJSON_AddBoolToObject(features, "mcp", transport->config.mcp_enabled);
     cJSON_AddItemToObject(root, "features", features);
     cJSON_AddStringToObject(audio, "format", "opus");
     cJSON_AddNumberToObject(audio, "sample_rate", transport->config.input_sample_rate);

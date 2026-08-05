@@ -50,6 +50,41 @@ config VEETEE_ENABLE_HARDWARE
         Enable only after the board profile has been verified. Host builds do
         not use this option.
 
+config VEETEE_MCP_ENABLED
+    bool "Enable bounded device MCP owner task"
+    default n
+    help
+        Accept MCP requests on a bounded owner task. Hardware descriptors are
+        still supplied by the board capability manifest; enabling this option
+        does not invent or advertise a tool.
+
+config VEETEE_MCP_QUEUE_DEPTH
+    int "MCP request queue depth"
+    range 1 8
+    default 2
+    depends on VEETEE_MCP_ENABLED
+    help
+        Number of complete bounded MCP JSON envelopes held while the owner
+        task runs. Reject new requests when the queue is full.
+
+config VEETEE_MCP_TASK_STACK
+    int "MCP owner task stack size (bytes)"
+    range 4096 16384
+    default 12288
+    depends on VEETEE_MCP_ENABLED
+    help
+        cJSON parsing and bounded response serialization happen in the owner
+        task. Tune only with stack high-water evidence on the target board.
+
+config VEETEE_MCP_TASK_PRIORITY
+    int "MCP owner task priority"
+    range 1 24
+    default 14
+    depends on VEETEE_MCP_ENABLED
+    help
+        Relative FreeRTOS priority for bounded MCP parsing/dispatch. Keep it
+        below audio capture/output deadlines and verify queue age on hardware.
+
 config VEETEE_WAKE_ENABLED
     bool "Enable on-device wake word"
     default n

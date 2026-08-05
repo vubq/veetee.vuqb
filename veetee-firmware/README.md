@@ -36,7 +36,9 @@ clear 16-byte header, uses that header as the CTR IV, rejects sequence wrap and
 wipes session material on reset. It is still a codec boundary: no MQTT client,
 UDP socket, reconnect task or runtime carrier is enabled by this test. MCP
 dispatch is likewise a boundary; owner-task scheduling and BoardHal capability
-tools remain a later slice.
+tools remain a later slice. The optional `CONFIG_VEETEE_MCP_ENABLED` build flag
+adds a bounded owner task and queue (default off); without a board capability
+manifest it has an empty catalog and must not be promoted to a physical image.
 
 ## ESP-IDF compile gate
 

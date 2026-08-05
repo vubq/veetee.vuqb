@@ -1,6 +1,7 @@
 #include "veetee_audio.h"
 #include "veetee_config.h"
 #include "veetee_display.h"
+#include "veetee_mcp_task.h"
 #include "veetee_protocol.h"
 #include "veetee_state.h"
 #include "veetee_transport.h"
@@ -151,6 +152,18 @@
 #ifndef CONFIG_VEETEE_PLAYBACK_QUEUE_DEPTH
 #define CONFIG_VEETEE_PLAYBACK_QUEUE_DEPTH 32
 #endif
+#ifndef CONFIG_VEETEE_MCP_ENABLED
+#define CONFIG_VEETEE_MCP_ENABLED 0
+#endif
+#ifndef CONFIG_VEETEE_MCP_QUEUE_DEPTH
+#define CONFIG_VEETEE_MCP_QUEUE_DEPTH 2
+#endif
+#ifndef CONFIG_VEETEE_MCP_TASK_STACK
+#define CONFIG_VEETEE_MCP_TASK_STACK 12288
+#endif
+#ifndef CONFIG_VEETEE_MCP_TASK_PRIORITY
+#define CONFIG_VEETEE_MCP_TASK_PRIORITY 14
+#endif
 
 static const char *TAG = "veetee-fw";
 
@@ -177,6 +190,9 @@ typedef struct {
     QueueHandle_t playback_queue;
     QueueHandle_t wake_event_queue;
     QueueHandle_t wake_command_queue;
+#if CONFIG_VEETEE_MCP_ENABLED
+    vt_mcp_task_t *mcp_task;
+#endif
     SemaphoreHandle_t state_lock;
     SemaphoreHandle_t audio_encoder_lock;
     SemaphoreHandle_t audio_decoder_lock;
@@ -217,6 +233,10 @@ static int send_control(vt_app_t *app, const char *type, const char *state, cons
 static int send_listen_start(vt_app_t *app, bool auto_mode);
 static int device_identity(vt_app_t *app);
 static void service_playback_idle(vt_app_t *app);
+#if CONFIG_VEETEE_MCP_ENABLED
+static int mcp_send_text(const char *text, const char *session_id, void *context);
+static const char *mcp_current_session(void *context);
+#endif
 
 static void request_wake_arm(vt_app_t *app) {
     if (app == NULL || app->wake_command_queue == NULL) return;
@@ -394,6 +414,26 @@ static int send_control(vt_app_t *app, const char *type, const char *state, cons
     return result;
 }
 
+#if CONFIG_VEETEE_MCP_ENABLED
+static const char *mcp_current_session(void *context) {
+    vt_app_t *app = (vt_app_t *)context;
+    return app == NULL ? "" : vt_transport_session_id(&app->transport);
+}
+
+static int mcp_send_text(const char *text, const char *session_id, void *context) {
+    vt_app_t *app = (vt_app_t *)context;
+    if (app == NULL || text == NULL || !vt_transport_is_ready(&app->transport)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const char *current = vt_transport_session_id(&app->transport);
+    if (session_id != NULL && session_id[0] != '\0' &&
+        (current == NULL || strcmp(current, session_id) != 0)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return vt_transport_send_text(&app->transport, text);
+}
+#endif
+
 static int send_listen_start(vt_app_t *app, bool auto_mode) {
     if (app == NULL || !vt_transport_is_ready(&app->transport)) return ESP_ERR_INVALID_STATE;
     cJSON *root = cJSON_CreateObject();
@@ -416,6 +456,9 @@ static void websocket_text_callback(const cJSON *message, void *context) {
     cJSON *type = cJSON_GetObjectItemCaseSensitive(message, "type");
     if (!cJSON_IsString(type) || type->valuestring == NULL) return;
     if (strcmp(type->valuestring, "hello") == 0) {
+#if CONFIG_VEETEE_MCP_ENABLED
+        if (app->mcp_task != NULL) vt_mcp_task_reset_session(app->mcp_task);
+#endif
         (void)state_apply(app, VT_EVENT_HELLO_READY);
         ESP_LOGI(TAG, "server hello accepted; session ready");
         return;
@@ -426,6 +469,15 @@ static void websocket_text_callback(const cJSON *message, void *context) {
          !vt_wire_session_matches(vt_transport_session_id(&app->transport), true,
                                   incoming_session->valuestring))) {
         ESP_LOGW(TAG, "ignoring server message with mismatched session");
+        return;
+    }
+    if (strcmp(type->valuestring, "mcp") == 0) {
+#if CONFIG_VEETEE_MCP_ENABLED
+        if (app->mcp_task == NULL || vt_mcp_task_enqueue(
+                app->mcp_task, message, vt_transport_session_id(&app->transport)) != VT_MCP_TASK_OK) {
+            ESP_LOGW(TAG, "MCP request rejected by bounded owner queue");
+        }
+#endif
         return;
     }
     if (strcmp(type->valuestring, "tts") == 0) {
@@ -784,6 +836,11 @@ static void network_task(void *context) {
             .input_sample_rate = CONFIG_VEETEE_MIC_SAMPLE_RATE,
             .output_sample_rate = CONFIG_VEETEE_SPK_SAMPLE_RATE,
             .frame_duration_ms = CONFIG_VEETEE_AUDIO_FRAME_DURATION_MS,
+#if CONFIG_VEETEE_MCP_ENABLED
+            .mcp_enabled = app->mcp_task != NULL,
+#else
+            .mcp_enabled = false,
+#endif
             .on_text = websocket_text_callback,
             .on_audio = websocket_audio_callback,
             .context = app,
@@ -900,6 +957,17 @@ void app_main(void) {
         ESP_LOGE(TAG, "firmware bootstrap allocation failed");
         return;
     }
+#if CONFIG_VEETEE_MCP_ENABLED
+    app->mcp_task = calloc(1, sizeof(*app->mcp_task));
+    const esp_app_desc_t *app_description = esp_app_get_description();
+    if (app->mcp_task == NULL || app_description == NULL ||
+        vt_mcp_task_init(app->mcp_task, NULL, 0U, app_description->project_name,
+                         app_description->version, mcp_send_text, mcp_current_session,
+                         app, CONFIG_VEETEE_MCP_QUEUE_DEPTH) != VT_MCP_TASK_OK) {
+        ESP_LOGE(TAG, "MCP owner task initialization failed; refusing partial bootstrap");
+        return;
+    }
+#endif
     ESP_LOGI(TAG, "board=%s protocol=v%d device=%s", CONFIG_VEETEE_BOARD_PROFILE, CONFIG_VEETEE_PROTOCOL_PROFILE, app->device_id);
 #if CONFIG_VEETEE_LCD_ENABLED
     vt_display_config_t display_config = {
@@ -987,6 +1055,11 @@ void app_main(void) {
 #if CONFIG_VEETEE_LCD_ENABLED
     BaseType_t display_task_result = xTaskCreate(display_task, "vt_display", 4096, app, 3, NULL);
     configASSERT(display_task_result == pdPASS);
+#endif
+#if CONFIG_VEETEE_MCP_ENABLED
+    BaseType_t mcp_task_result = xTaskCreate(vt_mcp_task_run, "vt_mcp", CONFIG_VEETEE_MCP_TASK_STACK,
+                                             app->mcp_task, CONFIG_VEETEE_MCP_TASK_PRIORITY, NULL);
+    configASSERT(mcp_task_result == pdPASS);
 #endif
     BaseType_t network_task_result = xTaskCreate(network_task, "vt_network", 8192, app, 5, NULL);
     configASSERT(network_task_result == pdPASS);
