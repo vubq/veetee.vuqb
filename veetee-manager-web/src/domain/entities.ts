@@ -79,6 +79,12 @@ export interface ProgressAcknowledgementSettings extends RolePolicyObject {
  */
 export type RolePolicyObject = Record<string, unknown>
 
+export interface BargeInSettings extends RolePolicyObject {
+  enabled?: boolean
+  deviceDuplex?: boolean
+  minSpeechFrames?: number
+}
+
 export interface RoleConfig {
   assistantId: string
   locale: string
@@ -90,7 +96,7 @@ export interface RoleConfig {
   autoTurn: AutoTurnSettings
   progress?: ProgressAcknowledgementSettings
   segmentation?: RolePolicyObject
-  bargeIn?: RolePolicyObject
+  bargeIn?: BargeInSettings
   toolPolicy?: RolePolicyObject
   tools?: RolePolicyObject[]
 }

@@ -38,6 +38,35 @@
   `/tmp/veetee-wake-barge-audio-20260805-1.json` và
   `/tmp/veetee-wake-barge-delay-20260805.json.report`.
 
+### Acoustic duplex policy probe (2026-08-05)
+
+- Source slice đã build/flash image `0x159a20` (ESP-IDF 6.0.2, app còn 66%),
+  không erase NVS. Voice regression **169 passed**, Ruff/compileall pass, CTest
+  firmware **8/8**.
+- Production revision `87` chạy normal wake **2/2**; sau drain
+  `active_turns=0`, `protocol_errors=0`, `last_ttfa_ms=1448`, player exit `0`.
+- Acoustic fixture chỉ ở `/tmp` (revision `900`, `bargeIn.deviceDuplex=true`,
+  test key pool), không sửa Manager snapshot/database. Serial đã xác nhận
+  `acoustic duplex capture enabled while server is speaking` và
+  `acoustic barge-in committed; capture kept for new auto turn`; metrics fixture
+  `barge_in_count=3`, `turn_admissions=4`, `turn_releases=4`,
+  `active_turns=0`, `protocol_errors=0`. Clip còn phát sau interrupt đầu nên có
+  thêm hai commit; không dùng để kết luận false accept hoặc time-to-silence.
+- Fixture đã dừng và production Manager-source revision `87` khởi động lại;
+  board reconnect `activeConnections=1`. Report redact ngoài Git:
+  `/tmp/veetee-acoustic-barge-20260805.json`.
+- Đây là control/lifecycle evidence cho policy mới, chưa đóng acoustic
+  echo-only, voice-onset quality, time-to-silence p95, false accept/reject,
+  100-repetition hoặc M1 promotion gate.
+
+### Manager Web barge-in controls (2026-08-05)
+
+- Role form đã expose `bargeIn.enabled`, `bargeIn.deviceDuplex` và
+  `minSpeechFrames` bằng primitive UI chung; policy vắng mặt được normalize ở
+  draft nhưng không tự publish. Các policy additive khác vẫn được preserve.
+- Manager Web unit **96/96**, Chromium E2E **11/11**, typecheck/lint/build pass;
+  production database/runtime không bị mutate.
+
 ### Firmware wake pre-arm slice (2026-08-05)
 
 - Wake detector được arm sớm qua capture-owner queue sau wake event; lệnh trùng
@@ -55,7 +84,7 @@
 |---|---|---|---|
 | Planning/design | Hoàn tất | `docs/00` → `docs/11`, ADR và Mermaid đã có; `PROJECT.md`/`AGENTS.md` là bản đồ cho AI coding workflow. | Chỉ cập nhật khi có quyết định hoặc evidence mới. |
 | M0 — một lượt ESP32 qua server | Đang hoàn thiện, **chưa đóng DoD** | Firmware/host protocol, WS v3, provider path, runtime manager snapshot, unattended wake và fixture physical flow đã chạy. | Người dùng xác nhận thực tế loa/LCD/PTT và acceptance audio path; 30-turn DoD phải giữ đủ evidence. Xem [`M0.md`](M0.md) và [`10-roadmap.md`](../10-roadmap.md). |
-| M1 — realtime conversation | Đang làm, **chưa đóng DoD** | Streaming/cancellation/tool loop, v1/v2/v3 fixture, WakeNet, noise suppression, multi-key fixture 10/10, AEC lifecycle/resource 10/10; stale `tts/stop` barrier đã sửa; normal wake 2 lượt, barge-in lifecycle physical, corpus smoke 1 negative/1 positive và host TTFA warm p95 `1481,4 ms` pass. | Acoustic echo-only, false accept/reject corpus đủ lớn, voice-onset barge-in/time-to-silence, 100 repetition, provider promotion và cross-peer physical conformance. Các lần timeout AEC/bypass trước guard vẫn là diagnostic history, không coi là acoustic verdict. Xem [`M1.md`](M1.md). |
+| M1 — realtime conversation | Đang làm, **chưa đóng DoD** | Streaming/cancellation/tool loop, v1/v2/v3 fixture, WakeNet, noise suppression, multi-key fixture 10/10, AEC lifecycle/resource 10/10; stale `tts/stop` barrier đã sửa; normal wake 2 lượt, wake-word interrupt lifecycle physical, policy acoustic-duplex control lifecycle và corpus smoke 1 negative/1 positive; host TTFA warm p95 `1481,4 ms` pass. | Acoustic echo-only, false accept/reject corpus đủ lớn, voice-onset quality/time-to-silence p95, 100 repetition, provider promotion và cross-peer physical conformance. Các lần timeout AEC/bypass trước guard vẫn là diagnostic history, không coi là acoustic verdict. Xem [`M1.md`](M1.md). |
 | Groq multi-key | Hoàn tất cho **test harness** | `VEETEE_TEST_GROQ_KEYS_FILE` chỉ với fixture; round-robin; chỉ retry `429` trước delta đầu; không replay partial stream; firmware không chứa key. | Không phải production fallback/key rotation; nhiều key vẫn có thể cùng dính quota account/org/model/IP. |
 | M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary, TTL freshness, privacy export, async conversation delete/tombstone và host regression. | Promotion provider/model/VRAM, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
 | M3 — transport/hardware/OTA | Đang mở ở host-only slice | MQTT control/bridge/session, firmware UDP header/crypto codec, UDP v3 AES/reorder/barrier, deterministic loss/soak, firmware MCP registry/wire/JSON-RPC dispatcher, shared MCP cross-conformance fixture, feature-gated owner-task queue và BoardHal capability manifest validation đã có host/ESP-IDF build-only golden/test evidence; MCP flag vẫn tắt mặc định, chưa nối carrier/hardware. | MQTT client/gateway/socket, firmware encrypted carrier, BoardHal descriptor thật + peripheral owner tools, real-peer/real-network comparison, assets/OTA và transport-promotion cần mở sau. |

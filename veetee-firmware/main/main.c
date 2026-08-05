@@ -198,6 +198,7 @@ typedef struct {
     SemaphoreHandle_t audio_decoder_lock;
     EventGroupHandle_t wifi_events;
     volatile bool capture_active;
+    volatile bool duplex_capture;
     volatile bool playback_busy;
     volatile bool wake_rearm_pending;
     volatile bool stop_requested;
@@ -274,6 +275,7 @@ static void clear_pending_tts_stop(vt_app_t *app) {
     }
     app->tts_stop_pending = false;
     app->wake_rearm_pending = false;
+    app->duplex_capture = false;
     app->tts_turn_id[0] = '\0';
     xSemaphoreGive(app->state_lock);
 }
@@ -485,6 +487,15 @@ static void websocket_text_callback(const cJSON *message, void *context) {
         if (!cJSON_IsString(tts_state) || tts_state->valuestring == NULL) return;
         if (strcmp(tts_state->valuestring, "start") == 0) {
             clear_pending_tts_stop(app);
+            cJSON *barge = cJSON_GetObjectItemCaseSensitive(message, "barge_in");
+            cJSON *barge_enabled = cJSON_IsObject(barge)
+                ? cJSON_GetObjectItemCaseSensitive(barge, "enabled")
+                : NULL;
+            cJSON *barge_mode = cJSON_IsObject(barge)
+                ? cJSON_GetObjectItemCaseSensitive(barge, "mode")
+                : NULL;
+            const bool acoustic_requested = cJSON_IsTrue(barge_enabled) && cJSON_IsString(barge_mode) &&
+                                            strcmp(barge_mode->valuestring, "acoustic") == 0;
             cJSON *turn_id = cJSON_GetObjectItemCaseSensitive(message, "turn_id");
             if (cJSON_IsString(turn_id) && turn_id->valuestring != NULL &&
                 turn_id->valuestring[0] != '\0' && strlen(turn_id->valuestring) < VT_TTS_TURN_ID_MAX) {
@@ -497,14 +508,19 @@ static void websocket_text_callback(const cJSON *message, void *context) {
                encoder remains continuous across turns; its reset path is not
                used here because the vendor API may return DATA_LACK at the
                start of a new stream. */
-            app->capture_active = false;
+            app->duplex_capture = acoustic_requested && app->interaction_mode == VT_INTERACTION_AUTO &&
+                                  vt_audio_aec_ready(&app->audio);
+            app->capture_active = app->duplex_capture;
+            if (acoustic_requested && !app->duplex_capture) {
+                ESP_LOGW(TAG, "acoustic duplex requested but AEC is unavailable; keep half-duplex");
+            }
             if (!audio_decoder_reset_locked(app)) ESP_LOGW(TAG, "audio decoder reset skipped: lock timeout");
-            if (app->wake_auto_capture) {
-                /* Stop uplink as soon as the server starts speaking. With the
-                   configured AEC gate, WakeNet may still consume local capture
-                   during playback; retain the origin flag for a button abort
-                   before this TTS turn drains. */
+            if (app->wake_auto_capture && !app->duplex_capture) {
+                /* Stop uplink as soon as the server starts speaking unless the
+                   published snapshot explicitly enabled AEC-backed duplex. */
                 ESP_LOGI(TAG, "wake capture paused while server is speaking");
+            } else if (app->duplex_capture) {
+                ESP_LOGI(TAG, "acoustic duplex capture enabled while server is speaking");
             }
 #if CONFIG_VEETEE_WAKE_DURING_PLAYBACK
             const bool tts_started = state_apply(app, VT_EVENT_TTS_START);
@@ -521,14 +537,29 @@ static void websocket_text_callback(const cJSON *message, void *context) {
 #endif
         } else if (strcmp(tts_state->valuestring, "stop") == 0) {
             const vt_interaction_mode_t mode = app->interaction_mode;
+            cJSON *reason = cJSON_GetObjectItemCaseSensitive(message, "reason");
+            const bool acoustic_abort = cJSON_IsString(reason) && reason->valuestring != NULL &&
+                                        strcmp(reason->valuestring, "barge_in") == 0 && app->duplex_capture;
             cJSON *turn_id = cJSON_GetObjectItemCaseSensitive(message, "turn_id");
             if (cJSON_IsString(turn_id) && turn_id->valuestring != NULL &&
                 app->tts_turn_id[0] != '\0' && strcmp(turn_id->valuestring, app->tts_turn_id) != 0) {
                 ESP_LOGW(TAG, "ignoring stale tts stop turn_id mismatch");
                 return;
             }
+            if (acoustic_abort) {
+                clear_pending_tts_stop(app);
+                app->capture_active = true;
+                app->wake_auto_capture = true;
+                (void)xQueueReset(app->playback_queue);
+                vt_audio_reset_acoustic_reference(&app->audio);
+                if (!audio_decoder_reset_locked(app)) ESP_LOGW(TAG, "acoustic barge decoder reset skipped: lock timeout");
+                (void)state_apply(app, VT_EVENT_ABORT);
+                ESP_LOGI(TAG, "acoustic barge-in committed; capture kept for new auto turn");
+                return;
+            }
             if (schedule_graceful_tts_stop(app, mode)) {
                 app->capture_active = false;
+                app->duplex_capture = false;
                 app->wake_auto_capture = false;
                 app->tts_turn_id[0] = '\0';
                 ESP_LOGI(TAG, "graceful tts stop scheduled mode=%s",
@@ -542,6 +573,7 @@ static void websocket_text_callback(const cJSON *message, void *context) {
     if (strcmp(type->valuestring, "alert") == 0) {
         clear_pending_tts_stop(app);
         app->capture_active = false;
+        app->duplex_capture = false;
         app->wake_auto_capture = false;
         (void)xQueueReset(app->playback_queue);
         vt_audio_reset_acoustic_reference(&app->audio);
@@ -646,7 +678,10 @@ static void capture_task(void *context) {
             continue;
         }
         vt_device_state_t audio_state = state_read(app);
-        bool wake_allowed = !app->capture_active;
+        bool duplex_capture = app->duplex_capture && audio_state == VT_DEVICE_SPEAKING &&
+                               app->interaction_mode == VT_INTERACTION_AUTO &&
+                               vt_audio_aec_ready(&app->audio);
+        bool wake_allowed = !app->capture_active || duplex_capture;
 #if CONFIG_VEETEE_WAKE_DURING_PLAYBACK
         wake_allowed = wake_allowed &&
                        (audio_state != VT_DEVICE_SPEAKING ||

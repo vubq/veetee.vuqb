@@ -206,6 +206,7 @@ class RuntimeConfigManager:
                 # provider generation. A malformed watchdog config must keep
                 # the last-known-good snapshot instead of failing mid-turn.
                 snapshot.auto_turn_policy()
+                snapshot.barge_in_policy()
                 plan = plan_activation(snapshot, has_active_generation=self._view is not None)
                 if plan is not None and plan.mode is ActivationMode.QUIESCE_SWAP:
                     # A quiesce swap may only unload the old generation after

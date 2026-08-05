@@ -29,3 +29,28 @@ def test_hello_timeout_is_bounded(monkeypatch, value):
 
     with pytest.raises(ConfigurationError, match="VEETEE_HELLO_TIMEOUT_MS"):
         ServerConfig.from_env()
+
+
+def test_barge_in_policy_defaults_to_legacy_realtime_only(monkeypatch):
+    _set_fixture_env(monkeypatch)
+    from veetee_server.config import load_snapshot
+
+    policy = load_snapshot(FIXTURE).barge_in_policy()
+
+    assert policy.enabled is True
+    assert policy.device_duplex is False
+    assert policy.min_speech_frames == 2
+
+
+@pytest.mark.parametrize("field,value", [("enabled", "bad"), ("deviceDuplex", 1), ("minSpeechFrames", 0), ("minSpeechFrames", 33)])
+def test_barge_in_policy_rejects_invalid_values(tmp_path, field, value):
+    import json
+    from veetee_server.config import load_snapshot
+
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    raw["bargeIn"] = {field: value}
+    path = tmp_path / "invalid-barge.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="snapshot.bargeIn"):
+        load_snapshot(path).barge_in_policy()

@@ -589,17 +589,23 @@ class VoiceSession:
                 self.app.metrics["audio_frames_ignored"] = self.app.metrics.get("audio_frames_ignored", 0) + 1
                 return
             raise ProtocolError("audio received outside listening turn")
+        view = self._session_view()
+        barge_policy = view.snapshot.barge_in_policy()
+        acoustic_barge = (
+            self.phase == "speaking"
+            and barge_policy.enabled
+            and (turn.mode == "realtime" or (turn.mode == "auto" and barge_policy.device_duplex))
+        )
         # A manual/auto turn owns the microphone only while it is listening.
         # Once endpointing has scheduled finish(), or while the answer is being
-        # spoken, late packets are ambient audio and must not be appended to the
-        # finalized ASR session. Realtime is the explicit duplex exception.
-        if (self.phase in {"thinking", "speaking"} and turn.mode != "realtime") or (
+        # spoken, late packets are ambient audio unless the pinned snapshot
+        # explicitly enabled device acoustic duplex.
+        if (self.phase in {"thinking", "speaking"} and turn.mode != "realtime" and not acoustic_barge) or (
             self.phase == "listening" and turn.task is not None
         ):
             self.app.metrics["audio_frames_ignored"] = self.app.metrics.get("audio_frames_ignored", 0) + 1
             return
         frame = decode_audio(self.profile, raw)  # type: ignore[arg-type]
-        view = self._session_view()
         pcm = self.codec.decode_uplink(frame.payload, int(view.snapshot.raw.get("wire", {}).get("uplinkSampleRate", 16000)) * 60 // 1000)
         self.app.metrics["audio_frames_in"] += 1
         speech = view.registry.vad.accept(pcm, 16000)
@@ -609,15 +615,15 @@ class VoiceSession:
             await self._cancel_no_speech_watchdog()
             if self.turn is not turn or self.pipeline is not pipeline:
                 return
-        if self.phase == "speaking" and turn.mode == "realtime" and speech:
+        if acoustic_barge and speech:
             self._speech_frames += 1
-            threshold = int((view.snapshot.raw.get("bargeIn") or {}).get("minSpeechFrames", 2))
+            threshold = barge_policy.min_speech_frames
             if self._speech_frames >= max(1, threshold):
                 barge_started = time.perf_counter()
                 await self._abort(reason="barge_in")
                 self.app.metrics["barge_in_count"] += 1
                 self.app.metrics["last_barge_in_control_ms"] = round((time.perf_counter() - barge_started) * 1000)
-                await self._start_turn("realtime")
+                await self._start_turn("realtime" if turn.mode == "realtime" else "auto")
                 pipeline = self.pipeline
                 turn = self.turn
                 if pipeline is None or turn is None:

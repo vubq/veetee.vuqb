@@ -405,13 +405,17 @@ không panic/queue/Opus error. Evidence này chỉ xác nhận lifecycle và res
 
 ### 7.4 Barge-in khi AI đang nói
 
-Default thiết kế là device AEC + local VAD/wake. Implementation hiện tại giữ
-half-duplex uplink khi `tts/start`, nhưng cho WakeNet tiếp tục chạy qua AEC adapter
-khi config đã bật; `realtime` voice-onset/uplink khi speaker phát vẫn là gate kế
-tiếp, không được suy ra từ wake lifecycle soak.
-Voice onset vượt threshold/hysteresis từ config tạo `BARGE_IN_CANDIDATE`; controller
-chỉ commit sau minimum speech window để giảm false abort do residual echo. Khi
-commit, xử lý giống interrupt và gửi `listen/start realtime` cho turn mới.
+Default thiết kế là device AEC + local VAD/wake. `tts/start` không tự bật uplink:
+firmware chỉ chuyển `duplex_capture=true` khi message có
+`barge_in.enabled=true,mode="acoustic"`, interaction là `auto`, và AEC adapter
+đã ready. Snapshot thiếu policy giữ half-duplex nhưng WakeNet vẫn có thể nhận
+wake-word interrupt.
+Voice onset vượt threshold/hysteresis từ config tạo `BARGE_IN_CANDIDATE`; server
+chỉ commit sau `minSpeechFrames` liên tiếp để giảm false abort do residual echo.
+Khi commit, server gửi `tts/stop(reason:"barge_in")`; firmware flush decoder,
+playback queue và AEC reference tại barrier, chuyển sang `listening` và giữ
+capture cho auto turn mới. Không gửi thêm `listen/start` từ firmware cho barrier
+này vì turn ownership do server tạo lại.
 
 Reference giữ mic processing trong speaking ở realtime mode
 (`references/xiaozhi-esp32/main/application.cc:951-960`) và dùng default realtime

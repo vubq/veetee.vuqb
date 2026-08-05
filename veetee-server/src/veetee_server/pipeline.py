@@ -265,7 +265,11 @@ class TurnPipeline:
                     if not answer_started:
                         if not self._tts_started:
                             self.turn.tts_started_at = time.perf_counter()
-                            await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
+                            start_message = control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id)
+                            barge_policy = self.snapshot.barge_in_policy()
+                            if barge_policy.enabled and barge_policy.device_duplex and self.turn.mode in {"auto", "realtime"}:
+                                start_message["barge_in"] = {"enabled": True, "mode": "acoustic"}
+                            await self._send_text(start_message)
                             self._tts_started = True
                         answer_started = True
                     await self._speak_segment(segment)

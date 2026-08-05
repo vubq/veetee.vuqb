@@ -733,9 +733,9 @@ cancel hardware side effect
 |---|---|---|---|
 | `hello` | xem §4/§5 | capabilities | complete handshake |
 | `stt` | `text` | `session_id`, glyph | hiển thị user transcript |
-| `tts` start | `state:"start"` | `session_id` | vào `speaking` trước audio |
+| `tts` start | `state:"start"` | `session_id`, `turn_id`, `barge_in` | vào `speaking` trước audio; `barge_in` chỉ là capability/policy additive |
 | `tts` sentence_start | `state`, `text` | `session_id`, glyph | subtitle hiện tại |
-| `tts` stop | `state:"stop"` | `session_id` | graceful drain / kết thúc turn |
+| `tts` stop | `state:"stop"` | `session_id`, `turn_id`, `reason` | graceful drain / kết thúc turn; `reason:"barge_in"` là cancellation barrier additive |
 | `llm` | `text`, `emotion` | `session_id` | cập nhật emotion/UI |
 | `mcp` | `session_id`, object `payload` | — | dispatch device JSON-RPC server |
 | `iot` | array `commands` | — | legacy-only hardware command |
@@ -763,6 +763,39 @@ Ví dụ normal turn:
 ```json
 {"type":"tts","state":"start","session_id":"<session>"}
 ```
+
+Khi snapshot đã bật acoustic duplex, server MAY thêm metadata sau (peer cũ bỏ
+qua và tiếp tục half-duplex):
+
+```json
+{
+  "type": "tts",
+  "state": "start",
+  "session_id": "<session>",
+  "turn_id": "<turn>",
+  "barge_in": {"enabled": true, "mode": "acoustic"}
+}
+```
+
+Firmware chỉ giữ mic uplink trong `speaking` nếu metadata này hợp lệ, interaction
+hiện tại là `auto`, và AEC đã sẵn sàng. Thiếu hoặc sai metadata không phải lỗi
+protocol; device giữ behavior half-duplex cũ.
+
+Khi server đã xác nhận đủ speech evidence trong acoustic duplex, server gửi:
+
+```json
+{
+  "type": "tts",
+  "state": "stop",
+  "session_id": "<session>",
+  "turn_id": "<old-turn>",
+  "reason": "barge_in"
+}
+```
+
+Device MUST flush decoder/playback/AEC reference ngay tại barrier và giữ capture
+cho auto turn mới. `tts/stop` không có `reason` hoặc có reason lạ vẫn dùng graceful
+drain/state rules cũ; field `reason` là optional để peer cũ bỏ qua.
 
 ```json
 {"type":"tts","state":"sentence_start","text":"Hôm nay trời dịu mát.","session_id":"<session>"}
@@ -1280,8 +1313,9 @@ sequenceDiagram
    `abort` đúng một lần cho active turn.
 3. Server đánh dấu generation cũ cancelled trước mọi `await` cleanup và gửi
    idempotent `tts/stop`.
-4. PTT gửi `listen/start mode=manual`; voice barge-in gửi mode đã cấu hình, thường
-   `realtime` khi có AEC.
+4. PTT gửi `listen/start mode=manual`; voice barge-in gửi mode đã cấu hình. Với
+   snapshot `bargeIn.deviceDuplex=true`, server tạo turn `auto` mới sau
+   `tts/stop(reason:"barge_in")`; `realtime` vẫn là profile explicit khác.
 5. Direct WebSocket dựa vào ordered connection + server generation guard để không
    emit old-turn frame sau barrier; MQTT/UDP dùng §5.6. Firmware local generation
    chỉ chặn work đã gắn local stream/generation, không thể tự nhận diện arbitrary

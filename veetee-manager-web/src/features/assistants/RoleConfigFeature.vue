@@ -68,7 +68,7 @@ function toDraft(config: RoleConfig): RoleConfigDraft {
     },
     ...(config.progress ? { progress: clonePolicy(config.progress) } : {}),
     ...(config.segmentation ? { segmentation: clonePolicy(config.segmentation) } : {}),
-    ...(config.bargeIn ? { bargeIn: clonePolicy(config.bargeIn) } : {}),
+    bargeIn: bargeInDraft(config.bargeIn),
     ...(config.toolPolicy ? { toolPolicy: clonePolicy(config.toolPolicy) } : {}),
     ...(config.tools ? { tools: clonePolicy(config.tools) } : {}),
   }
@@ -78,6 +78,16 @@ function clonePolicy<T>(value: T): T {
   // Role policies are JSON payloads, but Vue wraps nested values in reactive
   // proxies. JSON round-trip detaches those proxies without DataCloneError.
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function bargeInDraft(value: RoleConfig['bargeIn']): NonNullable<RoleConfig['bargeIn']> {
+  const source = value ? clonePolicy(value) : {}
+  return {
+    ...source,
+    enabled: typeof source.enabled === 'boolean' ? source.enabled : true,
+    deviceDuplex: typeof source.deviceDuplex === 'boolean' ? source.deviceDuplex : false,
+    minSpeechFrames: typeof source.minSpeechFrames === 'number' ? source.minSpeechFrames : 2,
+  }
 }
 
 function toRoleConfig(config: RoleConfig): RoleConfig {
@@ -108,6 +118,10 @@ const noSpeechAlertInvalid = computed(() => {
   return !alert?.status.trim() || alert.status.length > 32 || !alert.message.trim() || alert.message.length > 512 || !alert.emotion.trim() || alert.emotion.length > 64
 })
 const autoTurnError = computed(() => Boolean(draft.value?.autoTurn.enabled && (noSpeechTimeoutInvalid.value || noSpeechAlertInvalid.value)))
+const bargeInError = computed(() => {
+  const value = draft.value?.bargeIn?.minSpeechFrames
+  return value === undefined || !Number.isInteger(value) || value < 1 || value > 32
+})
 
 const voiceOptions = computed<VtSelectOption[]>(() => voices.value.map((voice) => ({ value: voice.id, label: voice.name, description: `${voice.providerName} · ${voice.description}`, disabled: !voice.available })))
 const localeOptions = computed(() => deriveLocaleOptions(installations.value, draft.value?.locale))
@@ -229,7 +243,7 @@ async function save() {
         autoTurn: { ...draft.value.autoTurn, noSpeechAlert: { ...draft.value.autoTurn.noSpeechAlert } },
         ...(draft.value.progress ? { progress: clonePolicy(draft.value.progress) } : {}),
         ...(draft.value.segmentation ? { segmentation: clonePolicy(draft.value.segmentation) } : {}),
-        ...(draft.value.bargeIn ? { bargeIn: clonePolicy(draft.value.bargeIn) } : {}),
+        bargeIn: clonePolicy(draft.value.bargeIn),
         ...(draft.value.toolPolicy ? { toolPolicy: clonePolicy(draft.value.toolPolicy) } : {}),
         ...(draft.value.tools ? { tools: clonePolicy(draft.value.tools) } : {}),
       },
@@ -620,6 +634,47 @@ onMounted(load)
       </div>
     </FormSection>
 
+    <FormSection
+      title="Ngắt khi trợ lý đang nói"
+      description="Cho phép phát hiện giọng người dùng bằng AEC khi AI đang phát TTS. Mặc định giữ half-duplex để tránh false trigger."
+    >
+      <div class="policy-switches">
+        <VtSwitch
+          :model-value="draft.bargeIn?.enabled === true"
+          label="Bật policy barge-in"
+          @update:model-value="draft!.bargeIn!.enabled = $event"
+        />
+        <VtSwitch
+          :model-value="draft.bargeIn?.deviceDuplex === true"
+          label="Duplex acoustic khi AI nói"
+          :disabled="draft.bargeIn?.enabled !== true"
+          @update:model-value="draft!.bargeIn!.deviceDuplex = $event"
+        />
+      </div>
+      <VtFormField
+        label="Số frame speech để xác nhận"
+        for-id="role-barge-in-min-speech-frames"
+        :error="bargeInError ? 'Chọn từ 1 đến 32 frame.' : undefined"
+        hint="Ngưỡng bounded do server dùng; không tự đổi provider hoặc bật fallback."
+      >
+        <VtInput
+          id="role-barge-in-min-speech-frames"
+          type="number"
+          autocomplete="off"
+          min="1"
+          max="32"
+          step="1"
+          inputmode="numeric"
+          :model-value="String(draft.bargeIn?.minSpeechFrames ?? 2)"
+          name="barge-in-min-speech-frames"
+          :invalid="bargeInError"
+          :disabled="draft.bargeIn?.enabled !== true"
+          aria-label="Số frame speech để xác nhận"
+          @update:model-value="draft!.bargeIn!.minSpeechFrames = Number($event)"
+        />
+      </VtFormField>
+    </FormSection>
+
     <ProgressAcknowledgementSection
       :model-value="draft.progress"
       @update:model-value="updateProgress"
@@ -650,7 +705,7 @@ onMounted(load)
       <VtButton
         type="submit"
         variant="primary"
-        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError) || autoTurnError || !progressValid"
+        :disabled="!dirty || draft.basePrompt.length > 2000 || Boolean(admissionError) || autoTurnError || bargeInError || !progressValid"
         :loading="saving"
       >
         <template #leading>
@@ -691,6 +746,7 @@ onMounted(load)
 .role-state h2:focus-visible, .action-error:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--vt-focus); border-radius: 3px; }
 .two-columns { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr); gap: 10px; }
 .three-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.policy-switches { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px; }
 .voice-preview { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; border-top: 1px solid var(--vt-border); padding-top: 11px; }
 .voice-preview span { color: var(--vt-text-muted); font-size: 10px; }
 .form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--vt-border); padding-top: 14px; }

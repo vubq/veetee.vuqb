@@ -557,6 +557,7 @@ async def test_realtime_barge_in_cancels_old_turn_before_new_audio(monkeypatch):
             yield AudioChunk(b"\0" * (24000 * 60 // 1000 * 2), 24000)
 
     runtime.view.registry.tts = SlowTTS()
+
     service = VoiceApplication(config, runtime)
     server = TestServer(service.make_app())
     client = TestClient(server)
@@ -609,6 +610,94 @@ async def test_realtime_barge_in_cancels_old_turn_before_new_audio(monkeypatch):
         assert stale_binary == 0
         assert service.metrics["barge_in_count"] == 1
         assert 0 <= service.metrics["last_barge_in_control_ms"] < 250
+        await ws.close()
+    finally:
+        await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_auto_device_duplex_policy_cancels_old_turn_and_restarts_auto(monkeypatch, tmp_path):
+    """An opted-in auto turn may use the same server gate without changing defaults."""
+
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    snapshot = json.loads(fixture.read_text(encoding="utf-8"))
+    snapshot["bargeIn"] = {"deviceDuplex": True, "minSpeechFrames": 2}
+    configured = tmp_path / "device-duplex.json"
+    configured.write_text(json.dumps(snapshot), encoding="utf-8")
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(configured))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+
+    class SlowTTS:
+        async def stream(self, text, *, locale, voice):
+            del text, locale, voice
+            await asyncio.sleep(0.2)
+            yield AudioChunk(b"\0" * (24000 * 60 // 1000 * 2), 24000)
+
+    runtime.view.registry.tts = SlowTTS()
+
+    class SpeechVAD:
+        def reset(self) -> None:
+            pass
+
+        def accept(self, pcm: bytes, sample_rate: int) -> bool:
+            del pcm, sample_rate
+            return True
+
+        def endpoint(self) -> bool:
+            return False
+
+    runtime.view.registry.vad = SpeechVAD()
+    service = VoiceApplication(config, runtime)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "auto-duplex-test", "Client-Id": "client-auto-duplex", "Protocol-Version": "3"},
+        )
+        await ws.send_json({
+            "type": "hello", "version": 3, "transport": "websocket",
+            "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+        })
+        hello = await ws.receive_json()
+        session_id = hello["session_id"]
+        from veetee_server.protocol import AudioFrame, encode_audio
+
+        encoder = __import__("opuslib").Encoder(16000, 1, __import__("opuslib").APPLICATION_AUDIO)
+        silent = encode_audio(AudioFrame("ws-v3", encoder.encode(b"\0" * 1920, 960)))
+        loud_pcm = b"\x00\x20" * 960
+        loud = encode_audio(AudioFrame("ws-v3", encoder.encode(loud_pcm, 960)))
+        await ws.send_json({"type": "listen", "state": "start", "mode": "auto", "session_id": session_id})
+        await ws.send_bytes(silent)
+        await ws.send_json({"type": "listen", "state": "stop", "session_id": session_id})
+
+        start = None
+        while start is None:
+            event = await ws.receive_json(timeout=2)
+            if event.get("type") == "tts" and event.get("state") == "start":
+                start = event
+        assert start["barge_in"] == {"enabled": True, "mode": "acoustic"}
+
+        await ws.send_bytes(loud)
+        await ws.send_bytes(loud)
+        stop = None
+        stale_binary = 0
+        while stop is None:
+            message = await ws.receive(timeout=2)
+            if message.type == WSMsgType.BINARY:
+                stale_binary += 1
+            elif message.type == WSMsgType.TEXT:
+                event = json.loads(message.data)
+                if event.get("type") == "tts" and event.get("state") == "stop" and event.get("reason") == "barge_in":
+                    stop = event
+        assert stale_binary == 0
+        assert service.metrics["barge_in_count"] == 1
+        assert service.metrics["active_turns"] == 1
         await ws.close()
     finally:
         await client.close()

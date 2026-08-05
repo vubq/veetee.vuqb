@@ -296,11 +296,22 @@ late result của tool không cancellable.
 
 ### 12.2 Acoustic barge-in
 
-- Realtime mode giữ mic path chạy khi speaker phát.
-- Device AEC loại echo; VAD evidence gửi uplink.
-- Server acoustic gate yêu cầu speech evidence theo calibrated profile, không trigger chỉ vì speaker leakage.
-- Khi confirmed, server cancel turn cũ và chấp nhận audio pre-roll cho turn mới.
+- `realtime` giữ mic path chạy khi speaker phát; `auto` chỉ làm vậy khi published
+  snapshot có `bargeIn.deviceDuplex=true`.
+- Server gửi `tts/start.barge_in={enabled:true,mode:"acoustic"}` như capability
+  additive. Device fail-closed về half-duplex nếu field thiếu hoặc AEC chưa ready.
+- Device AEC loại echo; VAD evidence gửi uplink theo frame 60 ms. Server gate cần
+  `minSpeechFrames` liên tiếp (bounded 1..32) trước khi commit, không trigger chỉ
+  vì speaker leakage.
+- Khi confirmed, server hủy generation cũ, gửi `tts/stop(reason:"barge_in")`
+  và tạo turn `auto` mới; firmware flush playback/decoder/AEC reference tại
+  barrier nhưng giữ capture.
 - Nếu detection hóa ra false start, policy không được tự phát lại audio cũ đã hủy; session quay về listen/idle rõ ràng.
+
+Thiếu `bargeIn` trong snapshot giữ behavior tương thích: WakeNet vẫn có thể chạy
+để nhận wake-word interrupt, nhưng server không nhận uplink acoustic trong lúc
+`speaking`. Vì vậy wake-word lifecycle pass không được dùng làm bằng chứng cho
+voice-onset barge-in.
 
 Reference realtime mode giữ uplink khi speaking (`references/xiaozhi-esp32/main/application.cc:951-960`) và timestamp AEC được gắn sau khi `OutputData` trả về; source không chứng minh DAC/acoustic playback (`references/xiaozhi-esp32/main/audio/audio_service.cc:324-349`).
 

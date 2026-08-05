@@ -202,6 +202,9 @@ Reference decode một lần rồi đưa PCM vào ASR queue (`references/xiaozhi
   nếu snapshot bật `autoTurn.noSpeechTimeoutMs`, một watchdog bounded chỉ chờ
   speech đầu tiên và gửi `alert.code="NO_SPEECH_TIMEOUT"` khi wake không có lời.
 - `realtime`: AEC-aware streaming vẫn nhận mic khi AI speaking; confirmed speech tạo barge-in.
+- `auto`: chỉ nhận mic khi AI speaking nếu snapshot có
+  `bargeIn.deviceDuplex=true`; server công bố capability qua `tts/start` và tạo
+  turn `auto` mới sau `tts/stop(reason:"barge_in")`.
 - Empty/non-speech/too-low-evidence turn emit typed `no_speech` và không gọi LLM.
   No-speech watchdog chỉ áp dụng trước speech đầu tiên; không phải max duration
   của một conversation đang chạy.
@@ -394,6 +397,11 @@ Sink có local spool bounded nếu Manager API unavailable. Khi full, ưu tiên 
 - TTS/Opus stream không materialize full WAV.
 - Metrics/log writer rotate; tool result và prompt có size limit trước LLM call.
 - Session có admission lease; khi host thiếu resource, connection mới nhận `server_busy`, không làm OOM session đang chạy.
+- `snapshot.bargeIn` là policy additive: `deviceDuplex` mặc định `false`,
+  `minSpeechFrames` nằm trong `1..32`. Khi bật duplex, `tts/start` thêm
+  `barge_in:{enabled:true,mode:"acoustic"}`; server yêu cầu đủ speech frame trước
+  khi gửi `tts/stop(reason:"barge_in")`. Policy sai làm activation fail-closed,
+  không provider fallback hoặc silent downgrade.
 - Turn admission đọc `snapshot.admission.maxActiveTurns` (baseline `1`) và
   `retryAfterMs`; session vẫn được giữ alive nhưng `listen/start` vượt capacity
   nhận typed `alert.code="SERVER_BUSY"`, không queue vô hạn và không provider

@@ -25,6 +25,15 @@ class AutoTurnPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class BargeInPolicy:
+    """Validated policy shared by server acoustic gating and device metadata."""
+
+    enabled: bool
+    device_duplex: bool
+    min_speech_frames: int
+
+
+@dataclass(frozen=True, slots=True)
 class ServerConfig:
     host: str
     port: int
@@ -176,6 +185,29 @@ class RuntimeSnapshot:
         message = _required_bounded_string(alert, "message", 512, "snapshot.autoTurn.noSpeechAlert")
         emotion = _required_bounded_string(alert, "emotion", 64, "snapshot.autoTurn.noSpeechAlert")
         return AutoTurnPolicy(timeout, status, message, emotion)
+
+    def barge_in_policy(self) -> BargeInPolicy:
+        """Validate the optional additive acoustic barge-in policy.
+
+        Missing policy preserves legacy realtime-server behavior while keeping
+        normal auto turns half-duplex until a snapshot opts in explicitly.
+        """
+
+        raw = self.raw.get("bargeIn")
+        if raw is None:
+            return BargeInPolicy(enabled=True, device_duplex=False, min_speech_frames=2)
+        if not isinstance(raw, dict):
+            raise ConfigurationError("snapshot.bargeIn must be an object")
+        enabled = raw.get("enabled", True)
+        device_duplex = raw.get("deviceDuplex", False)
+        if not isinstance(enabled, bool):
+            raise ConfigurationError("snapshot.bargeIn.enabled must be a boolean")
+        if not isinstance(device_duplex, bool):
+            raise ConfigurationError("snapshot.bargeIn.deviceDuplex must be a boolean")
+        minimum = raw.get("minSpeechFrames", 2)
+        if isinstance(minimum, bool) or not isinstance(minimum, int) or not 1 <= minimum <= 32:
+            raise ConfigurationError("snapshot.bargeIn.minSpeechFrames must be between 1 and 32")
+        return BargeInPolicy(enabled=enabled, device_duplex=device_duplex, min_speech_frames=minimum)
 
 
 def load_snapshot(path: Path) -> RuntimeSnapshot:
