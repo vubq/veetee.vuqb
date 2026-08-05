@@ -1626,3 +1626,20 @@
 - Sau cleanup Voice Manager-source revision `87` ready, board
   `activeConnections=1`, `activeTurns=0`, API/Web ready; không mutate
   database/NVS/Wi-Fi/Tailscale.
+
+### WebSocket TX lock hardening A/B (2026-08-05)
+
+- Bật `CONFIG_ESP_WS_CLIENT_SEPARATE_TX_LOCK=y`; ESP-IDF build **1265/1265**,
+  image `0x15a260`, flash hash pass, host CTest **9/9**. Không đổi wire profile
+  hoặc erase NVS.
+- A/B `cooldownMs=0` loại 6 lock-timeout của baseline nhưng có 1 acoustic
+  retrigger và drain timeout (`/tmp/veetee-ws-lock-echo-only-20260805.json`),
+  nên không coi là AEC pass.
+- A/B policy `cooldownMs=2000` đạt **2/2** bounded echo-only, không lock timeout,
+  không barge-in/forbidden marker; metrics `active_turns=0`,
+  `protocol_errors=0`, `turn_admissions=2`, `turn_releases=2`.
+  Report `/tmp/veetee-ws-lock-cooldown-echo-only-20260805.json`.
+- ADR [`ADR-028`](../ADR/ADR-028-websocket-separate-tx-lock.md) accepted cho
+  transport hardening. Acoustic voice-onset/time-to-silence, false accept/reject,
+  100 repetition và duplex production promotion vẫn mở; production revision 87
+  đã restore và health board/API/Web đều xanh.

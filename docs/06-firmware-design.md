@@ -506,6 +506,13 @@ Host CTest `aec_reference` kiểm tra resample, delay, overflow, underflow và r
 Đây là instrumentation/alignment baseline, chưa phải echo-only hoặc
 time-to-silence acceptance.
 
+Firmware board profile cũng bật `CONFIG_ESP_WS_CLIENT_SEPARATE_TX_LOCK` của
+ESP-IDF WebSocket client để RX/control callback không giữ chung mutex với TX
+audio. Đây là transport scheduling detail, không thay wire contract; vẫn phải
+đo lock timeout và packet integrity trong duplex soak. Khi `deviceDuplex` được
+activate, server cooldown là policy bắt buộc để tránh residual echo retrigger;
+separate TX lock không thay thế AEC.
+
 ### 8.4 Long responses
 
 Không có maximum response duration ở firmware. Firmware chỉ giữ sliding bounded
