@@ -449,7 +449,11 @@ việc khi input rate khác 16 kHz
 engine nhỏ; encoder chỉ nhận đúng 960 mono samples/60 ms. Downlink decoder được
 reconfigure theo server hello và resample về codec output khi rate khác
 (`references/xiaozhi-esp32/main/audio/audio_service.cc:388-418`,
-`references/xiaozhi-esp32/main/audio/audio_service.cc:500-533`).
+`references/xiaozhi-esp32/main/audio/audio_service.cc:500-533`). Trong firmware
+Veetee hiện tại, `ws-v2/ws-v3` giữ negotiated rate bằng speaker config; riêng
+`ws-v1-compat` cho phép peer cũ echo rate khác ở handshake nhưng vẫn dùng decoder
+output config hiện hành. Chất lượng/resample của đúng peer v1 là một open physical
+gate trong `docs/11-open-questions.md` và không được suy ra từ host CTest.
 
 ### 8.2 AFE profile
 

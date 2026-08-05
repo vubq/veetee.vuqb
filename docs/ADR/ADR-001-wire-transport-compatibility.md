@@ -102,6 +102,9 @@ Chọn **Option A**:
    chỉ advance `remote_sequence` khi packet đã release hoặc được tuyên bố lost.
 9. Direct WebSocket giới hạn một Opus payload ở 1.500 byte cho cả v1/v2/v3; parser
    reject oversized frame trước allocation lớn/decoder. UDP giữ ceiling 1.400 byte.
+10. `ws-v1-compat` chấp nhận sample rate Opus hợp lệ do peer legacy quảng bá khác
+    speaker rate local (peer tham chiếu echo client hello); `ws-v2`/`ws-v3` giữ
+    negotiated rate strict để tránh silent decoder mismatch.
 
 Chi tiết normative nằm trong [03-protocol-spec.md](../03-protocol-spec.md).
 

@@ -111,6 +111,16 @@ khi có benchmark riêng; firmware decoder tham chiếu chỉ map các giá tr�
 (`references/xiaozhi-esp32/main/audio/audio_service.h:55-63`,
 `references/xiaozhi-esp32/main/audio/audio_service.cc:500-518`).
 
+Riêng `ws-v1-compat`, firmware MAY chấp nhận một `server hello` quảng bá sample
+rate Opus hợp lệ khác speaker rate local. Backend tham chiếu ghi đè
+`welcome_msg.audio_params` bằng `client hello` trước khi gửi hello trả lời
+(`references/xiaozhi-esp32-server/main/xiaozhi-server/core/handle/helloHandle.py:42-63`),
+trong khi firmware tham chiếu chỉ đọc rate/duration và cảnh báo nếu khác native
+output, không fail handshake (`references/xiaozhi-esp32/main/protocols/websocket_protocol.cc:224-249`,
+`references/xiaozhi-esp32/main/application.cc:524-532`). Veetee giữ ngoại lệ này
+chỉ ở profile v1; `ws-v2`/`ws-v3` vẫn fail-closed khi negotiated rate lệch decoder
+config, không silent downgrade/resample.
+
 ### 3.3 Session identity
 
 - `Device-Id` là stable hardware identity dạng MAC canonical đọc từ STA/Ethernet
@@ -276,7 +286,9 @@ Validation và negotiation:
 2. Server MUST echo version đã chọn. Đây là xác nhận, không phải cơ chế tự downgrade.
 3. `transport` MUST là `websocket` ở cả hai chiều.
 4. Client audio MUST là Opus/16 kHz/mono/60 ms.
-5. Server audio MUST là Opus/mono/60 ms; default Veetee là 24 kHz.
+5. Server audio MUST là Opus/mono/60 ms; default Veetee là 24 kHz. Profile
+   `ws-v1-compat` còn chấp nhận sample rate Opus hợp lệ do peer cũ echo trong
+   hello; profile v2/v3 phải khớp decoder config.
 6. `session_id` MUST không rỗng ở Veetee-to-Veetee.
 7. Firmware MUST timeout handshake sau 10 giây, đóng socket và báo lỗi profile;
    firmware tham chiếu cũng đợi event server hello tối đa 10 giây
@@ -286,7 +298,8 @@ Validation và negotiation:
 Firmware tham chiếu chỉ yêu cầu `transport:"websocket"`, đọc optional session,
 sample rate và duration; nó không check lại response version/format/channels
 (`references/xiaozhi-esp32/main/protocols/websocket_protocol.cc:224-249`). Veetee
-firmware validate chặt hơn nhưng vẫn nhận mọi response hợp lệ từ peer đó.
+firmware validate chặt hơn: v2/v3 yêu cầu decoder rate khớp, còn v1 có ngoại lệ
+sample-rate ở trên để không loại peer tham chiếu chỉ vì hello echo 16 kHz.
 
 ### 4.3 Binary framing chính xác
 
@@ -1314,6 +1327,12 @@ duration limit.
 ### 11.1 Veetee firmware → backend tham chiếu được cung cấp
 
 Fixture: `reference_server_ws_v1`. Đây là profile test, không phải default sản phẩm.
+
+Host-only source-derived oracle: `tests/fixtures/ws_cross_conformance.json` và
+`veetee-server/tests/test_ws_cross_conformance.py` tái hiện hello shape, ba binary
+profile và control omission để regression không bị bỏ quên. Oracle này không chạy
+process/socket của peer được cung cấp, nên không tự đánh dấu các checkbox cross-peer
+bên dưới là pass.
 
 - [ ] OTA/config chọn explicit `ws-v1-compat`, version `1`; không thử v3 trước.
 - [ ] Upgrade gửi `Device-Id`, `Client-Id`, `Protocol-Version: 1`, bearer khi có.

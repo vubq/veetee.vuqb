@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "sourceEvidence": [
+    {
+      "claim": "legacy_client_hello",
+      "citation": "references/xiaozhi-esp32/main/protocols/websocket_protocol.cc:198-221"
+    },
+    {
+      "claim": "legacy_server_hello_echoes_client_audio",
+      "citation": "references/xiaozhi-esp32-server/main/xiaozhi-server/core/handle/helloHandle.py:42-63"
+    },
+    {
+      "claim": "legacy_server_uses_raw_websocket_opus",
+      "citation": "references/xiaozhi-esp32-server/main/xiaozhi-server/core/connection.py:365-380"
+    }
+  ],
+  "profiles": [
+    {"name": "ws-v1-compat", "version": 1, "headerBytes": 0, "hasTimestamp": false},
+    {"name": "ws-v2", "version": 2, "headerBytes": 16, "hasTimestamp": true},
+    {"name": "ws-v3", "version": 3, "headerBytes": 4, "hasTimestamp": false}
+  ],
+  "referenceClient": {
+    "headers": {
+      "Device-Id": "fixture-reference-device",
+      "Client-Id": "fixture-reference-client"
+    },
+    "hello": {
+      "type": "hello",
+      "version": 1,
+      "transport": "websocket",
+      "features": {"mcp": false, "glyph_push": false},
+      "audio_params": {
+        "format": "opus",
+        "sample_rate": 16000,
+        "channels": 1,
+        "frame_duration": 60
+      }
+    }
+  },
+  "legacyControlWithoutSession": [
+    {"type": "listen", "state": "start", "mode": "manual"},
+    {"type": "listen", "state": "stop"}
+  ]
+}

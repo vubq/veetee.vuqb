@@ -109,3 +109,28 @@ const char *vt_protocol_profile_name(vt_protocol_profile_t profile) {
     default: return "unknown";
     }
 }
+
+bool vt_protocol_is_supported_opus_sample_rate(int sample_rate) {
+    switch (sample_rate) {
+    case 8000:
+    case 12000:
+    case 16000:
+    case 24000:
+    case 48000:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool vt_protocol_server_sample_rate_compatible(
+    vt_protocol_profile_t profile,
+    int advertised_sample_rate,
+    int configured_sample_rate) {
+    if (profile < VT_PROFILE_WS_V1_COMPAT || profile > VT_PROFILE_WS_V3 ||
+        !vt_protocol_is_supported_opus_sample_rate(advertised_sample_rate) ||
+        !vt_protocol_is_supported_opus_sample_rate(configured_sample_rate)) {
+        return false;
+    }
+    return profile == VT_PROFILE_WS_V1_COMPAT || advertised_sample_rate == configured_sample_rate;
+}

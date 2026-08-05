@@ -41,3 +41,16 @@ vt_protocol_result_t vt_protocol_decode_audio(
     vt_audio_frame_t *frame);
 
 const char *vt_protocol_profile_name(vt_protocol_profile_t profile);
+
+/*
+ * The legacy direct-WebSocket peer echoes the client hello audio parameters,
+ * which can advertise 16 kHz server audio even when the device speaker is
+ * configured for 24 kHz. Keep that exception isolated to the explicit v1
+ * compatibility profile; product profiles still require the negotiated rate
+ * to match the configured decoder contract.
+ */
+bool vt_protocol_is_supported_opus_sample_rate(int sample_rate);
+bool vt_protocol_server_sample_rate_compatible(
+    vt_protocol_profile_t profile,
+    int advertised_sample_rate,
+    int configured_sample_rate);

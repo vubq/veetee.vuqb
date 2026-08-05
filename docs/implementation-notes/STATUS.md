@@ -1256,6 +1256,19 @@
   và `/tmp/veetee-wake-barge-in-permission-20260805.json`; không lưu raw audio,
   microphone capture, transcript, serial dump hay credential.
 
+### ws-v1 legacy sample-rate compatibility — host/build-only (2026-08-05)
+
+- Source audit xác nhận peer cũ echo `client hello.audio_params` vào server hello;
+  firmware Veetee trước đây reject 16 kHz server hello khi speaker config là
+  24 kHz. Thêm helper protocol bounded: v1 chấp nhận Opus rate chuẩn khác local,
+  v2/v3 vẫn strict và ws-v3 default không đổi.
+- Host CTest **8/8 passed**; ESP-IDF 6.0.2 build-only pass, image `0x159600`,
+  app partition còn **66%**. Không flash/reset/erase, không đọc serial/audio,
+  không đổi Wi-Fi/NVS/Tailscale.
+- Source-derived fixture/test kiểm tra hello, v1 raw, v2 16-byte, v3 4-byte và
+  control omission: Voice Server **157 passed**, Ruff/compileall pass. Đây không
+  phải real reference process/socket conformance; §11 checklist vẫn mở.
+
 ### Voice runtime reload after host-only fix (2026-08-05)
 
 - Đã kiểm tra unit `veetee-voice-18100.service` đúng checkout mới, `activeTurns=0`

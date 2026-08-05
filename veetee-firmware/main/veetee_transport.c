@@ -232,7 +232,9 @@ static bool accept_server_hello(vt_transport_t *transport, const cJSON *message)
     cJSON *channels = cJSON_GetObjectItemCaseSensitive(audio, "channels");
     cJSON *frame_duration = cJSON_GetObjectItemCaseSensitive(audio, "frame_duration");
     return cJSON_IsString(format) && strcmp(format->valuestring, "opus") == 0 &&
-           cJSON_IsNumber(sample_rate) && sample_rate->valuedouble == (double)sample_rate->valueint && sample_rate->valueint == transport->config.output_sample_rate &&
+           cJSON_IsNumber(sample_rate) && sample_rate->valuedouble == (double)sample_rate->valueint &&
+           vt_protocol_server_sample_rate_compatible(
+               transport->config.profile, sample_rate->valueint, transport->config.output_sample_rate) &&
            cJSON_IsNumber(channels) && channels->valuedouble == (double)channels->valueint && channels->valueint == 1 &&
            cJSON_IsNumber(frame_duration) && frame_duration->valuedouble == (double)frame_duration->valueint && frame_duration->valueint == transport->config.frame_duration_ms;
 }

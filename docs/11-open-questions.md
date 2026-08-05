@@ -311,6 +311,7 @@ status/emotion từ config. Snapshot thiếu policy giữ compatibility và khô
 | R-004 | Local LLM có khả thi? | Hardware nâng cấp hoặc offline requirement mới. |
 | R-005 | VieNeu full v3 thay v3 Turbo preview? | Stable release/model card + regression benchmark. |
 | R-006 | Speculative LLM từ partial ASR? | True-stream ASR đủ ổn định + ADR chứng minh wrong-answer risk. |
+| R-007 | Legacy v1 server rate 16 kHz khi speaker decoder local 24 kHz có giữ chất lượng không? | Chạy cross-process v1 với peer thật; nếu cần chọn build v1 speaker 16 kHz hoặc đo Opus decoder resample trước khi promote. |
 
 ## 8. Những câu trả lời cần ưu tiên từ chủ dự án
 

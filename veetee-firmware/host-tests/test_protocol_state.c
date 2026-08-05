@@ -149,6 +149,23 @@ static void test_protocol_rejections(void) {
     assert(vt_protocol_encode_audio(&input, frame, 4U, &output_length) == VT_PROTOCOL_ERR_ARGUMENT);
 }
 
+static void test_server_audio_negotiation_compatibility(void) {
+    assert(vt_protocol_is_supported_opus_sample_rate(16000));
+    assert(vt_protocol_is_supported_opus_sample_rate(24000));
+    assert(!vt_protocol_is_supported_opus_sample_rate(11025));
+
+    /* Legacy direct WebSocket servers echo the client rate in their hello. */
+    assert(vt_protocol_server_sample_rate_compatible(VT_PROFILE_WS_V1_COMPAT, 16000, 24000));
+    assert(vt_protocol_server_sample_rate_compatible(VT_PROFILE_WS_V1_COMPAT, 24000, 24000));
+    assert(!vt_protocol_server_sample_rate_compatible(VT_PROFILE_WS_V1_COMPAT, 11025, 24000));
+
+    /* Product profiles keep strict decoder negotiation; no silent resampling. */
+    assert(vt_protocol_server_sample_rate_compatible(VT_PROFILE_WS_V2, 24000, 24000));
+    assert(vt_protocol_server_sample_rate_compatible(VT_PROFILE_WS_V3, 24000, 24000));
+    assert(!vt_protocol_server_sample_rate_compatible(VT_PROFILE_WS_V2, 16000, 24000));
+    assert(!vt_protocol_server_sample_rate_compatible(VT_PROFILE_WS_V3, 16000, 24000));
+}
+
 static void test_state(void) {
     vt_device_state_machine_t machine = {.state = VT_DEVICE_IDLE, .generation = 0U};
     assert(vt_state_apply(&machine, VT_EVENT_CONNECT));
@@ -303,6 +320,7 @@ static void test_wire_session_guard(void) {
 int main(void) {
     test_protocol();
     test_protocol_rejections();
+    test_server_audio_negotiation_compatibility();
     test_state();
     test_abort_from_thinking();
     test_interruptible_states();
