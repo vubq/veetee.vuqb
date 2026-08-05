@@ -256,31 +256,35 @@ async function focusError() {
     description="Giá trị cũ sẽ được thay bằng khóa mới sau khi lưu thành công."
     width="sm"
   >
-    <VtFormField
-      label="Giá trị khóa mới"
-      for-id="secret-rotate-value"
+    <form
+      id="secret-rotate-form"
+      @submit.prevent="rotate"
     >
-      <VtInput
-        id="secret-rotate-value"
-        v-model="rotateValue"
-        name="secret-rotate-value"
-        type="password"
-        aria-label="Giá trị khóa mới"
-        autocomplete="new-password"
-        spellcheck="false"
-        :disabled="saving"
-        @keydown.enter.prevent="rotate"
-      />
-    </VtFormField>
-    <p
-      v-if="rotateError"
-      ref="errorHeading"
-      class="secret-error"
-      role="alert"
-      tabindex="-1"
-    >
-      {{ rotateError }}
-    </p>
+      <VtFormField
+        label="Giá trị khóa mới"
+        for-id="secret-rotate-value"
+      >
+        <VtInput
+          id="secret-rotate-value"
+          v-model="rotateValue"
+          name="secret-rotate-value"
+          type="password"
+          aria-label="Giá trị khóa mới"
+          autocomplete="new-password"
+          spellcheck="false"
+          :disabled="saving"
+        />
+      </VtFormField>
+      <p
+        v-if="rotateError"
+        ref="errorHeading"
+        class="secret-error"
+        role="alert"
+        tabindex="-1"
+      >
+        {{ rotateError }}
+      </p>
+    </form>
     <template #footer>
       <VtButton
         variant="ghost"

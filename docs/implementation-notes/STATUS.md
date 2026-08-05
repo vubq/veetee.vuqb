@@ -14,6 +14,20 @@
   Manager Web `18181`; preview host-native tách riêng có thể dùng `18000/18001/
   18081`. Không dùng process/port của checkout cũ.
 
+## Follow-up validation — 2026-08-05
+
+- Regression hiện tại: Voice Server **177 passed**, Manager API **48/48** khi
+  chạy trên database test riêng `veetee_vubq_test` (đã drop sau test), Manager
+  Web **96/96** + typecheck/lint/build, firmware host CTest **9/9**.
+- Physical wake flow đã chạy một lượt có audio: `wake detected → wake start →
+  state=speaking → wake detector armed`; sau drain `active_turns=0` và
+  `protocol_errors=0`.
+- Physical wake-word interrupt đã chạy: `state=speaking → wake interrupt → wake
+  start`. Đây là firmware lifecycle evidence; không đồng nhất với acoustic-duplex
+  `barge_in_count` ở server.
+- Chi tiết lệnh, report redact và giới hạn acceptance nằm ở
+  [`2026-08-05-followup-validation.md`](2026-08-05-followup-validation.md).
+
 ## Operator lock — audio/physical test reopened (2026-08-05)
 
 - Chủ dự án đã cấp lại quyền kiểm thử bằng audio/microphone. Có thể chạy scenario
