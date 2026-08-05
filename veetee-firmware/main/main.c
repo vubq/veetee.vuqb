@@ -440,16 +440,23 @@ static bool audio_decoder_reset_locked(vt_app_t *app) {
 static void display_task(void *context) {
     vt_app_t *app = (vt_app_t *)context;
     vt_device_state_t previous = (vt_device_state_t)-1;
+    bool previous_show_pairing = false;
     while (!app->stop_requested) {
         vt_device_state_t current = state_read(app);
-        if (current != previous) {
-            esp_err_t render_result = app->pairing_code[0] != '\0'
+        /* The code is useful while the board is waiting to be claimed. Once
+           the transport has accepted the server hello, the same LCD becomes
+           the live interaction surface. Keeping this decision at the display
+           owner avoids a second pairing/status state in the wire protocol. */
+        const bool show_pairing = !vt_transport_is_ready(&app->transport);
+        if (current != previous || show_pairing != previous_show_pairing) {
+            esp_err_t render_result = show_pairing && app->pairing_code[0] != '\0'
                 ? vt_display_show_pairing_code(&app->display, app->pairing_code)
                 : vt_display_show_state(&app->display, current);
             if (render_result != ESP_OK && app->display.ready) {
                 ESP_LOGW(TAG, "LCD state render failed state=%s", vt_state_name(current));
             }
             previous = current;
+            previous_show_pairing = show_pairing;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }

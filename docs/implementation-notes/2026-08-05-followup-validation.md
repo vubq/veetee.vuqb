@@ -79,3 +79,20 @@ time-to-silence và false accept/reject vẫn là gate đo riêng.
   định nghĩa E2E đầy đủ; các số đo runtime chỉ là evidence của lượt vừa chạy.
 - Pairing thực tế vẫn cần người dùng đọc mã sáu chữ số trên LCD rồi nhập ở Web;
   không trích plaintext pairing code từ NVS.
+
+## LCD pairing/status surface sau khi flash (2026-08-05, cập nhật)
+
+- Sửa `display_task` để mã ghép nối 6 số chỉ được render khi transport chưa có
+  session server; sau `hello` renderer chuyển sang trạng thái hình học
+  `idle/listening/thinking/speaking`, khi mất kết nối quay lại mã ghép nối.
+  Quyết định nằm ở display owner, không thêm message/wire state và không cần
+  biết plaintext pairing code ở server.
+- ESP-IDF 6.0.2 build pass, image `0x165110`, app partition còn 65%; flash
+  `/dev/ttyACM0` không erase NVS. Serial xác nhận board giữ Wi-Fi trong NVS,
+  `ST7789 ready 240x280`, `startup chime played`, `wake_ready=1`,
+  `connecting → listening → server hello accepted; session ready → WebSocket v3
+  ready`, AEC underrun/overrun đều bằng 0 trong cửa sổ quan sát.
+- Host firmware CTest **9/9 passed**; Voice runtime sau reconnect
+  `activeConnections=1`, `activeTurns=0`, `protocol_errors=0`. Màn hình thực tế,
+  backlight/orientation và chất lượng âm thanh vẫn cần người dùng nhìn/nghe để
+  đóng physical acceptance; serial không thay thế kiểm tra đó.

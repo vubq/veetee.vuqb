@@ -1782,3 +1782,16 @@
   Production giữ `bargeIn.enabled=true` nhưng `deviceDuplex=false` để half-duplex
   ổn định; acoustic duplex/voice-onset/false accept/time-to-silence vẫn là gate
   opt-in chưa promotion. Report redacted: `/tmp/veetee-real-provider-esp32-revision9-20260805.json`.
+
+### LCD pairing/status surface sau khi flash (2026-08-05, cập nhật)
+
+- `display_task` nay render mã ghép nối 6 số khi transport chưa có session; sau
+  `hello` chuyển sang renderer `idle/listening/thinking/speaking`, và khi mất
+  kết nối quay lại màn hình ghép nối. Không đổi wire contract, Wi-Fi hoặc NVS.
+- ESP-IDF **6.0.2** build/flash pass, image `0x165110`, app còn 65%; serial giữ
+  Wi-Fi NVS, `ST7789 ready 240x280`, startup chime, `wake_ready=1`,
+  `connecting → listening → server hello accepted → WebSocket v3 ready`, AEC
+  underrun/overrun bằng 0. Host CTest **9/9**, Voice sau reconnect
+  `activeConnections=1`, `activeTurns=0`, `protocol_errors=0`.
+- Physical LCD/backlight/orientation và nghe âm thanh vẫn cần người dùng xác
+  nhận; serial không thay thế kiểm tra nhìn/nghe/chạm.
