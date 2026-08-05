@@ -14,6 +14,17 @@
   Manager Web `18181`; preview host-native tách riêng có thể dùng `18000/18001/
   18081`. Không dùng process/port của checkout cũ.
 
+## Operator lock — audio/physical test paused (2026-08-05)
+
+- Theo yêu cầu chủ dự án, tạm dừng mọi kiểm thử bằng phát audio hoặc microphone:
+  không phát clip/giọng nói, không mở speaker/microphone và không đọc serial để
+  kết luận audio.
+- Không flash, reset hoặc erase ESP32; không đổi Wi-Fi/NVS, NetworkManager,
+  route, firewall hay Tailscale. Chỉ tiếp tục host build, unit/contract test,
+  static quality và health probe read-only cho tới khi chủ dự án cấp quyền lại.
+- Host evidence không thay thế acceptance nghe/nhìn/chạm trên board; mọi gate
+  physical của M0/M1/M2/M3 vẫn được giữ ở trạng thái mở.
+
 ## Bảng tiến độ theo evidence
 
 | Vùng | Trạng thái | Đã chứng minh | Còn mở |
