@@ -1380,3 +1380,11 @@
   single-start/single-stop cho slow answer và empty LLM stream.
 - Chưa reload/flash/audio trong slice này; cần graceful reload service sau commit,
   không đổi wire, Wi-Fi/NVS/Tailscale hoặc database.
+
+### Progress acknowledgement deployment reload — host-only (2026-08-05)
+
+- Voice service đã graceful-restart để nạp commit `4c27149`: readiness `200`,
+  revision `87`, `activationFailures=0`, `activeTurns=0`; ESP32 tự reconnect,
+  không reset. Manager API/Web và database không restart.
+- Runtime snapshot hiện chưa publish `progress.acknowledgements`, nên không lặp
+  physical audio chỉ cho ownership fix; audio gate trước đó giữ nguyên evidence.
