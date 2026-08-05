@@ -140,6 +140,53 @@ async def test_progress_ack_is_configured_and_precedes_slow_llm_answer(tmp_path)
     sentences = [event["text"] for event in text if event.get("type") == "tts" and event.get("state") == "sentence_start"]
     assert sentences[0] == "Đợi một chút, tôi đang xử lý."
     assert any("Chào bạn" in value for value in sentences)
+    assert len([event for event in text if event.get("type") == "tts" and event.get("state") == "start"]) == 1
+    assert len([event for event in text if event.get("type") == "tts" and event.get("state") == "stop"]) == 1
+    assert binary
+
+
+@pytest.mark.asyncio
+async def test_progress_ack_still_stops_when_llm_finishes_without_answer(tmp_path):
+    source = json.loads((Path(__file__).parents[1] / "config/fixtures/m0.json").read_text(encoding="utf-8"))
+    source["progress"] = {
+        "enabled": True,
+        "deadlineMs": 1,
+        "acknowledgementId": "processing",
+        "acknowledgements": {"processing": "Đợi một chút, tôi đang xử lý."},
+    }
+    source["providers"]["llm"]["config"]["segmentDelayMs"] = 20
+    fixture = tmp_path / "progress-final-empty.json"
+    fixture.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+    snapshot = load_snapshot(fixture)
+    registry = ProviderRegistry(snapshot)
+
+    class EmptyLLM:
+        async def stream(self, *, prompt, locale, tools):
+            del prompt, locale, tools
+            await asyncio.sleep(0.02)
+            yield LLMDelta(final=True)
+
+    registry.llm = EmptyLLM()
+    turn = Turn(turn_id="progress-empty-turn", generation=1, mode="manual", cancelled=asyncio.Event())
+    text = []
+    binary = []
+    pipeline = TurnPipeline(
+        snapshot=snapshot,
+        registry=registry,
+        codec=OpusCodec(16000, 24000),
+        profile="ws-v3",
+        session_id="progress-empty-session",
+        turn=turn,
+        send_text=lambda value: _append(text, value),
+        send_binary=lambda value: _append(binary, value),
+        metrics={},
+    )
+
+    await pipeline.finish()
+
+    assert any(event.get("state") == "sentence_start" and event.get("text") == "Đợi một chút, tôi đang xử lý." for event in text)
+    assert len([event for event in text if event.get("type") == "tts" and event.get("state") == "start"]) == 1
+    assert len([event for event in text if event.get("type") == "tts" and event.get("state") == "stop"]) == 1
     assert binary
 
 

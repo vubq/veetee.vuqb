@@ -263,9 +263,10 @@ class TurnPipeline:
                         return
                     remember_answer(segment)
                     if not answer_started:
-                        self.turn.tts_started_at = time.perf_counter()
-                        await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
-                        self._tts_started = True
+                        if not self._tts_started:
+                            self.turn.tts_started_at = time.perf_counter()
+                            await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
+                            self._tts_started = True
                         answer_started = True
                     await self._speak_segment(segment)
 
@@ -282,10 +283,10 @@ class TurnPipeline:
                 else:
                     done, _ = await asyncio.wait({next_delta, timer}, return_when=asyncio.FIRST_COMPLETED)
                     if timer in done and next_delta not in done:
-                        if not answer_started:
+                        if not self._tts_started:
                             self.turn.tts_started_at = time.perf_counter()
                             await self._send_text(control_message("tts", session_id=self.session_id, state="start", turn_id=self.turn.turn_id))
-                            answer_started = True
+                            self._tts_started = True
                         await self._speak_segment(progress_text, speaker="system")
                     try:
                         await handle_delta(await next_delta)
@@ -345,7 +346,7 @@ class TurnPipeline:
                 current_prompt = f"{current_prompt}\n\nTool result for {tool_name}: {json.dumps(result, ensure_ascii=False)}"
                 continue
             break
-        if answer_started and not self._cancelled():
+        if self._tts_started and not self._cancelled():
             await self._flush_packetizer()
             await self._emit_tts_stop("complete")
         return " ".join(answer_parts).strip()

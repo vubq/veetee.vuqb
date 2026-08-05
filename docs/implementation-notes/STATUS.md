@@ -1369,3 +1369,14 @@
   `turn_releases=5`, `auto_no_speech_timeouts=2`, `protocol_errors=0`.
 - Report redact ngoài Git: `/tmp/veetee-wake-no-speech-after-timeout-20260805.json`.
   Không flash/reset/erase, đổi Wi-Fi/NVS/Tailscale hoặc lưu raw audio/transcript.
+
+### Progress acknowledgement TTS ownership — host-only (2026-08-05)
+
+- Pipeline giữ một TTS lifecycle xuyên progress acknowledgement và answer: một
+  `tts/start`, cờ ownership không bị mất, và terminal `tts/stop` vẫn phát khi LLM
+  empty hoặc lỗi sau acknowledgement. Text acknowledgement và policy vẫn do
+  runtime snapshot cấu hình, không hardcode provider/câu trả lời.
+- Full Voice Server **163 passed**, Ruff/compileall pass; regression cover
+  single-start/single-stop cho slow answer và empty LLM stream.
+- Chưa reload/flash/audio trong slice này; cần graceful reload service sau commit,
+  không đổi wire, Wi-Fi/NVS/Tailscale hoặc database.
