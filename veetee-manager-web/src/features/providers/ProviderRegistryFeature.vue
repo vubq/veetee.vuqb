@@ -520,6 +520,7 @@ h1 { font-size: 22px; letter-spacing: -.02em; }
 h2 { margin-bottom: 6px; font-size: 14px; }
 .lede, .muted { margin: 6px 0 0; color: var(--vt-text-muted); font-size: 11px; line-height: 1.5; }
 .provider-layout { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(0, 1.2fr); gap: 14px; align-items: start; }
+.provider-layout > :deep(.secret-card) { grid-column: 1 / -1; min-width: 0; }
 .provider-meta { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: var(--vt-text-muted); font-size: 10px; }
 .config-card { display: grid; gap: 12px; }
 .probe-card { display: grid; gap: 9px; background: var(--vt-surface-subtle); padding: 12px; }

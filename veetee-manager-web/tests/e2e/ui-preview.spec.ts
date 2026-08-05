@@ -137,6 +137,39 @@ test('provider registry sinh form từ schema và lưu revision', async ({ page 
   await expect(page.getByText('Đã lưu cấu hình dịch vụ', { exact: true })).toBeVisible()
 })
 
+test('khóa kết nối giữ nguyên chiều rộng ở mọi viewport', async ({ page }) => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 800, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/providers')
+    const metrics = await page.locator('.provider-layout').evaluate((layout) => {
+      const panel = layout.querySelector<HTMLElement>(':scope > .secret-card')
+      const create = panel?.querySelector<HTMLElement>('.secret-create')
+      if (!panel || !create) throw new Error('Khong tim thay panel khoa ket noi')
+      const layoutRect = layout.getBoundingClientRect()
+      const panelRect = panel.getBoundingClientRect()
+      const createRect = create.getBoundingClientRect()
+      return {
+        bodyScrollWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+        panelGridColumn: getComputedStyle(panel).gridColumn,
+        layoutWidth: layoutRect.width,
+        panelWidth: panelRect.width,
+        panelRight: panelRect.right,
+        createRight: createRect.right,
+      }
+    })
+
+    expect(metrics.panelGridColumn).toBe('1 / -1')
+    expect(metrics.panelWidth).toBeGreaterThanOrEqual(metrics.layoutWidth - 1)
+    expect(metrics.createRight).toBeLessThanOrEqual(metrics.panelRight + 1)
+    expect(metrics.bodyScrollWidth).toBeLessThanOrEqual(metrics.viewportWidth)
+  }
+})
+
 test('mobile không overflow và contextual navigation còn label', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`/assistants/${assistantId}/config/role`)
