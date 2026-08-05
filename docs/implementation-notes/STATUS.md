@@ -1665,3 +1665,7 @@
   Không mở trực tiếp port component, không đổi Wi-Fi/route/ESP32 endpoint.
 - Quyết định được ghi tại [`ADR-029`](../ADR/ADR-029-public-tailscale-funnel.md);
   tắt bằng `tailscale funnel --https=443 off` khi không cần kiểm tra.
+- External verification không dùng tailnet: Google/Cloudflare/Quad9 DNS đều trả
+  ingress public, hai ingress trả HTTPS `200`, và một external fetcher tải được
+  trang đăng nhập. Nếu client cụ thể vẫn `NXDOMAIN`, cần flush DNS hoặc dùng
+  resolver public/DoH trên client; không phải lỗi Serve/Funnel phía server.
