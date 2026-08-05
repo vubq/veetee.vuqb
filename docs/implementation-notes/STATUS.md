@@ -1669,3 +1669,7 @@
   ingress public, hai ingress trả HTTPS `200`, và một external fetcher tải được
   trang đăng nhập. Nếu client cụ thể vẫn `NXDOMAIN`, cần flush DNS hoặc dùng
   resolver public/DoH trên client; không phải lỗi Serve/Funnel phía server.
+- Host-local verification sau khi router DNS vẫn trả `NXDOMAIN`: đã thêm override
+  `/etc/hosts` cho `103.84.155.153` và `103.84.155.217`; truy cập đúng hostname
+  trên chính máy trả HTML `200` và API unauthenticated `401`. Đây là thay đổi
+  hostname-only, không đổi Wi-Fi/route; cần cập nhật nếu Funnel thay IP.

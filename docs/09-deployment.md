@@ -476,6 +476,12 @@ qua ingress Funnel hoặc một client Internet khác. Không coi self-route tim
 là lỗi Manager Web. ESP32 không có Tailscale client nên vẫn dùng endpoint LAN
 `ws://<host-lan-ip>:18100/veetee/v1/`, không dùng dashboard HTTPS hostname.
 
+Nếu chính host dùng router DNS trả `NXDOMAIN` cho `ts.net`, có thể thêm tạm A
+records hiện tại của Funnel vào `/etc/hosts` để browser trên host đi qua ingress
+public. Đây chỉ là hostname override, không đổi route/Wi-Fi; cần refresh khi
+Funnel đổi ingress IP. Không trỏ hostname về `100.x` vì userspace Tailscale không
+self-route.
+
 Không tạo hostname con kiểu `api.veetee.tail52a635.ts.net` hoặc
 `voice.veetee.tail52a635.ts.net`: Tailscale certificate hiện chỉ cấp cho node
 `veetee`. Path routing cùng origin giữ cookie/CORS đơn giản và không phải mở
