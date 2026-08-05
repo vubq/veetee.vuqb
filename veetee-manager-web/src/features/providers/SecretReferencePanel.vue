@@ -344,8 +344,8 @@ async function focusError() {
 .secret-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .secret-header h2 { margin: 0 0 5px; font-size: 14px; }
 .muted { margin: 0; color: var(--vt-text-muted); font-size: 10px; line-height: 1.55; }
-.secret-create { display: grid; grid-template-columns: minmax(150px, .8fr) minmax(220px, 1.2fr) auto; align-items: end; gap: 10px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); padding: 11px; }
-.secret-create .vt-button { min-height: 36px; white-space: nowrap; }
+.secret-create { display: grid; grid-template-columns: minmax(150px, .8fr) minmax(220px, 1.2fr) auto; align-items: start; gap: 10px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); padding: 11px; }
+.secret-create .vt-button { min-height: 36px; align-self: end; white-space: nowrap; }
 .secret-error { margin: 0; border: 1px solid rgba(214, 69, 80, .28); border-radius: var(--vt-radius-control); background: rgba(214, 69, 80, .06); color: var(--vt-danger); padding: 9px 10px; font-size: 10px; line-height: 1.45; }
 .secret-list { display: grid; gap: 6px; }
 .secret-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; border-bottom: 1px solid var(--vt-border); padding: 8px 0; }

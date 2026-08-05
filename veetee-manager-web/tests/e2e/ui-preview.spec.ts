@@ -152,6 +152,9 @@ test('khóa kết nối giữ nguyên chiều rộng ở mọi viewport', async 
       const layoutRect = layout.getBoundingClientRect()
       const panelRect = panel.getBoundingClientRect()
       const createRect = create.getBoundingClientRect()
+      const nameInput = panel.querySelector<HTMLElement>('#secret-reference-name')
+      const valueInput = panel.querySelector<HTMLElement>('#secret-reference-value')
+      if (!nameInput || !valueInput) throw new Error('Khong tim thay o nhap khoa ket noi')
       return {
         bodyScrollWidth: document.documentElement.scrollWidth,
         viewportWidth: window.innerWidth,
@@ -160,6 +163,8 @@ test('khóa kết nối giữ nguyên chiều rộng ở mọi viewport', async 
         panelWidth: panelRect.width,
         panelRight: panelRect.right,
         createRight: createRect.right,
+        nameInputTop: nameInput.getBoundingClientRect().top,
+        valueInputTop: valueInput.getBoundingClientRect().top,
       }
     })
 
@@ -167,6 +172,9 @@ test('khóa kết nối giữ nguyên chiều rộng ở mọi viewport', async 
     expect(metrics.panelWidth).toBeGreaterThanOrEqual(metrics.layoutWidth - 1)
     expect(metrics.createRight).toBeLessThanOrEqual(metrics.panelRight + 1)
     expect(metrics.bodyScrollWidth).toBeLessThanOrEqual(metrics.viewportWidth)
+    if (viewport.width > 700) {
+      expect(Math.abs(metrics.nameInputTop - metrics.valueInputTop)).toBeLessThanOrEqual(1)
+    }
   }
 })
 
