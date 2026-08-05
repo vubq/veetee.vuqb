@@ -1161,3 +1161,17 @@
   provider/Groq, không phát/thu audio, không mở microphone/speaker/serial,
   không flash/reset/erase ESP32, không đổi Wi-Fi/Tailscale và không mutate
   production `veetee_vubq`.
+
+### Voice runtime reload after host-only fix (2026-08-05)
+
+- Đã kiểm tra unit `veetee-voice-18100.service` đúng checkout mới, `activeTurns=0`
+  rồi graceful-restart để nạp commit `29e4783`; không restart Manager API/Web,
+  không dừng PostgreSQL và không đổi listener/mạng.
+- Voice readiness sau reload: HTTP `200`, revision `87`, `activationFailures=0`,
+  `protocol_errors=0`, `audio_frames_in=0`, `audio_frames_out=0`; ESP32 tự
+  reconnect lại với `active_connections=1` nhưng đây chỉ là presence/session
+  evidence, không phải physical audio acceptance. API `18101` và Web `18181`
+  tiếp tục HTTP `200`.
+- Không phát audio/wake harness, không mở microphone/speaker/serial audio,
+  không flash/reset/erase ESP32, không đổi Wi-Fi/Tailscale và không mutate
+  production `veetee_vubq`.
