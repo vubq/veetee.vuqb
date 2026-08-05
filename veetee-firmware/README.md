@@ -19,15 +19,21 @@ language-neutral oracle at `tests/fixtures/ws_audio_golden.csv`; this prevents
 the two implementations from silently drifting while keeping reference repos
 read-only. The additional `mqtt_udp_wire` CTest validates the 16-byte UDP v3
 header and bounded 1.400-byte payload without opening a socket or doing AES; the
-Python crypto/session fixtures cover the encrypted host-side path. These tests
-validate framing/round-trip bytes, not a full peer-server conformance run.
+Python crypto/session fixtures cover the encrypted host-side path. The MCP
+registry, wire serializer and cJSON dispatcher tests are also host-only and do
+not call a transport or hardware owner task. The dispatcher test is included
+only after the managed ESP-IDF cJSON source has been resolved; CMake skips that
+single target otherwise. These tests validate framing/round-trip bytes, not a
+full peer-server conformance run.
 
 `mqtt_udp_crypto` is the firmware-side AES-128/CTR parity test. Its host build
 uses the system OpenSSL provider only as a deterministic oracle; the ESP-IDF
 image uses the bundled PSA Crypto API from `mbedtls`. The module keeps the
 clear 16-byte header, uses that header as the CTR IV, rejects sequence wrap and
 wipes session material on reset. It is still a codec boundary: no MQTT client,
-UDP socket, reconnect task or runtime carrier is enabled by this test.
+UDP socket, reconnect task or runtime carrier is enabled by this test. MCP
+dispatch is likewise a boundary; owner-task scheduling and BoardHal capability
+tools remain a later slice.
 
 ## ESP-IDF compile gate
 

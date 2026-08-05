@@ -23,7 +23,7 @@
 | M1 — realtime conversation | Đang làm, **chưa đóng DoD** | Streaming/cancellation/tool loop, v1/v2/v3 fixture, WakeNet, noise suppression, multi-key fixture 10/10, AEC lifecycle/resource 10/10; stale `tts/stop` barrier đã sửa; normal wake 2 lượt, barge-in lifecycle physical, corpus smoke 1 negative/1 positive và host TTFA warm p95 `1481,4 ms` pass. | Acoustic echo-only, false accept/reject corpus đủ lớn, voice-onset barge-in/time-to-silence, 100 repetition, provider promotion và cross-peer physical conformance. Các lần timeout AEC/bypass trước guard vẫn là diagnostic history, không coi là acoustic verdict. Xem [`M1.md`](M1.md). |
 | Groq multi-key | Hoàn tất cho **test harness** | `VEETEE_TEST_GROQ_KEYS_FILE` chỉ với fixture; round-robin; chỉ retry `429` trước delta đầu; không replay partial stream; firmware không chứa key. | Không phải production fallback/key rotation; nhiều key vẫn có thể cùng dính quota account/org/model/IP. |
 | M2 — control plane | Đang làm, **chưa đóng DoD** | Fastify/OpenAPI, PostgreSQL `veetee_vubq`, auth/session, pairing/unlink, provider schema-driven UI, ETag/publish, history/presence, derived dashboard summary, TTL freshness, privacy export, async conversation delete/tombstone và host regression. | Promotion provider/model/VRAM, mọi route/error/a11y/loading state và physical device/presence acceptance. Xem [`M2.md`](M2.md). |
-| M3 — transport/hardware/OTA | Đang mở ở host-only slice | MQTT control/bridge/session, firmware UDP header codec, UDP v3 AES/reorder/barrier và deterministic loss/soak đã có golden/unit evidence; chưa nối carrier vào runtime. | MQTT client/gateway/socket, firmware encrypted carrier, MCP phần cứng, assets/OTA, real-network comparison và transport-promotion cần mở sau. |
+| M3 — transport/hardware/OTA | Đang mở ở host-only slice | MQTT control/bridge/session, firmware UDP header/crypto codec, UDP v3 AES/reorder/barrier, deterministic loss/soak và firmware MCP registry/wire/JSON-RPC dispatcher đã có host/ESP-IDF build-only golden/test evidence; chưa nối carrier hoặc owner-task vào runtime. | MQTT client/gateway/socket, firmware encrypted carrier, owner-task + BoardHal MCP phần cứng, assets/OTA, real-network comparison và transport-promotion cần mở sau. |
 | M4 — hardening/multilingual | Chưa mở | Chỉ có design/ADR và implementation notes placeholder. | Capacity, backup/restore, security, locale thứ hai và soak dài. |
 
 ## Nơi xem trực tiếp
@@ -60,6 +60,19 @@
   cảm vào file này.
 - Không đánh dấu `M0`/`M1`/`M2` đạt chỉ vì build hoặc unit test xanh; physical-only
   acceptance phải được tách rõ.
+
+## Firmware MCP dispatcher boundary (2026-08-05)
+
+- `veetee_mcp_dispatch.[ch]` nhận cJSON envelope đã framing-guard, validate
+  session/jsonrpc/request ID/params/cursor, gọi registry cho `tools/call` và
+  serialize `initialize`/`tools/list`/result/error. Notification được ignore;
+  input lỗi không tạo hardware side effect.
+- Host CTest **6/6** pass; ESP-IDF 6.0.2 build pass cho ESP32-S3 N16R8, binary
+  `0x159410`, app partition còn 66%. Voice Server **146 passed**, Ruff và
+  compileall pass.
+- Lát cắt chưa nối `wire_dispatch`/owner-task/BoardHal, chưa quảng bá MCP tool,
+  chưa flash/reset/đọc serial audio và không đóng physical MCP/audio gate. M3
+  vẫn mở; direct WebSocket v3 vẫn là default.
 
 ## Cập nhật gần nhất (2026-08-04)
 

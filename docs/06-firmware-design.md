@@ -572,6 +572,18 @@ task (`references/xiaozhi-esp32/main/mcp_server.cc:452-505`,
 `references/xiaozhi-esp32/main/mcp_server.cc:508-559`). Veetee bổ sung policy,
 idempotency cache và resource bounds; không đổi outer wire.
 
+Implementation boundary hiện có:
+
+- `veetee_mcp.[ch]` giữ registry/cache/idempotency thuần dữ liệu;
+- `veetee_mcp_wire.[ch]` serialize response bounded;
+- `veetee_mcp_dispatch.[ch]` parse/validate cJSON envelope và route tới registry.
+
+Ba lớp này đã có host CTest và ESP-IDF compile gate, nhưng chưa được gọi từ
+`wire_dispatch`/`app_main`, chưa có `BoardHal` capability manifest và chưa được
+phép thực hiện hardware mutation. Integration phải đưa request qua queue
+`mcp_requests` và owner task theo §4.2/§10.4; không gọi callback peripheral trực
+tiếp từ parser hoặc transport callback.
+
 ### 10.2 Initial tool catalog
 
 | Tool | Input contract | Output | Safety/policy |

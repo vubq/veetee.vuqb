@@ -31,3 +31,18 @@ add_executable(veetee_firmware_mcp_wire_tests test_mcp_wire.c ../main/veetee_mcp
 target_include_directories(veetee_firmware_mcp_wire_tests PRIVATE ../main)
 target_compile_options(veetee_firmware_mcp_wire_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
 add_test(NAME mcp_wire COMMAND veetee_firmware_mcp_wire_tests)
+
+set(VT_CJSON_ROOT "${CMAKE_CURRENT_LIST_DIR}/../managed_components/espressif__cjson/cJSON")
+if(EXISTS "${VT_CJSON_ROOT}/cJSON.c" AND EXISTS "${VT_CJSON_ROOT}/cJSON.h")
+    add_executable(veetee_firmware_mcp_dispatch_tests
+        test_mcp_dispatch.c
+        ../main/veetee_mcp.c
+        ../main/veetee_mcp_wire.c
+        ../main/veetee_mcp_dispatch.c
+        "${VT_CJSON_ROOT}/cJSON.c")
+    target_include_directories(veetee_firmware_mcp_dispatch_tests PRIVATE ../main "${VT_CJSON_ROOT}")
+    target_compile_options(veetee_firmware_mcp_dispatch_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
+    add_test(NAME mcp_dispatch COMMAND veetee_firmware_mcp_dispatch_tests)
+else()
+    message(STATUS "Skipping mcp_dispatch host test: ESP-IDF cJSON source is not resolved")
+endif()
