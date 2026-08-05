@@ -1462,6 +1462,11 @@
   restore Voice production Manager-source (không fallback/key rotation trong
   production). Scenario drain-aware normal đạt **2/2** lượt với VieNeu thật;
   report `/tmp/veetee-audio-normal-drain-multikey-20260805.json`.
+- Một smoke trước đó dùng scenario không chờ playback drain: lượt 1 pass nhưng
+  repetition 2 timeout ở `wake_detected` do phát wake khi TTS còn đang drain;
+  report `/tmp/veetee-audio-normal-multikey-20260805.json`. Đã phân loại là
+  lỗi timing của test scenario và chạy lại bằng drain-aware scenario, không đổi
+  firmware hay hạ threshold.
 - Mỗi lượt đạt `wake detected → wake start → state=speaking → playback drain →
   wake detector armed`; player exit `0`, không panic/stack/Opus marker. Metrics
   fixture cuối lượt: `active_turns=0`, `turn_admissions=2`,
