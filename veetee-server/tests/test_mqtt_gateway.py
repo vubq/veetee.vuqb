@@ -31,6 +31,7 @@ def test_gateway_config_requires_explicit_bind_host_and_bounds_values() -> None:
     config = MqttUdpGatewayConfig.from_mapping({"bind_host": "127.0.0.1"})
     assert config.bind_port == 0
     assert config.handshake_timeout_ms == 10_000
+    assert config.tick_interval_ms == 60
 
 
 class _Peer(asyncio.DatagramProtocol):
@@ -197,6 +198,46 @@ async def test_gateway_events_join_tts_control_and_encrypted_udp_bytes() -> None
         assert released == [b"downlink-opus"]
         await event_stream.aclose()
         assert gateway.state == gateway.CLOSED
+    finally:
+        peer_transport.close()
+
+
+@pytest.mark.asyncio
+async def test_gateway_timer_surfaces_silent_tts_stop_timeout() -> None:
+    peer_transport, peer = await _make_peer()
+    try:
+        fixture = _fixture()
+        server_hello = dict(fixture["server_hello"])
+        udp = dict(server_hello["udp"])
+        assert peer.address is not None
+        udp.update({"server": "127.0.0.1", "port": peer.address[1]})
+        server_hello["udp"] = udp
+        client = _Client(server_hello=server_hello)
+        gateway = MqttUdpGateway(
+            _config(),
+            MqttUdpGatewayConfig(bind_host="127.0.0.1", tick_interval_ms=20),
+            client_factory=_client_factory(client),
+        )
+        await gateway.start(fixture["client_hello"])
+        client.messages.put_nowait(("downstream/opaque-7", encode_control_payload({
+            "type": "tts", "state": "start", "session_id": "session-1",
+            "audio_stream_id": 7, "start_sequence": 1,
+        })))
+        client.messages.put_nowait(("downstream/opaque-7", encode_control_payload({
+            "type": "tts", "state": "stop", "session_id": "session-1",
+            "audio_stream_id": 7, "end_sequence": 2,
+        })))
+        event_stream = gateway.events()
+        assert (await asyncio.wait_for(anext(event_stream), timeout=1)).source == "control"
+        assert (await asyncio.wait_for(anext(event_stream), timeout=1)).source == "control"
+        timeout_event = None
+        for _ in range(100):
+            event = await asyncio.wait_for(anext(event_stream), timeout=2)
+            if event.source == "timer" and event.stream_result is not None and event.stream_result.timed_out:
+                timeout_event = event
+                break
+        assert timeout_event is not None
+        await event_stream.aclose()
     finally:
         peer_transport.close()
 

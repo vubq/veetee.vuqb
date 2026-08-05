@@ -117,7 +117,8 @@ config tường minh, packet ceiling và queue bounded; nó chỉ đưa datagram
 cho coordinator, không decode Opus, không tự mở khi Voice runtime khởi động và
 không thay transport mặc định. `veetee_server.mqtt_gateway` ghép ba boundary
 thành một session explicit: publish client hello, chờ server hello, mở UDP theo
-endpoint đã cấp, rồi phát sự kiện control/audio đã validate. Gateway chỉ được
+endpoint đã cấp, rồi phát sự kiện control/audio/timer đã validate. Timer tick
+bounded vẫn flush gap hoặc `tts/stop` timeout khi đường UDP im lặng. Gateway chỉ được
 caller tạo và start; Voice runtime không tự activate, không có silent fallback
 và không đổi direct WebSocket v3 mặc định.
 

@@ -65,6 +65,7 @@ class MqttUdpGatewayConfig:
     max_datagram_bytes: int = UDP_MAX_DATAGRAM_BYTES
     queue_capacity: int = UDP_DEFAULT_QUEUE_CAPACITY
     handshake_timeout_ms: int = MQTT_GATEWAY_DEFAULT_HANDSHAKE_TIMEOUT_MS
+    tick_interval_ms: int = 60
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "MqttUdpGatewayConfig":
@@ -79,6 +80,7 @@ class MqttUdpGatewayConfig:
                 max_datagram_bytes=value.get("max_datagram_bytes", UDP_MAX_DATAGRAM_BYTES),
                 queue_capacity=value.get("queue_capacity", UDP_DEFAULT_QUEUE_CAPACITY),
                 handshake_timeout_ms=value.get("handshake_timeout_ms", MQTT_GATEWAY_DEFAULT_HANDSHAKE_TIMEOUT_MS),
+                tick_interval_ms=value.get("tick_interval_ms", 60),
             )
         except KeyError as exc:
             raise MqttGatewayError(
@@ -110,13 +112,15 @@ class MqttUdpGatewayConfig:
                 "MQTT_GATEWAY_CONFIG_INVALID",
                 f"handshake_timeout_ms must be in 1000..{MQTT_GATEWAY_MAX_HANDSHAKE_TIMEOUT_MS}",
             )
+        if isinstance(self.tick_interval_ms, bool) or not isinstance(self.tick_interval_ms, int) or not 10 <= self.tick_interval_ms <= 1_000:
+            raise MqttGatewayError("MQTT_GATEWAY_CONFIG_INVALID", "tick_interval_ms must be in 10..1000")
 
 
 @dataclass(frozen=True, slots=True)
 class MqttGatewayEvent:
     """One carrier event after session validation and UDP decryption."""
 
-    source: Literal["control", "audio"]
+    source: Literal["control", "audio", "timer"]
     control: MqttSessionEvent | None = None
     stream_result: UdpStreamResult | None = None
 
@@ -260,6 +264,7 @@ class MqttUdpGateway:
         tasks: dict[str, asyncio.Task[Any]] = {
             "control": asyncio.create_task(anext(control_iterator), name=f"mqtt-control-{self.session_id}"),
             "audio": asyncio.create_task(anext(udp_iterator), name=f"udp-audio-{self.session_id}"),
+            "timer": asyncio.create_task(self._tick_after_delay(), name=f"mqtt-udp-tick-{self.session_id}"),
         }
         try:
             while tasks:
@@ -277,7 +282,7 @@ class MqttUdpGateway:
                         if event.closed:
                             return
                         tasks[source] = asyncio.create_task(anext(control_iterator), name=f"mqtt-control-{self.session_id}")
-                    else:
+                    elif source == "audio":
                         try:
                             datagram = task.result()
                         except StopAsyncIteration as exc:
@@ -285,6 +290,11 @@ class MqttUdpGateway:
                         result = self.session.receive_downlink_udp(datagram)
                         yield MqttGatewayEvent(source="audio", stream_result=result)
                         tasks[source] = asyncio.create_task(anext(udp_iterator), name=f"udp-audio-{self.session_id}")
+                    else:
+                        result = self.session.tick()
+                        if _has_observable_stream_effect(result):
+                            yield MqttGatewayEvent(source="timer", stream_result=result)
+                        tasks[source] = asyncio.create_task(self._tick_after_delay(), name=f"mqtt-udp-tick-{self.session_id}")
         finally:
             for task in tasks.values():
                 task.cancel()
@@ -319,6 +329,9 @@ class MqttUdpGateway:
         if self._state != self.READY or self.session.state != MqttUdpState.READY:
             raise self._state_error("gateway is not READY")
 
+    async def _tick_after_delay(self) -> None:
+        await asyncio.sleep(self.gateway_config.tick_interval_ms / 1000)
+
     @staticmethod
     def _state_error(message: str) -> MqttGatewayError:
         return MqttGatewayError("MQTT_GATEWAY_STATE", message)
@@ -331,3 +344,15 @@ async def _close_shielded(gateway: MqttUdpGateway) -> None:
     except asyncio.CancelledError:
         await cleanup
         raise
+
+
+def _has_observable_stream_effect(result: UdpStreamResult) -> bool:
+    return bool(
+        result.released
+        or result.lost_sequences
+        or result.completed
+        or result.invalidated
+        or result.aborted
+        or result.timed_out
+        or result.reason is not None
+    )

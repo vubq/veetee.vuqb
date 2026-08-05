@@ -8,10 +8,10 @@
   config caller. Không tự activate trong Voice runtime và không có transport
   fallback.
 - Host loopback test đã đi đủ client hello → server hello → UDP bind → encrypted
-  uplink/downlink bytes → `tts/start` barrier → cleanup khi đóng/cancel. Không
+  uplink/downlink bytes → `tts/start` barrier → silent `tts/stop` timeout tick → cleanup khi đóng/cancel. Không
   decode/play audio, không mở mic/loa, không broker thật, không đổi Wi-Fi,
   NetworkManager, route, firewall hoặc Tailscale.
-- Voice Server **191 passed**, Ruff và compileall pass. M3 vẫn chưa đóng DoD:
+- Voice Server **192 passed**, Ruff và compileall pass. M3 vẫn chưa đóng DoD:
   firmware carrier, broker/network loss-latency evidence, transport promotion,
   physical MCP/OTA và acceptance vật lý còn mở.
 
