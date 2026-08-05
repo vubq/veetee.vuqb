@@ -125,8 +125,8 @@ test('provider unavailable không fallback và conflict giữ draft', async ({ p
 })
 
 test('provider registry sinh form từ schema và lưu revision', async ({ page }) => {
-  await page.goto('/providers')
-  await expect(page.getByRole('heading', { name: 'Các dịch vụ AI' })).toBeVisible()
+  await page.goto('/providers/llm')
+  await expect(page.getByRole('heading', { name: 'Bộ não trả lời' })).toBeVisible()
   await expect(page.getByRole('textbox', { name: 'Địa chỉ dịch vụ' })).toHaveValue('https://api.groq.com/openai/v1')
   await expect(page.getByRole('spinbutton', { name: 'Độ dài trả lời tối đa' })).toHaveValue('512')
   await expect(page.getByRole('switch', { name: 'Cho phép gọi công cụ' })).toBeChecked()
@@ -144,7 +144,7 @@ test('khóa kết nối giữ nguyên chiều rộng ở mọi viewport', async 
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport)
-    await page.goto('/providers')
+    await page.goto('/providers/llm')
     const metrics = await page.locator('.provider-layout').evaluate((layout) => {
       const panel = layout.querySelector<HTMLElement>(':scope > .secret-card')
       const create = panel?.querySelector<HTMLElement>('.secret-create')
@@ -199,7 +199,7 @@ test('mobile menu có Dịch vụ AI và điều hướng đúng màn hình', as
   await expect(page.getByRole('menuitem', { name: 'Dịch vụ AI' })).toBeVisible()
   await page.getByRole('menuitem', { name: 'Dịch vụ AI' }).click()
   await expect(page).toHaveURL(/\/providers$/)
-  await expect(page.getByRole('heading', { name: 'Các dịch vụ AI' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Cấu hình từng phần một' })).toBeVisible()
 })
 
 test('role nâng cao thu gọn mặc định và cảnh báo bản nháp khi rời trang', async ({ page }) => {
@@ -231,7 +231,7 @@ test('role nâng cao thu gọn mặc định và cảnh báo bản nháp khi r�
 
 test('provider CTA và badge không gây vỡ bố cục trên mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/providers')
+  await page.goto('/providers/llm')
   const create = page.getByRole('button', { name: 'Tạo cấu hình' })
   await expect(create).toBeVisible()
   const metrics = await page.locator('.provider-list-toolbar').evaluate((toolbar) => {
@@ -261,6 +261,8 @@ test('@a11y core surfaces không có serious hoặc critical violation', async (
     `/assistants/${assistantId}/devices`,
     `/assistants/${assistantId}/history`,
     '/providers',
+    '/providers/llm',
+    '/providers/tts/voices',
     '/_preview/components',
   ]) {
     await page.goto(path)

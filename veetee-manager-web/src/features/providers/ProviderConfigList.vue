@@ -72,8 +72,8 @@ function probeLabel(result: ProviderProbeResult | undefined) {
   <VtCard class="provider-list-card">
     <header class="list-heading">
       <div>
-        <h2>{{ kindLabel(kind) }}</h2>
-        <p>Quản lý từng cấu hình {{ kindLabel(kind).toLocaleLowerCase() }} độc lập. Bạn có thể thêm, sửa hoặc xóa từng cấu hình.</p>
+        <h2>Cấu hình đã lưu</h2>
+        <p>Mỗi cấu hình {{ kindLabel(kind).toLocaleLowerCase() }} có tên riêng và được quản lý độc lập.</p>
       </div>
       <VtBadge tone="primary">
         {{ filtered.length }} dịch vụ

@@ -38,6 +38,7 @@ export default {
       supportsTools: 'Cho phép gọi công cụ',
       toolPolicy: 'Quy tắc dùng công cụ',
       endpoint: 'Địa chỉ dịch vụ',
+      baseUrl: 'Base URL',
       model: 'Mô hình trả lời',
       temperature: 'Mức sáng tạo',
       maxTokens: 'Độ dài trả lời tối đa',

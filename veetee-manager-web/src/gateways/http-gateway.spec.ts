@@ -5,6 +5,30 @@ import { createHttpGatewayDependencies } from './http-gateway'
 afterEach(() => vi.unstubAllGlobals())
 
 describe('HTTP gateway read failure metadata', () => {
+  it('normalizes provider manifest metadata and scopes config reads by kind', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : String(input)
+      calls.push(url)
+      if (url.includes('/provider-installations')) {
+        return new Response(JSON.stringify({ items: [{
+          id: 'groq.chat', kind: 'llm', displayNameKey: 'provider.llm.groq', displayName: 'Groq', version: '1.0.0',
+          manifest: { providerFamily: 'openai-compatible', protocol: 'chat-completions', locales: ['vi-VN'], supportsStreaming: true, supportsTools: true, ui: { voiceCatalog: false } }, configSchema: {},
+        }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+
+    const gateway = createHttpGatewayDependencies('https://manager.test').managerGateway
+    const catalog = await gateway.listProviderInstallations()
+    const configs = await gateway.listProviderConfigs('llm')
+
+    expect(catalog.ok).toBe(true)
+    if (catalog.ok) expect(catalog.data[0]).toMatchObject({ providerFamily: 'openai-compatible', protocol: 'chat-completions', supportedLocales: ['vi-VN'], capabilities: ['streaming', 'tools'], hasVoiceCatalog: false })
+    expect(configs.ok).toBe(true)
+    expect(calls.some((url) => url.includes('/provider-configs?kind=llm'))).toBe(true)
+  })
+
   it('maps derived assistant dashboard summary fields from the typed API response', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       items: [{

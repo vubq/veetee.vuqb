@@ -169,6 +169,12 @@ export interface ProviderInstallationView {
   version: string
   manifest: Record<string, unknown>
   configSchema: Record<string, unknown>
+  /** Normalized catalog metadata used by focused provider screens. */
+  providerFamily?: string
+  protocol?: string
+  supportedLocales: string[]
+  capabilities: string[]
+  hasVoiceCatalog?: boolean
 }
 
 export interface ProviderConfigRecord {

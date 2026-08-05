@@ -19,6 +19,8 @@ const installation: ProviderInstallationView = {
   version: '2.0.0',
   manifest: {},
   configSchema: { properties: { voice: { type: 'string' } } },
+  supportedLocales: [],
+  capabilities: [],
 }
 
 const config: ProviderConfigRecord = {

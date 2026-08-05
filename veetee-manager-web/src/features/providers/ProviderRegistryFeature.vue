@@ -27,13 +27,21 @@ import UnsavedChangesDialog from '@/ui/patterns/UnsavedChangesDialog.vue'
 import { cloneConfig } from './schema-config'
 
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
+const props = withDefaults(defineProps<{
+  initialKind?: ProviderKind
+  showKindNav?: boolean
+  showVoiceCatalog?: boolean
+}>(), {
+  showKindNav: true,
+  showVoiceCatalog: true,
+})
 const installations = ref<ProviderInstallationView[]>([])
 const configs = ref<ProviderConfigRecord[]>([])
 const secretReferences = ref<SecretReference[]>([])
 const selectedSecretRefs = ref<string[]>([])
 const probeResults = ref<Record<string, ProviderProbeResult | undefined>>({})
 const providerQuery = ref('')
-const activeKind = ref<ProviderKind>('vad')
+const activeKind = ref<ProviderKind>(props.initialKind ?? 'vad')
 const probingId = ref('')
 const removeId = ref('')
 const removing = ref(false)
@@ -76,6 +84,16 @@ const options = computed<VtSelectOption[]>(() => installationsForKind.value.map(
 const selected = computed(() => installations.value.find((item) => item.id === selectedId.value))
 const removeTarget = computed(() => configs.value.find((item) => item.id === removeId.value))
 const selectedProbe = computed(() => selectedConfigId.value ? probeResults.value[selectedConfigId.value] : undefined)
+const selectedFamily = computed(() => selected.value?.providerFamily?.replace(/-/g, ' ') || 'Schema-driven')
+const selectedProtocol = computed(() => selected.value?.protocol?.replace(/-/g, ' ') || 'Provider contract')
+const selectedLocales = computed(() => {
+  const locales = selected.value?.supportedLocales ?? []
+  return locales.length === 0 || locales.includes('*') ? 'Đa ngôn ngữ' : locales.map(localeLabel).join(', ')
+})
+const pageTitle = computed(() => props.showKindNav ? 'Các dịch vụ AI' : kindLabels[activeKind.value])
+const pageDescription = computed(() => props.showKindNav
+  ? 'Chọn cách Veetee nghe, hiểu và trả lời. Bạn có thể thay đổi cấu hình mà không cần sửa code.'
+  : kindDescriptions[activeKind.value])
 const emptyHeading = computed(() => loadState.value === 'ready' ? `Chưa có nhà cung cấp cho nhóm ${kindLabels[activeKind.value].toLowerCase()}` : 'Chưa có dịch vụ nào')
 const emptyDescription = computed(() => loadState.value === 'ready'
   ? 'Nhóm này chưa có installation khả dụng trong catalog. Hãy nạp provider tương ứng trước khi tạo cấu hình.'
@@ -91,6 +109,10 @@ function secretStatusLabel(status: SecretReference['status']) {
 
 function formatCheckedAt(value: string) {
   return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
+}
+
+function localeLabel(value: string) {
+  return value === 'vi-VN' || value === 'vi' ? 'Tiếng Việt' : value === 'en-US' || value === 'en' ? 'English' : value
 }
 
 function chooseInstallation(value: string) {
@@ -278,6 +300,10 @@ async function save() {
 
 onMounted(load)
 
+watch(() => props.initialKind, (kind) => {
+  if (kind && kind !== activeKind.value) selectKind(kind)
+})
+
 watch(activeKind, (kind) => {
   if (loading.value) return
   const first = installations.value.find((item) => item.kind === kind)
@@ -312,8 +338,8 @@ function toggleSecretReference(id: string, checked: boolean) {
       <div>
         <p class="eyebrow">
           Dịch vụ AI
-        </p><h1>Các dịch vụ AI</h1><p class="lede">
-          Chọn cách Veetee nghe, hiểu và trả lời. Bạn có thể thay đổi cấu hình mà không cần sửa code.
+        </p><h1>{{ pageTitle }}</h1><p class="lede">
+          {{ pageDescription }}
         </p>
       </div>
       <VtBadge tone="primary">
@@ -353,6 +379,7 @@ function toggleSecretReference(id: string, checked: boolean) {
       class="provider-content"
     >
       <nav
+        v-if="props.showKindNav"
         class="provider-kind-nav"
         aria-label="Nhóm dịch vụ AI"
       >
@@ -397,17 +424,17 @@ function toggleSecretReference(id: string, checked: boolean) {
       />
       <div class="provider-layout">
         <FormSection
-          title="Nhà cung cấp"
-          :description="`${kindLabels[activeKind]} có thể có nhiều cấu hình độc lập.`"
+          title="Loại dịch vụ"
+          :description="`${kindLabels[activeKind]} có thể có nhiều preset và cấu hình riêng.`"
         >
           <VtFormField
-            label="Dịch vụ"
+            label="Provider / preset"
             for-id="provider-installation"
           >
             <VtSelect
               id="provider-installation"
               :model-value="selectedId"
-              label="Dịch vụ"
+              label="Provider / preset"
               :options="options"
               @update:model-value="chooseInstallation"
             />
@@ -416,11 +443,13 @@ function toggleSecretReference(id: string, checked: boolean) {
             <VtStatus
               tone="online"
               :label="kindLabels[activeKind]"
-            /><span>Biểu mẫu được sinh từ schema của nhà cung cấp</span>
+            />
+            <span>{{ selectedFamily }} · {{ selectedProtocol }}</span>
+            <span>{{ selectedLocales }}</span>
           </div>
         </FormSection>
         <VtCard class="config-card">
-          <h2>Cấu hình dịch vụ</h2>
+          <h2>Cấu hình riêng</h2>
           <p class="muted">
             Các trường được sinh tự động. Khóa kết nối chỉ được lưu an toàn và không hiển thị lại trên trình duyệt.
           </p>
@@ -528,7 +557,7 @@ function toggleSecretReference(id: string, checked: boolean) {
           @changed="load"
         />
         <VoiceCatalogPanel
-          v-if="activeKind === 'tts'"
+          v-if="props.showVoiceCatalog && activeKind === 'tts'"
           :configs="configsForKind"
           :gateway="gateway"
         />

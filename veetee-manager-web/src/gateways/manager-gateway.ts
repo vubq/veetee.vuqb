@@ -34,6 +34,7 @@ import type {
   ProviderConfigRecord,
   ProviderProbeResult,
   ProviderInstallationView,
+  ProviderKind,
   RetentionPolicy,
   RetentionPolicyInput,
   RetentionExpiredProblem,
@@ -96,7 +97,7 @@ export interface AssistantGateway {
   ): Promise<GatewayResult<{ revision: number }, RoleSaveProblem>>
 
   listProviderInstallations(): Promise<GatewayResult<ProviderInstallationView[], never>>
-  listProviderConfigs(): Promise<GatewayResult<ProviderConfigRecord[], never>>
+  listProviderConfigs(kind?: ProviderKind): Promise<GatewayResult<ProviderConfigRecord[], never>>
   createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>>
   updateProviderConfig(id: string, input: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] }, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem | RevisionConflictProblem<ProviderConfigRecord, unknown>>>
   deleteProviderConfig(id: string, expectedEtag: string): Promise<GatewayResult<void, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<ProviderConfigRecord, unknown>>>

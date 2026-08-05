@@ -365,9 +365,12 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     return this.success(clone(this.state.providerInstallations), request)
   }
 
-  async listProviderConfigs(): Promise<GatewayResult<ProviderConfigRecord[], never>> {
+  async listProviderConfigs(kind?: ProviderKind): Promise<GatewayResult<ProviderConfigRecord[], never>> {
     const request = await this.begin('read')
-    return this.success(clone(this.state.providerConfigs), request)
+    const items = kind
+      ? this.state.providerConfigs.filter((config) => this.state.providerInstallations.find((installation) => installation.id === config.installationId)?.kind === kind)
+      : this.state.providerConfigs
+    return this.success(clone(items), request)
   }
 
   async listSecretReferences(): Promise<GatewayResult<SecretReference[], never>> {

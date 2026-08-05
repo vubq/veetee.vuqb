@@ -121,7 +121,7 @@
         "additionalProperties": false,
         "required": ["endpoint", "model", "maxTokens"],
         "properties": {
-          "endpoint": { "type": "string", "format": "uri" },
+          "endpoint": { "title": "Base URL", "type": "string", "format": "uri" },
           "model": { "type": "string", "minLength": 1 },
           "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
           "maxTokens": { "type": "integer", "minimum": 1, "maximum": 32768 },

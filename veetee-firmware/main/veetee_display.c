@@ -44,6 +44,9 @@ static const vt_display_texts_t fallback_texts = {
     .speaking_title = "Đang nói",
     .speaking_hint = "Nhấn nút để ngắt lời",
     .online_label = "Đã kết nối",
+    .interaction_hint = "PTT  •  Wake word  •  Barge-in",
+    .notice_title = "Thông báo",
+    .notice_hint = "Veetee sẽ tiếp tục khi sẵn sàng",
 };
 
 static lv_color_t state_color(vt_device_state_t state) {
@@ -154,83 +157,121 @@ static lv_obj_t *make_text(lv_obj_t *parent, const char *text, const lv_font_t *
     return label;
 }
 
-static void update_connection(vt_display_t *display, vt_device_state_t state) {
+static vt_display_view_t *view_for_state(vt_display_t *display, vt_device_state_t state) {
+    if (display == NULL || state < VT_DEVICE_IDLE || state > VT_DEVICE_SPEAKING) return NULL;
+    return &display->views[(size_t)state];
+}
+
+static void update_connection(vt_display_t *display, vt_display_view_t *view, vt_device_state_t state) {
     const bool connected = state != VT_DEVICE_CONNECTING;
     const lv_color_t accent = state_color(state);
-    lv_obj_set_style_bg_color(display->connection_dot, accent, LV_PART_MAIN);
-    lv_label_set_text(display->connection_label,
+    lv_obj_set_style_bg_color(view->connection_dot, accent, LV_PART_MAIN);
+    lv_label_set_text(view->connection_label,
                       connected ? display->texts->online_label : display->texts->connection_label);
 }
 
-static void update_status(vt_display_t *display, vt_device_state_t state) {
+static void update_status(vt_display_t *display, vt_display_view_t *view, vt_device_state_t state) {
     const lv_color_t accent = state_color(state);
-    lv_label_set_text(display->status_title, state_title(display->texts, state));
-    lv_label_set_text(display->status_hint, state_hint(display->texts, state));
-    lv_obj_set_style_bg_color(display->status_orb, accent, LV_PART_MAIN);
-    lv_obj_set_style_border_color(display->status_ring, accent, LV_PART_MAIN);
-    lv_obj_set_style_shadow_color(display->status_orb, accent, LV_PART_MAIN);
-    lv_obj_set_style_shadow_opa(display->status_orb,
+    lv_label_set_text(view->status_title, state_title(display->texts, state));
+    lv_label_set_text(view->status_hint, state_hint(display->texts, state));
+    lv_obj_set_style_bg_color(view->status_orb, accent, LV_PART_MAIN);
+    lv_obj_set_style_border_color(view->status_ring, accent, LV_PART_MAIN);
+    lv_obj_set_style_shadow_color(view->status_orb, accent, LV_PART_MAIN);
+    lv_obj_set_style_shadow_opa(view->status_orb,
                                 state == VT_DEVICE_IDLE ? LV_OPA_20 : LV_OPA_60, LV_PART_MAIN);
-    update_connection(display, state);
+    update_connection(display, view, state);
 }
 
-static esp_err_t create_ui(vt_display_t *display) {
-    display->status_screen = lv_obj_create(NULL);
-    display->pairing_screen = lv_obj_create(NULL);
-    if (display->status_screen == NULL || display->pairing_screen == NULL) return ESP_ERR_NO_MEM;
-    style_screen(display->status_screen);
-    style_screen(display->pairing_screen);
+static esp_err_t create_state_view(vt_display_t *display, vt_device_state_t state) {
+    vt_display_view_t *view = view_for_state(display, state);
+    if (view == NULL) return ESP_ERR_INVALID_ARG;
+    view->screen = lv_obj_create(NULL);
+    if (view->screen == NULL) return ESP_ERR_NO_MEM;
+    style_screen(view->screen);
 
-    /* Live conversation screen: a compact status bar, a large central orb,
-       and a single action hint.  All geometry is expressed in LVGL objects,
-       so anti-aliasing and font rendering are handled by the graphics engine. */
-    lv_obj_t *brand = make_text(display->status_screen, display->texts->brand,
+    lv_obj_t *brand = make_text(view->screen, display->texts->brand,
                                 &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_TEXT),
                                 110, 24, 16, 12, LV_TEXT_ALIGN_LEFT);
     lv_obj_set_style_text_letter_space(brand, 2, LV_PART_MAIN);
-    display->connection_dot = lv_obj_create(display->status_screen);
-    lv_obj_remove_style_all(display->connection_dot);
-    lv_obj_set_size(display->connection_dot, 9, 9);
-    lv_obj_set_pos(display->connection_dot, 154, 20);
-    lv_obj_set_style_radius(display->connection_dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-    display->connection_label = make_text(display->status_screen, display->texts->connection_label,
-                                           &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
-                                           72, 24, 166, 12, LV_TEXT_ALIGN_RIGHT);
+    view->connection_dot = lv_obj_create(view->screen);
+    lv_obj_remove_style_all(view->connection_dot);
+    lv_obj_set_size(view->connection_dot, 9, 9);
+    lv_obj_set_pos(view->connection_dot, 154, 20);
+    lv_obj_set_style_radius(view->connection_dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    view->connection_label = make_text(view->screen, display->texts->connection_label,
+                                       &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                                       72, 24, 166, 12, LV_TEXT_ALIGN_RIGHT);
 
-    lv_obj_t *card = make_panel(display->status_screen, 14, 50, 212, 174, 26);
-    display->status_ring = lv_obj_create(card);
-    lv_obj_remove_style_all(display->status_ring);
-    lv_obj_set_size(display->status_ring, 116, 116);
-    lv_obj_align(display->status_ring, LV_ALIGN_TOP_MID, 0, 12);
-    lv_obj_set_style_bg_opa(display->status_ring, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_radius(display->status_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-    lv_obj_set_style_border_width(display->status_ring, 2, LV_PART_MAIN);
-    lv_obj_set_style_border_opa(display->status_ring, LV_OPA_60, LV_PART_MAIN);
+    lv_obj_t *card = make_panel(view->screen, 14, 50, 212, 174, 26);
+    view->status_ring = lv_obj_create(card);
+    lv_obj_remove_style_all(view->status_ring);
+    lv_obj_set_size(view->status_ring, 116, 116);
+    lv_obj_align(view->status_ring, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_set_style_bg_opa(view->status_ring, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_radius(view->status_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_border_width(view->status_ring, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_opa(view->status_ring, LV_OPA_60, LV_PART_MAIN);
 
-    display->status_orb = lv_obj_create(card);
-    lv_obj_remove_style_all(display->status_orb);
-    lv_obj_set_size(display->status_orb, 88, 88);
-    lv_obj_align(display->status_orb, LV_ALIGN_TOP_MID, 0, 26);
-    lv_obj_set_style_radius(display->status_orb, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(display->status_orb, LV_OPA_90, LV_PART_MAIN);
-    lv_obj_set_style_border_width(display->status_orb, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(display->status_orb, lv_color_hex(VT_COLOR_TEXT), LV_PART_MAIN);
-    lv_obj_set_style_border_opa(display->status_orb, LV_OPA_30, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(display->status_orb, 26, LV_PART_MAIN);
-    lv_obj_set_style_shadow_spread(display->status_orb, 3, LV_PART_MAIN);
+    view->status_orb = lv_obj_create(card);
+    lv_obj_remove_style_all(view->status_orb);
+    lv_obj_set_size(view->status_orb, 88, 88);
+    lv_obj_align(view->status_orb, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_style_radius(view->status_orb, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(view->status_orb, LV_OPA_90, LV_PART_MAIN);
+    lv_obj_set_style_border_width(view->status_orb, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(view->status_orb, lv_color_hex(VT_COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_border_opa(view->status_orb, LV_OPA_30, LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(view->status_orb, 26, LV_PART_MAIN);
+    lv_obj_set_style_shadow_spread(view->status_orb, 3, LV_PART_MAIN);
 
-    display->status_title = make_text(card, display->texts->idle_title,
-                                      &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
-                                      190, 34, 11, 120, LV_TEXT_ALIGN_CENTER);
-    display->status_hint = make_text(card, display->texts->idle_hint,
-                                     &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
-                                     188, 36, 12, 151, LV_TEXT_ALIGN_CENTER);
+    view->status_title = make_text(card, state_title(display->texts, state),
+                                   &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
+                                   190, 34, 11, 120, LV_TEXT_ALIGN_CENTER);
+    view->status_hint = make_text(card, state_hint(display->texts, state),
+                                  &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                                  188, 36, 12, 151, LV_TEXT_ALIGN_CENTER);
 
-    lv_obj_t *hint_panel = make_panel(display->status_screen, 14, 236, 212, 30, 15);
+    lv_obj_t *hint_panel = make_panel(view->screen, 14, 236, 212, 30, 15);
     lv_obj_set_style_bg_color(hint_panel, lv_color_hex(VT_COLOR_BACKGROUND_TOP), LV_PART_MAIN);
     lv_obj_set_style_shadow_width(hint_panel, 0, LV_PART_MAIN);
-    make_text(hint_panel, "PTT  •  Wake word  •  Barge-in", &veetee_font_vietnamese_16,
+    make_text(hint_panel, display->texts->interaction_hint, &veetee_font_vietnamese_16,
               lv_color_hex(VT_COLOR_MUTED), 200, 24, 6, 3, LV_TEXT_ALIGN_CENTER);
+    update_status(display, view, state);
+    return ESP_OK;
+}
+
+static esp_err_t create_notice_view(vt_display_t *display) {
+    display->notice_screen = lv_obj_create(NULL);
+    if (display->notice_screen == NULL) return ESP_ERR_NO_MEM;
+    style_screen(display->notice_screen);
+    make_text(display->notice_screen, display->texts->brand, &veetee_font_vietnamese_16,
+              lv_color_hex(VT_COLOR_TEXT), 110, 24, 16, 12, LV_TEXT_ALIGN_LEFT);
+    lv_obj_t *card = make_panel(display->notice_screen, 14, 50, 212, 174, 26);
+    display->notice_title = make_text(card, display->texts->notice_title,
+                                      &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
+                                      190, 38, 11, 24, LV_TEXT_ALIGN_CENTER);
+    display->notice_message = make_text(card, display->texts->notice_hint,
+                                        &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                                        184, 84, 14, 78, LV_TEXT_ALIGN_CENTER);
+    lv_obj_t *hint_panel = make_panel(display->notice_screen, 14, 236, 212, 30, 15);
+    lv_obj_set_style_bg_color(hint_panel, lv_color_hex(VT_COLOR_BACKGROUND_TOP), LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(hint_panel, 0, LV_PART_MAIN);
+    make_text(hint_panel, display->texts->notice_hint, &veetee_font_vietnamese_16,
+              lv_color_hex(VT_COLOR_MUTED), 200, 24, 6, 3, LV_TEXT_ALIGN_CENTER);
+    return ESP_OK;
+}
+
+static esp_err_t create_ui(vt_display_t *display) {
+    display->pairing_screen = lv_obj_create(NULL);
+    if (display->pairing_screen == NULL) return ESP_ERR_NO_MEM;
+    style_screen(display->pairing_screen);
+
+    for (vt_device_state_t state = VT_DEVICE_IDLE; state <= VT_DEVICE_SPEAKING; state++) {
+        esp_err_t error = create_state_view(display, state);
+        if (error != ESP_OK) return error;
+    }
+    display->status_screen = display->views[VT_DEVICE_IDLE].screen;
+    if (create_notice_view(display) != ESP_OK) return ESP_ERR_NO_MEM;
 
     /* Pairing screen: the code is presented as a readable typographic block,
        not hand-drawn seven-segment pixels, and remains clear at a glance. */
@@ -252,8 +293,9 @@ static esp_err_t create_ui(vt_display_t *display) {
                                       184, 28, 14, 160, LV_TEXT_ALIGN_CENTER);
 
     display->last_state = VT_DEVICE_IDLE;
+    display->active_screen = VT_DISPLAY_SCREEN_PAIRING;
+    display->notice_active = false;
     display->showing_pairing = true;
-    update_status(display, VT_DEVICE_IDLE);
     lv_screen_load(display->pairing_screen);
     return ESP_OK;
 }
@@ -376,12 +418,18 @@ esp_err_t vt_display_init(vt_display_t *display, const vt_display_config_t *conf
 
 esp_err_t vt_display_show_state(vt_display_t *display, vt_device_state_t state) {
     if (display == NULL || !display->ready || display->lv_display == NULL) return ESP_ERR_INVALID_STATE;
+    vt_display_view_t *view = view_for_state(display, state);
+    if (view == NULL || view->screen == NULL) return ESP_ERR_INVALID_ARG;
     if (!lvgl_port_lock(250)) return ESP_ERR_TIMEOUT;
-    update_status(display, state);
-    if (display->showing_pairing) {
-        lv_screen_load(display->status_screen);
-        display->showing_pairing = false;
-    }
+    update_status(display, view, state);
+    display->notice_active = false;
+    lv_screen_load(view->screen);
+    display->active_screen = state == VT_DEVICE_IDLE ? VT_DISPLAY_SCREEN_HOME
+        : state == VT_DEVICE_CONNECTING ? VT_DISPLAY_SCREEN_CONNECTING
+        : state == VT_DEVICE_LISTENING ? VT_DISPLAY_SCREEN_LISTENING
+        : state == VT_DEVICE_THINKING ? VT_DISPLAY_SCREEN_THINKING
+        : VT_DISPLAY_SCREEN_SPEAKING;
+    display->showing_pairing = false;
     display->last_state = state;
     lvgl_port_unlock();
     return ESP_OK;
@@ -399,8 +447,38 @@ esp_err_t vt_display_show_pairing_code(vt_display_t *display, const char *code) 
     if (!display->showing_pairing) {
         lv_screen_load(display->pairing_screen);
         display->showing_pairing = true;
+        display->active_screen = VT_DISPLAY_SCREEN_PAIRING;
     }
     lvgl_port_unlock();
+    return ESP_OK;
+}
+
+esp_err_t vt_display_show_notice(vt_display_t *display, const char *title, const char *message,
+                                 uint32_t duration_ms) {
+    if (display == NULL || !display->ready || display->lv_display == NULL || display->notice_screen == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!lvgl_port_lock(250)) return ESP_ERR_TIMEOUT;
+    lv_label_set_text(display->notice_title, title != NULL && title[0] != '\0' ? title : display->texts->notice_title);
+    lv_label_set_text(display->notice_message, message != NULL && message[0] != '\0' ? message : display->texts->notice_hint);
+    display->notice_restore_state = display->last_state;
+    display->notice_deadline_ms = duration_ms == 0U ? 0U : esp_log_timestamp() + duration_ms;
+    display->notice_active = duration_ms != 0U;
+    lv_screen_load(display->notice_screen);
+    display->active_screen = VT_DISPLAY_SCREEN_NOTICE;
+    lvgl_port_unlock();
+    return ESP_OK;
+}
+
+esp_err_t vt_display_tick(vt_display_t *display, vt_device_state_t state, uint32_t now_ms) {
+    if (display == NULL || !display->ready || display->lv_display == NULL) return ESP_ERR_INVALID_STATE;
+    if (!display->notice_active || display->notice_deadline_ms == 0U) return ESP_OK;
+    /* The display task owns the tick.  A monotonic unsigned subtraction keeps
+       wrap-around safe without introducing a timer callback that can race LVGL. */
+    if ((int32_t)(now_ms - display->notice_deadline_ms) >= 0) {
+        display->notice_active = false;
+        return vt_display_show_state(display, state);
+    }
     return ESP_OK;
 }
 

@@ -35,6 +35,10 @@ export function createProviderRegistryFixtures(): {
     displayName: 'Groq — trả lời nhanh',
     version: '1.0.0',
     manifest: { locales: ['*'], supportsStreaming: true, supportsTools: true, secretFields: ['apiKey'] },
+    providerFamily: 'openai-compatible',
+    protocol: 'chat-completions',
+    supportedLocales: ['*'],
+    capabilities: ['streaming', 'tools'],
     configSchema: {
       type: 'object',
       required: ['endpoint', 'model', 'maxTokens'],
@@ -55,6 +59,11 @@ export function createProviderRegistryFixtures(): {
     displayName: 'VieNeu — giọng nói tiếng Việt',
     version: '1.0.0',
     manifest: { locales: ['vi-VN'], supportsStreaming: true, supportsCancel: true },
+    providerFamily: 'vieneu',
+    protocol: undefined,
+    supportedLocales: ['vi-VN'],
+    capabilities: ['streaming', 'cancel'],
+    hasVoiceCatalog: true,
     configSchema: {
       type: 'object',
       required: ['backboneRepo', 'sampleRate'],

@@ -1,5 +1,24 @@
 # Trạng thái thực thi hiện tại
 
+## Provider screens và firmware display model — host-only continuation
+
+- Manager Web đã tách entry route `/providers` thành overview sáu module; mỗi
+  capability đi tới `/providers/:kind`, còn TTS voice catalog đi tới
+  `/providers/tts/voices`. Provider config CRUD vẫn độc lập theo installation;
+  voice profile CRUD vẫn độc lập theo TTS config.
+- HTTP gateway map manifest thành metadata `providerFamily`, `protocol`, locale
+  và capabilities để UI không suy ra provider bằng ID/raw key. Groq vẫn là
+  preset OpenAI-compatible; `endpoint` cũ được hiển thị là `Base URL` để giữ
+  revision tương thích.
+- Firmware LCD đã có screen model pairing/home/connecting/listening/thinking/
+  speaking/notice và notice timeout do display task tick xử lý. Text vẫn nằm ở
+  resource bundle/config boundary; không có provider/wake phrase literal trong
+  renderer.
+- Verification host-only: Manager API 38 pass + 13 skip có chủ đích; Manager Web
+  97 unit, Chromium E2E pass, typecheck/lint/build pass; firmware CTest 9/9 và
+  ESP-IDF 6.0.2 build pass. Không flash/reset, không mở microphone/loa và không
+  phát audio trong lát cắt này.
+
 ## Current execution lock — host-only continuation (2026-08-05)
 
 - Ở lượt làm việc hiện tại, chủ dự án yêu cầu **không phát audio và không test
@@ -229,12 +248,12 @@
    Tailscale hostname/Serve mapping phải xem bằng `tailscale serve status`; không
    suy đoán hoặc ghi cứng hostname vào source.
 
-   Read-only status hiện tại (binary local Tailscale 1.98.9): node là
-   `veetee.tail52a635.ts.net` và private Serve chỉ có một origin:
+   Read-only status lần kiểm tra gần nhất (binary local Tailscale 1.98.9): node
+   là `veetee.tail52a635.ts.net` và **Funnel public** có origin:
    `https://veetee.tail52a635.ts.net/` → Manager Web `18181`. Cùng origin phân
    bổ route như sau: `/api/v1/...` → Manager API `18101`, `/openapi.json` →
    Manager API, và `/veetee/v1/` (WebSocket; `Protocol-Version: 3`) → Voice
-   Server `18100`. Không còn dùng legacy hostname, port `18443` hay Funnel.
+   Server `18100`. Đây là trạng thái kiểm tra, không tự đổi Tailscale/network.
    ESP32 vẫn dùng LAN WS, vì dashboard hostname không thay thế Tailscale client
    trên firmware.
 

@@ -9,7 +9,9 @@ const AssistantModelMemoryView = () => import('@/views/AssistantModelMemoryView.
 const AssistantRoleView = () => import('@/views/AssistantRoleView.vue')
 const AssistantDevicesView = () => import('@/views/AssistantDevicesView.vue')
 const AssistantHistoryView = () => import('@/views/AssistantHistoryView.vue')
-const ProviderRegistryView = () => import('@/views/ProviderRegistryView.vue')
+const ProviderOverviewView = () => import('@/views/ProviderOverviewView.vue')
+const ProviderKindView = () => import('@/views/ProviderKindView.vue')
+const ProviderVoiceCatalogView = () => import('@/views/ProviderVoiceCatalogView.vue')
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/assistants' },
@@ -44,7 +46,9 @@ const routes: RouteRecordRaw[] = [
     component: AssistantHistoryView,
     meta: { title: 'Lịch sử hội thoại' },
   },
-  { path: '/providers', name: 'providers', component: ProviderRegistryView, meta: { title: 'Dịch vụ AI' } },
+  { path: '/providers', name: 'providers', component: ProviderOverviewView, meta: { title: 'Dịch vụ AI' } },
+  { path: '/providers/tts/voices', name: 'provider-voices', component: ProviderVoiceCatalogView, meta: { title: 'Thư viện giọng nói' } },
+  { path: '/providers/:kind', name: 'provider-kind', component: ProviderKindView, meta: { title: 'Cấu hình dịch vụ' } },
 ]
 
 if (import.meta.env.DEV && !import.meta.env.VITE_MANAGER_API_URL) {

@@ -5,9 +5,9 @@ import { deriveLocaleOptions } from './locale-options'
 describe('deriveLocaleOptions', () => {
   it('uses explicit TTS manifest locales, keeps current locale and ignores wildcard', () => {
     const options = deriveLocaleOptions([
-      { id: 'tts.one', kind: 'tts', displayNameKey: 'One', version: '1', manifest: { locales: [' vi-VN ', 'en-US', '*'] }, configSchema: {} },
-      { id: 'asr.one', kind: 'asr', displayNameKey: 'ASR', version: '1', manifest: { locales: ['ja-JP'] }, configSchema: {} },
-      { id: 'tts.two', kind: 'tts', displayNameKey: 'Two', version: '1', manifest: { locales: ['en-US', ''] }, configSchema: {} },
+      { id: 'tts.one', kind: 'tts', displayNameKey: 'One', version: '1', manifest: { locales: [' vi-VN ', 'en-US', '*'] }, configSchema: {}, supportedLocales: [], capabilities: [] },
+      { id: 'asr.one', kind: 'asr', displayNameKey: 'ASR', version: '1', manifest: { locales: ['ja-JP'] }, configSchema: {}, supportedLocales: [], capabilities: [] },
+      { id: 'tts.two', kind: 'tts', displayNameKey: 'Two', version: '1', manifest: { locales: ['en-US', ''] }, configSchema: {}, supportedLocales: [], capabilities: [] },
     ], 'fr-FR')
 
     expect(options.map((option) => option.value)).toEqual(['en-US', 'fr-FR', 'vi-VN'])

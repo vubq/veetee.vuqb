@@ -21,6 +21,7 @@ import type {
   ProviderConfigRecord,
   ProviderProbeResult,
   ProviderInstallationView,
+  ProviderKind,
   RetentionPolicy,
   RetentionPolicyInput,
   RetentionExpiredProblem,
@@ -155,8 +156,8 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     return this.success(result.data.items.map(providerInstallation))
   }
 
-  async listProviderConfigs(): Promise<GatewayResult<ProviderConfigRecord[], never>> {
-    const result = await this.execute(() => this.client.GET('/api/v1/provider-configs'))
+  async listProviderConfigs(kind?: ProviderKind): Promise<GatewayResult<ProviderConfigRecord[], never>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/provider-configs', kind ? { params: { query: { kind } } } : undefined))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
     return this.success(result.data.items.map(providerConfig))
   }
@@ -476,7 +477,28 @@ function cloneJson<T>(value: T): T {
 }
 
 function providerInstallation(value: ProviderInstallationResource): ProviderInstallationView {
-  return { id: value.id, kind: value.kind, displayNameKey: value.displayNameKey, displayName: value.displayName, version: value.version, manifest: value.manifest, configSchema: value.configSchema }
+  const manifest = value.manifest
+  const ui = isRecord(manifest.ui) ? manifest.ui : {}
+  const supportedLocales = Array.isArray(manifest.locales)
+    ? manifest.locales.filter((item): item is string => typeof item === 'string')
+    : []
+  const capabilities = Object.entries(manifest)
+    .filter(([key, item]) => key.startsWith('supports') && item === true)
+    .map(([key]) => key.slice('supports'.length).replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`).trim())
+  return {
+    id: value.id,
+    kind: value.kind,
+    displayNameKey: value.displayNameKey,
+    displayName: value.displayName,
+    version: value.version,
+    manifest,
+    configSchema: value.configSchema,
+    providerFamily: typeof manifest.providerFamily === 'string' ? manifest.providerFamily : undefined,
+    protocol: typeof manifest.protocol === 'string' ? manifest.protocol : undefined,
+    supportedLocales,
+    capabilities,
+    hasVoiceCatalog: ui.voiceCatalog === true,
+  }
 }
 
 function providerConfig(value: ProviderConfigResource): ProviderConfigRecord {
