@@ -1455,3 +1455,26 @@
   không gửi serial command, không đổi NVS/Wi-Fi. M0 physical DoD vẫn chờ operator
   giữ/nhả nút, nghe loa và nhìn LCD; không suy diễn build/host evidence thành
   acceptance vật lý.
+
+### Latest real-audio run after wake pre-arm (2026-08-05)
+
+- Dùng snapshot fixture ngoài Git + pool 4 Groq key **chỉ trong test**, sau đó đã
+  restore Voice production Manager-source (không fallback/key rotation trong
+  production). Scenario drain-aware normal đạt **2/2** lượt với VieNeu thật;
+  report `/tmp/veetee-audio-normal-drain-multikey-20260805.json`.
+- Mỗi lượt đạt `wake detected → wake start → state=speaking → playback drain →
+  wake detector armed`; player exit `0`, không panic/stack/Opus marker. Metrics
+  fixture cuối lượt: `active_turns=0`, `turn_admissions=2`,
+  `turn_releases=2`, `protocol_errors=0`, `last_ttfa_ms=1461` (lượt cuối,
+  chưa phải p95). Log test ghi key ordinal 1 và 2 thành công.
+- Barge-in wake-word clip phát ngay sau `state=speaking` đạt
+  `wake detected → state=listening → wake interrupt → wake start`; report
+  `/tmp/veetee-audio-barge-immediate-multikey-20260805.json`. Đây là firmware
+  wake-word control, `barge_in_count=0` đúng semantics của server acoustic
+  realtime; `auto_no_speech_timeouts=1` là expected vì không có utterance sau
+  interrupt.
+- Production sau cleanup: Voice `18100` revision `87` ready, `active_turns=0`,
+  `protocol_errors=0`, board `active_connections=1`/presence sent, API `18101`
+  và Web `18181` HTTP 200. Không flash/reset/erase, đổi Wi-Fi/NVS/Tailscale,
+  hoặc lưu raw audio/transcript/credential. Acoustic AEC/echo-only,
+  voice-onset/time-to-silence và 100-repetition gates vẫn mở.
