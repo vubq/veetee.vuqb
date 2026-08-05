@@ -1130,3 +1130,11 @@
   full Voice Server **145 passed**, Ruff/compileall/lock check pass. Không kết
   nối broker, không mở UDP socket, không phát/thu audio và không đổi transport
   default (WS v3).
+
+### Firmware transport init cleanup — build-only (2026-08-05)
+
+- WebSocket transport giải phóng `EventGroup`/client trên mọi init error path;
+  không thay đổi handshake, framing hay runtime state machine.
+- Firmware host CTest **4/4 passed**; ESP-IDF 6.0.2 build pass, binary
+  `0x159410`, app partition còn **66%**. Không flash/reset/erase, không serial
+  audio, không phát/thu audio và không đổi Wi-Fi/Tailscale.

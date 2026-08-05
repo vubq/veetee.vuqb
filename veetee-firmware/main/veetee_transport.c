@@ -15,6 +15,20 @@ static int send_hello(vt_transport_t *transport);
 static int send_raw_text(vt_transport_t *transport, const char *text);
 static bool accept_server_hello(vt_transport_t *transport, const cJSON *message);
 
+static void release_init_resources(vt_transport_t *transport) {
+    if (transport == NULL) return;
+    /* The client has not been started on any init error path, so destroy it
+       directly; stop/close would be invalid and can block the boot task. */
+    if (transport->client != NULL) {
+        (void)esp_websocket_client_destroy(transport->client);
+        transport->client = NULL;
+    }
+    if (transport->events != NULL) {
+        vEventGroupDelete(transport->events);
+        transport->events = NULL;
+    }
+}
+
 static int profile_version_number(vt_protocol_profile_t profile) {
     return profile == VT_PROFILE_WS_V1_COMPAT ? 1 : profile == VT_PROFILE_WS_V2 ? 2 : profile == VT_PROFILE_WS_V3 ? 3 : 0;
 }
@@ -31,7 +45,10 @@ int vt_transport_init(vt_transport_t *transport, const vt_transport_config_t *co
     int header_length = snprintf(transport->headers, sizeof(transport->headers),
                                  "Protocol-Version: %d\r\nDevice-Id: %s\r\nClient-Id: %s\r\n",
                                  profile_version_number(config->profile), config->device_id, config->client_id);
-    if (header_length <= 0 || (size_t)header_length >= sizeof(transport->headers)) return ESP_ERR_INVALID_SIZE;
+    if (header_length <= 0 || (size_t)header_length >= sizeof(transport->headers)) {
+        release_init_resources(transport);
+        return ESP_ERR_INVALID_SIZE;
+    }
     esp_websocket_client_config_t client_config = {
         .uri = config->uri,
         .headers = transport->headers,
@@ -48,9 +65,15 @@ int vt_transport_init(vt_transport_t *transport, const vt_transport_config_t *co
         .crt_bundle_attach = esp_crt_bundle_attach,
     };
     transport->client = esp_websocket_client_init(&client_config);
-    if (transport->client == NULL) return ESP_ERR_NO_MEM;
+    if (transport->client == NULL) {
+        release_init_resources(transport);
+        return ESP_ERR_NO_MEM;
+    }
     esp_err_t error = esp_websocket_register_events(transport->client, WEBSOCKET_EVENT_ANY, transport_event_handler, transport);
-    if (error != ESP_OK) return error;
+    if (error != ESP_OK) {
+        release_init_resources(transport);
+        return error;
+    }
     return ESP_OK;
 }
 
