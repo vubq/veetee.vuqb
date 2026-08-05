@@ -25,6 +25,10 @@
 - Physical wake-word interrupt đã chạy: `state=speaking → wake interrupt → wake
   start`. Đây là firmware lifecycle evidence; không đồng nhất với acoustic-duplex
   `barge_in_count` ở server.
+- Captive portal firmware đã thêm probe redirect 302, favicon 204 và unknown-path
+  404; ESP-IDF build/flash không erase NVS, serial sau reboot giữ `wake_ready=1`,
+  `capture=0`, AEC không có underrun/overrun mới. Probe trên điện thoại thật vẫn
+  chưa được đóng.
 - Chi tiết lệnh, report redact và giới hạn acceptance nằm ở
   [`2026-08-05-followup-validation.md`](2026-08-05-followup-validation.md).
 

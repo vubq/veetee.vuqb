@@ -1133,6 +1133,30 @@ static esp_err_t provisioning_index_handler(httpd_req_t *request) {
     return httpd_resp_send(request, page, HTTPD_RESP_USE_STRLEN);
 }
 
+/* Mobile OS connectivity checks use different well-known paths.  Returning a
+ * short redirect keeps captive WebViews on the setup page while leaving
+ * genuinely unknown paths as normal HTTP 404 responses from esp_http_server. */
+static esp_err_t provisioning_probe_handler(httpd_req_t *request) {
+    if (request == NULL) return ESP_ERR_INVALID_ARG;
+    char location[96] = {0};
+    const int written = snprintf(location, sizeof(location), "http://192.168.4.1/?_=%lu",
+                                 (unsigned long)xTaskGetTickCount());
+    if (written <= 0 || written >= (int)sizeof(location)) {
+        return httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Portal khong san sang");
+    }
+    httpd_resp_set_status(request, "302 Found");
+    httpd_resp_set_hdr(request, "Location", location);
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    return httpd_resp_send(request, NULL, 0);
+}
+
+static esp_err_t provisioning_favicon_handler(httpd_req_t *request) {
+    if (request == NULL) return ESP_ERR_INVALID_ARG;
+    httpd_resp_set_status(request, "204 No Content");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    return httpd_resp_send(request, NULL, 0);
+}
+
 static esp_err_t provisioning_save_handler(httpd_req_t *request) {
     vt_app_t *app = (vt_app_t *)request->user_ctx;
     if (app == NULL || request->content_len == 0U || request->content_len > 512U) {
@@ -1247,13 +1271,33 @@ static int provisioning_start(vt_app_t *app) {
     app->provisioning_active = true;
     app->provisioning_submitted = false;
     httpd_config_t server_config = HTTPD_DEFAULT_CONFIG();
-    server_config.max_uri_handlers = 8;
+    server_config.max_uri_handlers = 12;
     server_config.stack_size = 6144;
     server_config.uri_match_fn = httpd_uri_match_wildcard;
     if (httpd_start(&app->provisioning_http, &server_config) != ESP_OK) return ESP_FAIL;
-    httpd_uri_t index_uri = {.uri = "/*", .method = HTTP_GET, .handler = provisioning_index_handler, .user_ctx = app};
+    httpd_uri_t index_uri = {.uri = "/", .method = HTTP_GET, .handler = provisioning_index_handler, .user_ctx = app};
     httpd_uri_t save_uri = {.uri = "/save", .method = HTTP_POST, .handler = provisioning_save_handler, .user_ctx = app};
-    if (httpd_register_uri_handler(app->provisioning_http, &index_uri) != ESP_OK || httpd_register_uri_handler(app->provisioning_http, &save_uri) != ESP_OK) {
+    static const char *const probe_paths[] = {
+        "/generate_204", "/hotspot-detect.html", "/connecttest.txt",
+        "/ncsi.txt", "/success.txt", "/canonical.html",
+    };
+    httpd_uri_t probe_uri = {.uri = NULL, .method = HTTP_GET, .handler = provisioning_probe_handler, .user_ctx = app};
+    httpd_uri_t favicon_uri = {.uri = "/favicon.ico", .method = HTTP_GET, .handler = provisioning_favicon_handler, .user_ctx = app};
+    if (httpd_register_uri_handler(app->provisioning_http, &index_uri) != ESP_OK ||
+        httpd_register_uri_handler(app->provisioning_http, &save_uri) != ESP_OK) {
+        (void)httpd_stop(app->provisioning_http);
+        app->provisioning_http = NULL;
+        return ESP_FAIL;
+    }
+    for (size_t index = 0U; index < sizeof(probe_paths) / sizeof(probe_paths[0]); ++index) {
+        probe_uri.uri = probe_paths[index];
+        if (httpd_register_uri_handler(app->provisioning_http, &probe_uri) != ESP_OK) {
+            (void)httpd_stop(app->provisioning_http);
+            app->provisioning_http = NULL;
+            return ESP_FAIL;
+        }
+    }
+    if (httpd_register_uri_handler(app->provisioning_http, &favicon_uri) != ESP_OK) {
         (void)httpd_stop(app->provisioning_http);
         app->provisioning_http = NULL;
         return ESP_FAIL;

@@ -19,6 +19,20 @@ transcript hoặc secret vào repository.
 
 ## Kiểm tra physical đã được chủ dự án cho phép
 
+### Firmware provisioning portal
+
+- Thêm các captive-probe route additive: Android `generate_204`, Apple
+  `hotspot-detect.html`, Windows `connecttest.txt`/`ncsi.txt` và các probe tương
+  đương trả `302` về `http://192.168.4.1/?_=<tick>`, kèm `Cache-Control: no-store`.
+- `/favicon.ico` trả `204`; đường dẫn không biết không còn bị wildcard trả HTML,
+  để captive WebView không diễn giải nhầm một resource lạ là trang thành công.
+- ESP-IDF build pass, image `0x1650e0`, app partition còn 65%; flash vào
+  `/dev/ttyACM0` không erase NVS. Sau reboot serial ổn định với `wake_ready=1`,
+  `capture=0`, AEC không underrun/overrun mới và Voice Server còn
+  `activeConnections=1`.
+- Chưa có client điện thoại kết nối SoftAP trong lượt này, nên redirect/DHCP/DNS
+  vẫn cần physical acceptance riêng trên Android/iOS/Windows.
+
 ### Wake → nói → trả lời
 
 Harness `tools/physical/wake_audio_test.py` với `wake-test.example.json` và
