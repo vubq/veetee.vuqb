@@ -1397,3 +1397,11 @@
 - Evidence: Manager API dedicated test DB **44/44**, Manager Web unit **95/95**,
   Chromium E2E **11/11**, typecheck/lint/build/OpenAPI pass. Không mutate
   production DB, không publish runtime, không đổi wire/provider fallback.
+
+### Progress controls runtime reload — host-only (2026-08-05)
+
+- API đã reload commit `b2ce1bc`, Voice reload sau đó để reset lỗi kết nối tạm
+  thời; readiness API/Voice/Web đều `200`, Voice `activationFailures=0`,
+  `activeTurns=0`, ESP32 tự reconnect không reset.
+- Production role-config probe chỉ đọc: `progress.acknowledgements` hiện chưa
+  được publish; không tự sửa DB hoặc runtime config.
