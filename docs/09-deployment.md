@@ -142,6 +142,9 @@ Service requirements:
 | `VEETEE_API_HOST`, `VEETEE_API_PORT` | no | Bind/port. |
 | `VEETEE_DATABASE_URL_FILE` | yes | PostgreSQL DSN secret file. |
 | `VEETEE_MACHINE_TOKEN_FILE` | yes với PostgreSQL/internal routes | Shared machine bearer file, owner-only `0600`; không đặt token literal trong env. |
+| `VEETEE_AUTH_MODE` | public Funnel: yes | `local` bắt buộc khi public; `disabled` chỉ dùng cho loopback/fixture. |
+| `VEETEE_OWNER_EMAIL` | khi `local` | Identity owner duy nhất của M2 baseline. |
+| `VEETEE_OWNER_PASSWORD_HASH_FILE` | khi `local` | Argon2id hash trong file owner-only; không commit plaintext/hash vào manifest. |
 | `VEETEE_AUTH_SECRET_FILE` | yes | Session-token hash pepper + CSRF/key derivation material; không phải JWT key baseline. |
 | `VEETEE_SECRET_MASTER_KEY_FILE` | khi encrypted-local active | Owner-read master material cho encrypted secret file; không lưu trong DB/browser. |
 | `VEETEE_SECRET_STORE_FILE` | khi encrypted-local active | Ciphertext-only local secret file, atomic write, permission 0600. |
@@ -423,25 +426,26 @@ chỉ cần nhánh fixture → models → voice; M2+ dùng nhánh control plane.
   rollback reload trả non-ready trong toàn interval; không mở admission chỉ vì
   model object đã load trước khi representative probe pass.
 
-## 11.1 Tailscale Serve private HTTPS
+## 11.1 Tailscale public HTTPS (Funnel)
 
-Tailscale là lớp truy cập riêng cho việc kiểm tra, không phải cách đổi Wi-Fi hay
-route của máy. Người dùng phải cài/đăng nhập Tailscale trước; AI không tự chạy
-`tailscale up`, không tạo AP/captive portal và không dùng Funnel/public exposure.
+Tailscale Funnel là public HTTPS ingress cho việc kiểm tra, không phải cách đổi
+Wi-Fi hay route của máy. AI không tự chạy `tailscale up`, không tạo AP/captive
+portal và không mở trực tiếp các port component. Khi Funnel bật, Manager API
+phải dùng `VEETEE_AUTH_MODE=local`; không dùng `disabled` trên public endpoint.
 
-Sau khi operator xác nhận `tailscale status` đã có tailnet, reverse proxy hoặc
-configured web listener được expose bằng `tailscale serve`. Port và local target
-đọc từ environment, còn hostname thật phải lấy từ output `tailscale serve status`:
+Sau khi operator xác nhận `tailscale status` đã có tailnet, expose origin bằng
+`tailscale funnel`. Port và local target đọc từ environment, còn hostname thật
+phải lấy từ output `tailscale funnel status`:
 
 ```bash
-tailscale serve --https=${VEETEE_TAILSCALE_PORT} http://${VEETEE_BIND_HOST}:${VEETEE_WEB_PORT}
-tailscale serve status
+tailscale funnel --bg ${VEETEE_WEB_PORT}
+tailscale funnel status
 ```
 
-Runtime canonical hiện tại dùng **một private origin**, sau khi operator yêu cầu
+Runtime canonical hiện tại dùng **một public origin**, sau khi operator yêu cầu
 loại bỏ hostname/mapping cũ:
 
-| Public URL trong tailnet | Local target | Vai trò |
+| Public URL | Local target | Vai trò |
 |---|---|---|
 | `https://veetee.tail52a635.ts.net/` | `127.0.0.1:18181` | Manager Web |
 | `https://veetee.tail52a635.ts.net/api/v1/...` | Vite proxy → `127.0.0.1:18101` | Manager API |
@@ -453,35 +457,35 @@ loại bỏ hostname/mapping cũ:
 | Môi trường | Manager Web | Manager API | Voice Server |
 |---|---|---|---|
 | Local trên host | `http://127.0.0.1:18181/` | `http://127.0.0.1:18101/api/v1/` | `ws://127.0.0.1:18100/veetee/v1/` |
-| Tailnet private | `https://veetee.tail52a635.ts.net/` | `https://veetee.tail52a635.ts.net/api/v1/` | `wss://veetee.tail52a635.ts.net/veetee/v1/` |
+| Public Funnel | `https://veetee.tail52a635.ts.net/` | `https://veetee.tail52a635.ts.net/api/v1/` | `wss://veetee.tail52a635.ts.net/veetee/v1/` |
 
 `/` là UI; `/api/v1/` và `/openapi.json` đi qua proxy tới Manager API;
 `/veetee/v1/` là WebSocket tới Voice Server. Không mở trực tiếp API/Voice
-port ra tailnet, không tạo subdomain `api.*`/`voice.*`, và không dùng
+port ra Internet, không tạo subdomain `api.*`/`voice.*`, và không dùng
 hostname cũ trong client hoặc runtime config. API production phải đưa cả hai
-origin local và origin tailnet ở trên vào `VEETEE_ALLOWED_ORIGINS`; không dùng
+origin local và public origin ở trên vào `VEETEE_ALLOWED_ORIGINS`; không dùng
 wildcard khi credentials/cookie được bật.
 
-Hostname hiện tại lấy từ `tailscale status`: `veetee.tail52a635.ts.net`; hostname
-và Serve/Funnel mapping cũ đã được loại bỏ, không còn
-public Funnel. `/veetee/v1/` là route tương thích ổn định; profile wire mặc
+Hostname hiện tại lấy từ `tailscale funnel status`: `veetee.tail52a635.ts.net`;
+Funnel public là mapping canonical theo
+[ADR-029](ADR/ADR-029-public-tailscale-funnel.md). `/veetee/v1/` là route tương thích ổn định; profile wire mặc
 định vẫn là WebSocket v3 (`Protocol-Version: 3`) và server không silent
-downgrade. Probe từ chính host có userspace Tailscale không tự route được tới
-địa chỉ tailnet của chính nó và có thể timeout; cần một peer tailnet khác để
-xác nhận TLS/HTML/API/WebSocket thực tế. Không coi self-route timeout là lỗi
-Manager Web. ESP32 không có Tailscale client nên vẫn dùng endpoint LAN
+downgrade. Probe trực tiếp tới địa chỉ tailnet từ chính host có userspace
+Tailscale không tự route được và có thể timeout; public probe nên dùng hostname
+qua ingress Funnel hoặc một client Internet khác. Không coi self-route timeout
+là lỗi Manager Web. ESP32 không có Tailscale client nên vẫn dùng endpoint LAN
 `ws://<host-lan-ip>:18100/veetee/v1/`, không dùng dashboard HTTPS hostname.
 
 Không tạo hostname con kiểu `api.veetee.tail52a635.ts.net` hoặc
-`voice.veetee.tail52a635.ts.net`: MagicDNS/Tailscale certificate hiện chỉ cấp
-cho node `veetee`. Path routing cùng origin giữ cookie/CORS đơn giản và không
-phải mở thêm port trên tailnet.
+`voice.veetee.tail52a635.ts.net`: Tailscale certificate hiện chỉ cấp cho node
+`veetee`. Path routing cùng origin giữ cookie/CORS đơn giản và không phải mở
+thêm port component.
 
 Không hard-code `tail*.ts.net` trong firmware, UI hoặc docs runtime. Checklist:
 
-1. `tailscale status` chỉ ra interface/peer trong tailnet dự kiến.
-2. `tailscale serve status` chỉ có HTTPS Serve, không có Funnel.
-3. `curl -fsS https://<domain-tu-status>/<health-path>` trả readiness.
+1. `tailscale status` chỉ ra node trong tailnet dự kiến.
+2. `tailscale funnel status` chỉ có HTTPS mapping `/` tới `127.0.0.1:18181`.
+3. `curl -fsS https://<domain-tu-status>/` trả HTML; API mutation yêu cầu login + CSRF.
 4. Chỉ đổi endpoint ESP32 khi người dùng yêu cầu; không sửa NetworkManager,
    Wi-Fi, default route hoặc interface host.
 

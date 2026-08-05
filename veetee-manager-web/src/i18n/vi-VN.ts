@@ -21,7 +21,7 @@ export default {
     title: 'Đăng nhập',
     description: 'Đăng nhập để quản lý trợ lý, provider và thiết bị Veetee.',
     email: 'Email',
-    emailPlaceholder: 'owner@example.com…',
+    emailPlaceholder: 'Nhập email…',
     password: 'Mật khẩu',
     passwordPlaceholder: 'Nhập mật khẩu…',
     submit: 'Vào Manager',

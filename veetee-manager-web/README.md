@@ -28,6 +28,10 @@ Khi chạy qua runtime canonical, mở `https://veetee.tail52a635.ts.net/`; Web
 dùng cùng origin cho `/api/v1` và `/veetee/v1` (WebSocket), không cần hostname
 cũ hoặc cổng public riêng.
 
+Hostname HTTPS được truyền qua `VEETEE_WEB_ALLOWED_HOSTS` (danh sách phân tách
+bằng dấu phẩy). Runtime manifest canonical đã khai báo hostname hiện tại; khi
+đổi origin chỉ cần cập nhật deployment config, không sửa Vite source.
+
 Vite sẽ in URL local và LAN thực tế. Các route chính:
 
 - `/assistants`

@@ -35,7 +35,9 @@ PostgreSQL adapter dùng immutable `assistant_revision` và
 reference metadata, không lưu plaintext trong PostgreSQL.
 
 Khi bật `VEETEE_AUTH_MODE=local`, cung cấp `VEETEE_AUTH_SECRET_FILE`, owner
-email/password hash và `VEETEE_ALLOWED_ORIGINS`. Login trả cookie opaque
+email và password hash qua `VEETEE_OWNER_PASSWORD_HASH_FILE` (ưu tiên file; biến
+`VEETEE_OWNER_PASSWORD_HASH` chỉ phù hợp test) cùng `VEETEE_ALLOWED_ORIGINS`.
+Login trả cookie opaque
 `HttpOnly` cùng CSRF token chỉ trong response/ memory; request unsafe phải gửi
 exact `Origin` và `X-Veetee-CSRF`. Login failures được throttle theo IP +
 normalized identity bằng các `VEETEE_LOGIN_*` limits; khi đạt ngưỡng API trả

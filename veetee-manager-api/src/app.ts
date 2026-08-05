@@ -347,6 +347,11 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   const advertisedBaseUrl = publicBaseUrl(env)
   const store = overrides?.store ?? await createStore(env)
   const authSecret = overrides?.authSecret ?? (env.VEETEE_AUTH_MODE === 'local' ? await readRequiredFile(env.VEETEE_AUTH_SECRET_FILE, 'VEETEE_AUTH_SECRET_FILE') : undefined)
+  const ownerPasswordHash = env.VEETEE_AUTH_MODE === 'local'
+    ? (env.VEETEE_OWNER_PASSWORD_HASH_FILE
+        ? await readRequiredFile(env.VEETEE_OWNER_PASSWORD_HASH_FILE, 'VEETEE_OWNER_PASSWORD_HASH_FILE')
+        : env.VEETEE_OWNER_PASSWORD_HASH)
+    : undefined
   const secretStore = overrides?.secretStore ?? await createSecretStore(env)
   if (env.VEETEE_AUTH_MODE === 'local' && !authSecret) throw new Error('VEETEE_AUTH_SECRET_FILE is required when VEETEE_AUTH_MODE=local')
   const app = Fastify({
@@ -545,10 +550,10 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     if (!current.allowed) return sendProblemCode(reply.header('Retry-After', current.retryAfterSeconds), 429, 'LOGIN_THROTTLED', 'Login temporarily throttled')
     const identityMatches = Boolean(env.VEETEE_OWNER_EMAIL) && identity === normalizeLoginIdentity(env.VEETEE_OWNER_EMAIL ?? '')
     let passwordMatches = false
-    if (env.VEETEE_OWNER_PASSWORD_HASH) {
-      try { passwordMatches = await argon2.verify(env.VEETEE_OWNER_PASSWORD_HASH, request.body.password) } catch { passwordMatches = false }
+    if (ownerPasswordHash) {
+      try { passwordMatches = await argon2.verify(ownerPasswordHash, request.body.password) } catch { passwordMatches = false }
     }
-    if (!env.VEETEE_OWNER_PASSWORD_HASH || !authSecret || !identityMatches || !passwordMatches) {
+    if (!ownerPasswordHash || !authSecret || !identityMatches || !passwordMatches) {
       const failed = loginThrottle.recordFailure(request.ip, identity)
       if (!failed.allowed) return sendProblemCode(reply.header('Retry-After', failed.retryAfterSeconds), 429, 'LOGIN_THROTTLED', 'Login temporarily throttled')
       return sendProblemCode(reply, 401, 'INVALID_CREDENTIALS', 'Credentials are invalid')

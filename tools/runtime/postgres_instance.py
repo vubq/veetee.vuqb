@@ -78,7 +78,19 @@ def wait_for_tcp(host: str, port: int, child: subprocess.Popen[bytes]) -> None:
 
 
 def ensure_database(psql: Path, createdb: Path, environment: dict[str, str], host: str, port: int, user: str, database: str) -> None:
-    check = subprocess.run([str(psql), "-h", host, "-p", str(port), "-U", user, "-d", "postgres", "-Atqc", f"select 1 from pg_database where datname = '{database}'"], check=True, env=environment, capture_output=True, text=True)
+    command = [str(psql), "-h", host, "-p", str(port), "-U", user, "-d", "postgres", "-Atqc", f"select 1 from pg_database where datname = '{database}'"]
+    deadline = time.monotonic() + 20
+    while True:
+        try:
+            check = subprocess.run(command, check=True, env=environment, capture_output=True, text=True)
+            break
+        except subprocess.CalledProcessError:
+            # A TCP listener can accept connections while PostgreSQL is still
+            # replaying WAL after an unclean supervisor stop. Retry the query
+            # instead of making the migration race recovery and fail startup.
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.2)
     if check.stdout.strip() == "1":
         return
     subprocess.run([str(createdb), "-h", host, "-p", str(port), "-U", user, database], check=True, env=environment, stdout=subprocess.DEVNULL)

@@ -1652,3 +1652,16 @@
 - Đây chỉ là serial/host evidence. LCD có thực sự hiển thị, âm lượng/chất lượng
   loa-mic và nút PTT vẫn cần physical acceptance trực tiếp; không đánh dấu các
   gate đó là pass chỉ từ log.
+
+### Public HTTPS Funnel correction (2026-08-05)
+
+- Theo yêu cầu mới nhất, canonical origin chuyển từ private Serve sang public
+  Tailscale Funnel: `https://veetee.tail52a635.ts.net/` → Manager Web `18181`.
+- Public DNS trả ingress `103.84.155.153`/`103.84.155.217` và TLS certificate
+  đúng hostname. Vite đã nhận `VEETEE_WEB_ALLOWED_HOSTS` từ manifest để không
+  trả `403 Blocked request` cho Host header public.
+- Vì Funnel public, Manager API runtime chuyển sang local auth; password hash
+  chỉ nằm trong secret file `secrets/manager.owner-password.hash` (600, ignored).
+  Không mở trực tiếp port component, không đổi Wi-Fi/route/ESP32 endpoint.
+- Quyết định được ghi tại [`ADR-029`](../ADR/ADR-029-public-tailscale-funnel.md);
+  tắt bằng `tailscale funnel --https=443 off` khi không cần kiểm tra.

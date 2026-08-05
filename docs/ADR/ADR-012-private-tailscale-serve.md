@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Superseded — 2026-08-05 by [ADR-029](ADR-029-public-tailscale-funnel.md).
+Serve private remains the rollback option when public exposure is disabled.
 
 ## Context
 

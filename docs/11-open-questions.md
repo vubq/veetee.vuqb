@@ -76,7 +76,7 @@ Composition API + `<script setup lang="ts">`, typed API client, route/feature bo
 | D-013 | Manager Web primitives | Reka UI stable major chỉ trong Veetee wrappers; không browser-default visual. |
 | D-014 | UI preview foundation | Owner-approved current foundation: hybrid top-nav/context workspace, screenshot-aligned tokens và Be Vietnam Pro self-host. |
 | D-015 | Runtime configuration | Manager Web/API publish immutable snapshot; Voice Server poll ETag và atomic apply, không restart turn/process. |
-| D-016 | HTTPS inspection | Private Tailscale Serve; domain lấy từ `tailscale serve status`, không Funnel cho route Veetee. |
+| D-016 | HTTPS inspection | Public Tailscale Funnel trên origin `veetee`; auth local bắt buộc, Serve là fallback private. |
 | D-017 | Device presence freshness | `onlineState=online` chỉ được coi là online trong `VEETEE_DEVICE_ONLINE_TTL_SECONDS` (mặc định 120 giây); `deviceCount` vẫn đếm mọi device đã bind. |
 
 ## 3. Blocking trước khi implement M0
@@ -180,11 +180,11 @@ chưa thuộc baseline.
 
 ### Q-010 — Chỉ LAN hay cần remote/public access?
 
-**Trạng thái: Resolved cho baseline — trusted LAN/private overlay; public exposure deferred.**
+**Trạng thái: Resolved — public Tailscale Funnel theo yêu cầu chủ dự án.**
 
-Đã chọn phương án A cho baseline: trusted LAN hoặc private overlay; không
-port-forward public. Phương án B chỉ được xem lại ở M4 khi chủ dự án yêu cầu
-public Internet và có threat model, TLS/rate-limit policy cùng ADR tương ứng.
+Đã chọn Tailscale Funnel làm public HTTPS ingress, giữ origin path routing và
+không mở trực tiếp port component. Manager API phải bật local auth, cookie/CSRF
+và exact Origin gate; chi tiết tại [ADR-029](ADR/ADR-029-public-tailscale-funnel.md).
 
 ## 5. UX và data inputs chưa có
 

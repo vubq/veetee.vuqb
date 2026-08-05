@@ -30,6 +30,7 @@
 # Test-only credential lists. Keep the tracked shape in secrets/*.example.
 secrets/*.keys
 secrets/*.secret
+secrets/*.hash
 secrets/*.url
 secrets/*.database-url
 secrets/*.token

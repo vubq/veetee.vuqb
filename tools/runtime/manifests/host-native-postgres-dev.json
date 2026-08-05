@@ -54,7 +54,10 @@
         "VEETEE_INITIAL_SNAPSHOT_FILE": "${VEETEE_ROOT}/veetee-server/config/fixtures/m0.json",
         "VEETEE_PROVIDER_CATALOG_FILE": "${VEETEE_ROOT}/veetee-manager-api/config/provider-catalog.json",
         "VEETEE_ALLOWED_ORIGINS": "http://127.0.0.1:18181,http://localhost:18181,https://veetee.tail52a635.ts.net",
-        "VEETEE_AUTH_MODE": "disabled",
+        "VEETEE_AUTH_MODE": "local",
+        "VEETEE_OWNER_EMAIL": "owner@veetee.local",
+        "VEETEE_OWNER_PASSWORD_HASH_FILE": "${VEETEE_ROOT}/secrets/manager.owner-password.hash",
+        "VEETEE_AUTH_SECRET_FILE": "${VEETEE_ROOT}/secrets/manager.auth.secret",
         "VEETEE_LOG_LEVEL": "info"
       },
       "healthUrl": "http://127.0.0.1:18101/health/ready",
@@ -87,6 +90,7 @@
       "cwd": "${VEETEE_ROOT}/veetee-manager-web",
       "environment": {
         "VITE_MANAGER_API_URL": "/",
+        "VEETEE_WEB_ALLOWED_HOSTS": "veetee.tail52a635.ts.net",
         "VEETEE_WEB_API_PROXY_TARGET": "http://127.0.0.1:18101",
         "VEETEE_WEB_VOICE_PROXY_TARGET": "http://127.0.0.1:18100"
       },
