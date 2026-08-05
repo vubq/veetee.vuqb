@@ -31,10 +31,13 @@ và các service port `18xxx`).
 - Visual approval không thay cho full primitive-state inventory, keyboard-only
   core flows, demo/catalog cleanup hoặc snapshot matrix mọi surface/viewport;
   các gate này vẫn cần evidence riêng trước production promotion.
-- Evidence hiện tại của Web: typecheck/lint/production build pass, **96 unit
-  tests** và **11 Chromium E2E** pass; gồm history keyboard, responsive overflow,
+- Evidence hiện tại của Web: typecheck/lint/production build pass, **97 unit
+  tests** và **15 Chromium E2E** pass; gồm history keyboard, responsive overflow,
   provider schema flow và axe scan không có violation `serious`/`critical` trên
   critical surfaces. Preview/API mode vẫn phải tách rõ khi đọc report.
+- Lượt vận hành hiện tại khóa physical audio test: không phát clip, không mở
+  microphone/loa và không chạy harness audio với ESP32 cho tới khi chủ dự án cấp
+  quyền lại. Host-only tests/firmware build vẫn được phép.
 - Hai thư mục dưới `references/` là snapshot bằng chứng **read-only**. Chỉ đọc
   để kiểm tra protocol/behavior và trích dẫn `path/to/file:line-line`; không fork,
   extend, vendor, copy nguyên khối hoặc sửa chúng. Commit pin, remote và quy trình
