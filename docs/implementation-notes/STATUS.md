@@ -1421,3 +1421,13 @@
   Reports redact nằm ngoài Git tại `/tmp/veetee-wake-100-drain-aware-20260805.json`,
   `/tmp/veetee-wake-100-fixture-drain-aware-20260805.json` và
   `/tmp/veetee-wake-normal-fixture-verbose-20260805.json`.
+
+### M0 PTT acceptance harness readiness (2026-08-05)
+
+- PTT harness dry-run và unit suite **4/4** pass; firmware ESP-IDF build đúng
+  môi trường **pass**, binary `0x159600`, app còn **66%**; firmware host CTest
+  **8/8** pass.
+- Harness chỉ quan sát GPIO0 qua serial monitor `--no-reset`; không mô phỏng nút,
+  không gửi serial command, không đổi NVS/Wi-Fi. M0 physical DoD vẫn chờ operator
+  giữ/nhả nút, nghe loa và nhìn LCD; không suy diễn build/host evidence thành
+  acceptance vật lý.
