@@ -37,6 +37,7 @@ export const providerConfigTable = managerSchema.table('provider_config', {
   currentEtag: text('current_etag').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull(),
+  archivedAt: timestamp('archived_at', { withTimezone: true, mode: 'date' }),
 })
 
 export const providerConfigRevisionTable = managerSchema.table('provider_config_revision', {

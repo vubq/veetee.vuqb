@@ -16,11 +16,11 @@ const { t } = useI18n()
 const isApiMode = Boolean(import.meta.env.VITE_MANAGER_API_URL)
 const logoutLoading = ref(false)
 const isAuthenticated = computed(() => authSession.status.value === 'authenticated')
-const mobileItems: VtMenuItem[] = [
+const mobileItems = computed<VtMenuItem[]>(() => [
   { id: 'assistants', label: 'Trợ lý' },
-  { id: 'components', label: 'Thư viện giao diện' },
-  { id: 'reset-hint', label: 'Đặt lại dữ liệu ở thanh công cụ', disabled: true, separatorBefore: true },
-]
+  ...(!isApiMode ? [{ id: 'components', label: 'Thư viện giao diện' }] : []),
+  ...(!isApiMode ? [{ id: 'reset-hint', label: 'Đặt lại dữ liệu ở thanh công cụ', disabled: true, separatorBefore: true }] : []),
+])
 
 function navigate(id: string) {
   if (id === 'assistants') void router.push('/assistants')
@@ -73,7 +73,7 @@ async function logout() {
             :icon="Puzzle"
             :size="16"
           />
-          <span>Providers</span>
+          <span>Dịch vụ AI</span>
         </RouterLink>
         <RouterLink
           v-if="$router.hasRoute('component-preview')"

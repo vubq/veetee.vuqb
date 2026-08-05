@@ -67,6 +67,22 @@
 - Manager Web unit **96/96**, Chromium E2E **11/11**, typecheck/lint/build pass;
   production database/runtime không bị mutate.
 
+### Database cleanup và UX provider (2026-08-05)
+
+- Đã tạo backup trước khi dọn dữ liệu: `.runtime/backups/veetee_vubq-20260805T095339Z.dump`;
+  restore rehearsal đã pass. Không chạm database của checkout cũ.
+- Runtime PostgreSQL `veetee_vubq` hiện chỉ còn assistant `Veetee`, bốn cấu hình
+  mẫu cần cho pipeline, một device presence chưa ghép nối đang online và không
+  còn conversation/audit/challenge/secret test data. Các session còn hạn được
+  giữ lại vì có thể là phiên dashboard đang mở.
+- Provider API có archive/probe và test lifecycle; Manager Web đã bỏ các nhãn raw
+  như provider registry, config revision, locator và secret value khỏi bề mặt
+  người dùng. Label schema đi qua i18n, dữ liệu dài được truncate ở select/list,
+  trạng thái lỗi/rỗng có hành động tiếp theo.
+- Evidence hiện tại: Manager API InMemory **35 passed / 12 skipped**; Manager Web
+  **96/96 unit**, **11/11 Chromium E2E**, build/typecheck/lint pass. Đây là gate
+  host/control-plane, chưa đóng các gate physical LCD/nút/mic/loa.
+
 ### Firmware wake pre-arm slice (2026-08-05)
 
 - Wake detector được arm sớm qua capture-owner queue sau wake event; lệnh trùng

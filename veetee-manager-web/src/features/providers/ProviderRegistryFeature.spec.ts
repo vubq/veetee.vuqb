@@ -163,7 +163,7 @@ describe('ProviderRegistryFeature mutations', () => {
 
     const nameInput = await view.findByRole('textbox', { name: 'Tên cấu hình' })
     await fireEvent.update(nameInput, 'Cấu hình offline')
-    await fireEvent.click(view.getByRole('button', { name: 'Lưu config revision' }))
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu cấu hình' }))
 
     expect(await view.findByText('Đang ngoại tuyến; bản nháp vẫn được giữ trên màn hình và chưa được gửi.')).toBeTruthy()
     expect((nameInput as HTMLInputElement).value).toBe('Cấu hình offline')
@@ -176,7 +176,7 @@ describe('ProviderRegistryFeature mutations', () => {
 
     const nameInput = await view.findByRole('textbox', { name: 'Tên cấu hình' })
     await fireEvent.update(nameInput, 'Cấu hình lỗi')
-    await fireEvent.click(view.getByRole('button', { name: 'Lưu config revision' }))
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu cấu hình' }))
 
     const error = await view.findByRole('alert')
     expect(error.textContent).toContain('bản nháp vẫn được giữ')

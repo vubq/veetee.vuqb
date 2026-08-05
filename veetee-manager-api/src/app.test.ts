@@ -229,6 +229,61 @@ test('provider config is schema-driven and rejects unknown fields', async () => 
   }
 })
 
+test('provider archive and probe expose safe lifecycle states', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'groq.chat',
+      name: 'probe lifecycle',
+      config: { endpoint: 'https://api.groq.com/openai/v1', model: 'fixture', maxTokens: 64 },
+    } })
+    assert.equal(created.statusCode, 201)
+    const value = created.json() as { id: string; etag: string }
+
+    const probe = await app.inject({ method: 'POST', url: `/api/v1/provider-configs/${value.id}/probe` })
+    assert.equal(probe.statusCode, 200)
+    assert.equal(probe.json().state, 'ready')
+    assert.deepEqual(probe.json().checks.map((check: { id: string; state: string }) => [check.id, check.state]), [
+      ['schema', 'passed'], ['secrets', 'passed'], ['manifest', 'passed'],
+    ])
+
+    const archived = await app.inject({ method: 'DELETE', url: `/api/v1/provider-configs/${value.id}`, headers: { 'if-match': value.etag } })
+    assert.equal(archived.statusCode, 204)
+    const hidden = await app.inject({ method: 'GET', url: '/api/v1/provider-configs?kind=llm' })
+    assert.equal(hidden.statusCode, 200)
+    assert.equal(hidden.json().items.some((item: { id: string }) => item.id === value.id), false)
+    const afterArchiveProbe = await app.inject({ method: 'POST', url: `/api/v1/provider-configs/${value.id}/probe` })
+    assert.equal(afterArchiveProbe.statusCode, 404)
+  } finally {
+    await app.close()
+  }
+})
+
+test('provider archive is blocked while an assistant is using the config', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistant = (await app.inject({ method: 'GET', url: '/api/v1/assistants' })).json().items[0] as { id: string; etag: string }
+    const created = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'veetee.llm.fixture', name: 'selected lifecycle', config: { segments: ['Đã chọn.'] },
+    } })
+    assert.equal(created.statusCode, 201)
+    const selected = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/assistants/${assistant.id}/model-memory/provider`,
+      headers: { 'if-match': assistant.etag },
+      payload: { kind: 'llm', mode: 'selected', providerConfigId: created.json().id },
+    })
+    assert.equal(selected.statusCode, 200)
+    const archived = await app.inject({ method: 'DELETE', url: `/api/v1/provider-configs/${created.json().id}`, headers: { 'if-match': created.headers.etag } })
+    assert.equal(archived.statusCode, 409)
+    assert.equal(archived.json().code, 'RESOURCE_IN_USE')
+  } finally {
+    await app.close()
+  }
+})
+
 test('provider config enforces catalog JSON Schema types, ranges, enums and URI formats', async () => {
   const app = await buildApp({ env })
   await app.ready()

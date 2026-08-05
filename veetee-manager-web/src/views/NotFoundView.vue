@@ -11,7 +11,7 @@ import VtEmptyState from '@/ui/primitives/VtEmptyState.vue'
     <VtEmptyState
       :icon="FileQuestion"
       title="Không tìm thấy trang"
-      description="Đường dẫn này không thuộc bản xem trước giao diện."
+      description="Đường dẫn này không thuộc ứng dụng Veetee."
     >
       <RouterLink to="/assistants">
         <VtButton variant="primary">
@@ -21,4 +21,3 @@ import VtEmptyState from '@/ui/primitives/VtEmptyState.vue'
     </VtEmptyState>
   </main>
 </template>
-

@@ -32,7 +32,7 @@ describe('router auth boundary', () => {
     await router.push('/providers')
 
     expect(router.currentRoute.value.name).toBe('providers')
-    expect(document.title).toBe('Provider registry · Veetee')
+    expect(document.title).toBe('Dịch vụ AI · Veetee')
   })
 
   it('uses only safe internal redirects after an authenticated login visit', async () => {

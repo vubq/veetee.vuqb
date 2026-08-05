@@ -48,7 +48,7 @@ function toggle(id: string, checked: boolean) {
 async function create() {
   createError.value = ''
   if (!name.value.trim() || !secretValue.value) {
-    createError.value = 'Nhập tên và secret value trước khi lưu.'
+    createError.value = 'Nhập tên và giá trị khóa trước khi lưu.'
     await focusError()
     return
   }
@@ -56,14 +56,14 @@ async function create() {
   try {
     const result = await props.gateway.createSecretReference({ name: name.value.trim(), secretValue: secretValue.value })
     if (!result.ok) {
-      createError.value = result.meta.offline ? 'Đang ngoại tuyến; secret chưa được gửi.' : 'Không thể lưu secret; dữ liệu nhập vẫn được giữ.'
+      createError.value = result.meta.offline ? 'Đang ngoại tuyến; khóa chưa được gửi.' : 'Không thể lưu khóa; dữ liệu nhập vẫn được giữ.'
       await focusError()
       return
     }
     name.value = ''
     secretValue.value = ''
     emit('changed')
-    notify('Đã lưu secret reference', { tone: 'success', message: 'Giá trị đã được mã hóa; Web chỉ giữ metadata.' })
+    notify('Đã lưu khóa kết nối', { tone: 'success', message: 'Giá trị đã được mã hóa; màn hình chỉ giữ thông tin mô tả.' })
   } finally {
     saving.value = false
     secretValue.value = ''
@@ -82,7 +82,7 @@ async function rotate() {
   if (!target) return
   rotateError.value = ''
   if (!rotateValue.value) {
-    rotateError.value = 'Nhập secret value mới trước khi rotate.'
+    rotateError.value = 'Nhập giá trị khóa mới trước khi lưu.'
     await focusError()
     return
   }
@@ -90,14 +90,14 @@ async function rotate() {
   try {
     const result = await props.gateway.updateSecretReference(target.id, { secretValue: rotateValue.value }, target.etag)
     if (!result.ok) {
-      rotateError.value = result.meta.offline ? 'Đang ngoại tuyến; secret chưa được rotate.' : 'Revision đã thay đổi hoặc secret store chưa sẵn sàng.'
+      rotateError.value = result.meta.offline ? 'Đang ngoại tuyến; khóa chưa được đổi.' : 'Cấu hình đã thay đổi hoặc nơi lưu khóa chưa sẵn sàng.'
       await focusError()
       return
     }
     rotateOpen.value = false
     rotateValue.value = ''
     emit('changed')
-    notify('Đã rotate secret', { tone: 'success', message: `Version ${result.data.version} đã sẵn sàng.` })
+    notify('Đã đổi khóa kết nối', { tone: 'success', message: `Phiên bản ${result.data.version} đã sẵn sàng.` })
   } finally {
     saving.value = false
     rotateValue.value = ''
@@ -118,14 +118,14 @@ async function remove() {
   try {
     const result = await props.gateway.deleteSecretReference(target.id, target.etag)
     if (!result.ok) {
-      deleteError.value = result.meta.offline ? 'Đang ngoại tuyến; secret vẫn được giữ.' : 'Secret đang được provider revision sử dụng hoặc đã thay đổi.'
+      deleteError.value = result.meta.offline ? 'Đang ngoại tuyến; khóa vẫn được giữ.' : 'Khóa đang được dịch vụ sử dụng hoặc đã thay đổi.'
       await focusError()
       return
     }
     emit('update:selectedIds', props.selectedIds.filter((id) => id !== target.id))
     deleteOpen.value = false
     emit('changed')
-    notify('Đã xóa secret reference', { tone: 'success' })
+    notify('Đã xóa khóa kết nối', { tone: 'success' })
   } finally {
     saving.value = false
   }
@@ -141,20 +141,23 @@ async function focusError() {
   <VtCard class="secret-card">
     <header class="secret-header">
       <div>
-        <h2>Secret references</h2>
+        <h2>Khóa kết nối</h2>
         <p class="muted">
-          Write-only: plaintext chỉ đi qua request mã hóa; Web không bao giờ đọc lại giá trị.
+          Khóa được mã hóa khi lưu. Sau khi lưu, bạn không thể xem lại giá trị trên màn hình.
         </p>
       </div>
       <VtStatus
         tone="neutral"
-        :label="`${items.length} secret`"
+        :label="`${items.length} khóa`"
       />
     </header>
 
-    <div class="secret-create">
+    <form
+      class="secret-create"
+      @submit.prevent="create"
+    >
       <VtFormField
-        label="Tên secret"
+        label="Tên khóa"
         for-id="secret-reference-name"
       >
         <VtInput
@@ -167,7 +170,7 @@ async function focusError() {
         />
       </VtFormField>
       <VtFormField
-        label="Secret value"
+        label="Giá trị khóa"
         for-id="secret-reference-value"
         hint="Sau khi lưu, giá trị không thể xem lại."
       >
@@ -176,6 +179,7 @@ async function focusError() {
           v-model="secretValue"
           name="secret-reference-value"
           type="password"
+          aria-label="Giá trị khóa"
           autocomplete="new-password"
           spellcheck="false"
           placeholder="Dán key vào đây…"
@@ -184,14 +188,15 @@ async function focusError() {
         />
       </VtFormField>
       <VtButton
+        type="submit"
         variant="secondary"
         :loading="saving"
         :disabled="!name.trim() || !secretValue"
         @click="create"
       >
-        Lưu secret
+        Lưu khóa
       </VtButton>
-    </div>
+    </form>
     <p
       v-if="createError"
       ref="errorHeading"
@@ -216,15 +221,16 @@ async function focusError() {
           :label="`${item.name} · v${item.version}`"
           @update:model-value="toggle(item.id, $event)"
         />
-        <span class="secret-meta">{{ item.status === 'available' ? 'Sẵn sàng' : item.status }} · {{ item.locatorMasked }}</span>
+        <span class="secret-meta">{{ item.status === 'available' ? 'Sẵn sàng' : item.status === 'unavailable' ? 'Chưa sẵn sàng' : 'Đang kiểm tra' }} · lưu an toàn</span>
         <div class="secret-actions">
           <VtButton
             variant="ghost"
             size="sm"
+            aria-label="Đổi khóa"
             :disabled="saving"
             @click="openRotate(item)"
           >
-            Rotate
+            Đổi khóa
           </VtButton>
           <VtButton
             variant="ghost"
@@ -241,18 +247,18 @@ async function focusError() {
       v-else
       class="secret-empty"
     >
-      Chưa có secret reference. Tạo secret đầu tiên ở form trên.
+      Chưa có khóa kết nối. Tạo khóa đầu tiên ở form trên.
     </p>
   </VtCard>
 
   <VtDialog
     v-model:open="rotateOpen"
-    title="Rotate secret"
-    description="Giá trị cũ sẽ không được đọc lại; revision mới sẽ trở thành active sau khi store ghi thành công."
+    title="Đổi khóa kết nối"
+    description="Giá trị cũ sẽ được thay bằng khóa mới sau khi lưu thành công."
     width="sm"
   >
     <VtFormField
-      label="Secret value mới"
+      label="Giá trị khóa mới"
       for-id="secret-rotate-value"
     >
       <VtInput
@@ -260,6 +266,7 @@ async function focusError() {
         v-model="rotateValue"
         name="secret-rotate-value"
         type="password"
+        aria-label="Giá trị khóa mới"
         autocomplete="new-password"
         spellcheck="false"
         :disabled="saving"
@@ -287,17 +294,18 @@ async function focusError() {
         variant="primary"
         :loading="saving"
         :disabled="!rotateValue"
+        aria-label="Lưu khóa mới"
         @click="rotate"
       >
-        Rotate secret
+        Lưu khóa mới
       </VtButton>
     </template>
   </VtDialog>
 
   <VtDialog
     v-model:open="deleteOpen"
-    title="Xóa secret reference?"
-    description="Chỉ xóa được secret chưa từng được bind vào provider revision."
+    title="Xóa khóa kết nối?"
+    description="Chỉ xóa được khóa chưa được dùng trong cấu hình dịch vụ."
     width="sm"
   >
     <p class="delete-copy">
@@ -323,9 +331,10 @@ async function focusError() {
       <VtButton
         variant="danger"
         :loading="saving"
+        aria-label="Xóa khóa"
         @click="remove"
       >
-        Xóa secret
+        Xóa khóa
       </VtButton>
     </template>
   </VtDialog>

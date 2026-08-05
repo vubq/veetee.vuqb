@@ -18,6 +18,7 @@ import type {
   PreviewScenarioDefinition,
   PreviewScenarioId,
   ProviderConfigRecord,
+  ProviderProbeResult,
   ProviderInstallationView,
   RetentionPolicy,
   RetentionPolicyInput,
@@ -52,6 +53,7 @@ type ApiResult = { response: Response; data?: unknown; error?: unknown }
 type AssistantResource = paths['/api/v1/assistants']['get']['responses'][200]['content']['application/json']['items'][number]
 type ProviderInstallationResource = paths['/api/v1/provider-installations']['get']['responses'][200]['content']['application/json']['items'][number]
 type ProviderConfigResource = paths['/api/v1/provider-configs']['get']['responses'][200]['content']['application/json']['items'][number]
+type ProviderProbeResource = paths['/api/v1/provider-configs/{id}/probe']['post']['responses'][200]['content']['application/json']
 type VoiceResource = paths['/api/v1/voices']['get']['responses'][200]['content']['application/json']['items'][number]
 type ModelMemoryResource = paths['/api/v1/assistants/{id}/model-memory']['get']['responses'][200]['content']['application/json']
 type DeviceResource = paths['/api/v1/assistants/{id}/devices']['get']['responses'][200]['content']['application/json']['items'][number]
@@ -169,6 +171,21 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
     return this.success(providerConfig(result.data))
+  }
+
+  async deleteProviderConfig(id: string, expectedEtag: string): Promise<GatewayResult<void, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<ProviderConfigRecord, unknown>>> {
+    const result = await this.execute(() => this.client.DELETE('/api/v1/provider-configs/{id}', {
+      params: { path: { id } },
+      headers: { 'If-Match': expectedEtag },
+    }))
+    if (!result.response.ok) return this.failure(result)
+    return this.success(undefined)
+  }
+
+  async probeProviderConfig(id: string): Promise<GatewayResult<ProviderProbeResult, ValidationProblem | NotFoundProblem | OfflineProblem>> {
+    const result = await this.execute(() => this.client.POST('/api/v1/provider-configs/{id}/probe', { params: { path: { id } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(providerProbe(result.data))
   }
 
   async listSecretReferences(): Promise<GatewayResult<SecretReference[], never>> {
@@ -412,11 +429,15 @@ function cloneJson<T>(value: T): T {
 }
 
 function providerInstallation(value: ProviderInstallationResource): ProviderInstallationView {
-  return { id: value.id, kind: value.kind, displayNameKey: value.displayNameKey, version: value.version, manifest: value.manifest, configSchema: value.configSchema }
+  return { id: value.id, kind: value.kind, displayNameKey: value.displayNameKey, displayName: value.displayName, version: value.version, manifest: value.manifest, configSchema: value.configSchema }
 }
 
 function providerConfig(value: ProviderConfigResource): ProviderConfigRecord {
-  return { id: value.id, installationId: value.installationId, name: value.name, revision: value.revision, config: value.config, secretRefs: value.secretRefs, etag: value.etag }
+  return { id: value.id, installationId: value.installationId, name: value.name, revision: value.revision, config: value.config, secretRefs: value.secretRefs, etag: value.etag, archivedAt: value.archivedAt }
+}
+
+function providerProbe(value: ProviderProbeResource): ProviderProbeResult {
+  return { providerConfigId: value.providerConfigId, state: value.state, checkedAt: value.checkedAt, durationMs: value.durationMs, checks: value.checks }
 }
 
 function secretReference(value: SecretReferenceResource): SecretReference {

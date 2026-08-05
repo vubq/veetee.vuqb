@@ -40,6 +40,7 @@ import {
   type ModelMemoryView,
   type PairingChallenge,
   type ProviderConfig,
+  type ProviderProbeResult,
   type ProviderInstallation,
   type ProviderKind,
   type RetentionPolicy,
@@ -119,7 +120,7 @@ export class PostgresStore implements Store {
   async listProviderConfigs(ownerId: string, kind?: ProviderKind): Promise<ProviderConfig[]> {
     const installationIds = kind === undefined ? undefined : this.installations.filter((item) => item.kind === kind).map((item) => item.id)
     if (kind !== undefined && !installationIds?.length) return []
-    const conditions = [eq(providerConfigTable.ownerId, ownerId)]
+    const conditions = [eq(providerConfigTable.ownerId, ownerId), isNull(providerConfigTable.archivedAt)]
     if (installationIds) conditions.push(inArray(providerConfigTable.installationId, installationIds))
     const identities = await this.handle.db.select().from(providerConfigTable).where(and(...conditions)).orderBy(asc(providerConfigTable.name))
     const values = await Promise.all(identities.map(async (identity) => {
@@ -140,7 +141,7 @@ export class PostgresStore implements Store {
     const revision = 1
     const revisionEtag = etag({ ...value.config, revision })
     await this.handle.db.transaction(async (tx) => {
-      await tx.insert(providerConfigTable).values({ id, ownerId, installationId: value.installationId, name: value.name, currentRevision: revision, currentEtag: revisionEtag, createdAt: now, updatedAt: now })
+      await tx.insert(providerConfigTable).values({ id, ownerId, installationId: value.installationId, name: value.name, currentRevision: revision, currentEtag: revisionEtag, createdAt: now, updatedAt: now, archivedAt: null })
       await tx.insert(providerConfigRevisionTable).values({ providerConfigId: id, revision, config: structuredClone(value.config), secretRefs, etag: revisionEtag, createdAt: now })
     })
     const identity = await this.findProviderIdentity(ownerId, id)
@@ -152,6 +153,7 @@ export class PostgresStore implements Store {
   async updateProviderConfig(ownerId: string, id: string, value: Partial<Pick<ProviderConfig, 'name' | 'config' | 'secretRefs'>>, ifMatch: string): Promise<ProviderConfig> {
     const identity = await this.findProviderIdentity(ownerId, id)
     if (!identity) throw problem('NOT_FOUND', 'Provider config not found', 404)
+    if (identity.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
     const current = await this.findProviderRevision(id, identity.currentRevision)
     if (!current) throw new Error('provider config current revision is missing')
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
@@ -173,6 +175,44 @@ export class PostgresStore implements Store {
     const nextRevision = await this.findProviderRevision(id, revision)
     if (!nextIdentity || !nextRevision) throw new Error('provider config update returned no row')
     return this.mapProviderConfig(nextIdentity, nextRevision)
+  }
+
+  async deleteProviderConfig(ownerId: string, id: string, ifMatch: string): Promise<void> {
+    const identity = await this.findProviderIdentity(ownerId, id)
+    if (!identity || identity.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
+    if (identity.currentEtag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
+    const rows = await this.handle.db.select({ providerSelections: assistantRevisionTable.providerSelections })
+      .from(assistantRevisionTable)
+      .innerJoin(assistantTable, eq(assistantRevisionTable.assistantId, assistantTable.id))
+      .where(eq(assistantTable.ownerId, ownerId))
+    const selected = rows.some((row) => Object.values(asProviderSelections(row.providerSelections)).some((value) => value.providerConfigId === id))
+    if (selected) throw problem('RESOURCE_IN_USE', 'Provider config is selected by an assistant', 409)
+    const now = new Date()
+    const updated = await this.handle.db.update(providerConfigTable)
+      .set({ archivedAt: now, updatedAt: now })
+      .where(and(eq(providerConfigTable.id, id), eq(providerConfigTable.ownerId, ownerId), eq(providerConfigTable.currentEtag, ifMatch), isNull(providerConfigTable.archivedAt)))
+      .returning({ id: providerConfigTable.id })
+    if (!updated.length) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
+  }
+
+  async probeProviderConfig(ownerId: string, id: string): Promise<ProviderProbeResult> {
+    const identity = await this.findProviderIdentity(ownerId, id)
+    if (!identity || identity.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
+    const revision = await this.findProviderRevision(id, identity.currentRevision)
+    if (!revision) throw new Error('provider config current revision is missing')
+    const installation = this.findInstallation(identity.installationId)
+    const started = Date.now()
+    const checks: ProviderProbeResult['checks'] = []
+    try {
+      validateJsonObject(asJsonObject(revision.config), installation.configSchema)
+      checks.push({ id: 'schema', state: 'passed', message: 'Cấu hình hợp lệ.' })
+    } catch {
+      checks.push({ id: 'schema', state: 'failed', message: 'Config không khớp JSON Schema.' })
+    }
+    const secretsReady = await this.secretRefsReady(ownerId, asSecretRefs(revision.secretRefs))
+    checks.push({ id: 'secrets', state: secretsReady ? 'passed' : 'failed', message: secretsReady ? 'Khóa kết nối đã sẵn sàng.' : 'Có khóa kết nối thiếu hoặc không khả dụng.' })
+    checks.push({ id: 'manifest', state: 'passed', message: 'Dịch vụ đã được nạp.' })
+    return { providerConfigId: id, state: checks.some((check) => check.state === 'failed') ? 'unavailable' : 'ready', checkedAt: new Date().toISOString(), durationMs: Math.max(0, Date.now() - started), checks }
   }
 
   async listAssistants(ownerId: string): Promise<Assistant[]> {
@@ -690,6 +730,16 @@ export class PostgresStore implements Store {
     const revisionEtag = etag(snapshot)
     await this.handle.db.transaction(async (tx) => {
       await tx.insert(assistantTable).values({ id, ownerId: 'local-owner', name: 'Veetee', draftRevision: snapshot.revision, draftEtag: revisionEtag, publishedRevision: snapshot.revision, createdAt: now, updatedAt: now })
+      for (const [kind, value] of Object.entries(providerSelections)) {
+        if (!value || value.mode === 'disabled' || typeof value.providerId !== 'string' || !value.config || typeof value.config !== 'object' || Array.isArray(value.config)) continue
+        const installation = this.installations.find((item) => item.id === value.providerId)
+        if (!installation) continue
+        const providerConfigId = randomUUID()
+        const providerEtag = etag({ ...value.config, revision: 1 })
+        await tx.insert(providerConfigTable).values({ id: providerConfigId, ownerId: 'local-owner', installationId: installation.id, name: `${installation.displayName ?? installation.displayNameKey} mặc định`, currentRevision: 1, currentEtag: providerEtag, createdAt: now, updatedAt: now, archivedAt: null })
+        await tx.insert(providerConfigRevisionTable).values({ providerConfigId, revision: 1, config: asJsonObject(value.config), secretRefs: [], etag: providerEtag, createdAt: now })
+        providerSelections[kind] = { mode: 'selected', providerConfigId }
+      }
       await tx.insert(assistantRevisionTable).values({ assistantId: id, revision: snapshot.revision, role, providerSelections, etag: revisionEtag, createdAt: now })
       await tx.insert(runtimePublicationTable).values({ assistantId: id, revision: snapshot.revision, snapshot, etag: revisionEtag, updatedAt: now })
     })
@@ -719,6 +769,12 @@ export class PostgresStore implements Store {
     if (!refs.length) return
     const rows = await this.handle.db.select({ id: secretReferenceTable.id, status: secretReferenceTable.status }).from(secretReferenceTable).where(and(eq(secretReferenceTable.ownerId, ownerId), inArray(secretReferenceTable.id, refs)))
     if (rows.length !== refs.length || rows.some((row) => row.status !== 'available')) throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
+  }
+
+  private async secretRefsReady(ownerId: string, refs: string[]): Promise<boolean> {
+    if (!refs.length) return true
+    const rows = await this.handle.db.select({ id: secretReferenceTable.id, status: secretReferenceTable.status }).from(secretReferenceTable).where(and(eq(secretReferenceTable.ownerId, ownerId), inArray(secretReferenceTable.id, refs)))
+    return rows.length === refs.length && rows.every((row) => row.status === 'available')
   }
 
   private findInstallation(id: string): ProviderInstallation {
@@ -773,7 +829,7 @@ export class PostgresStore implements Store {
   }
 
   private mapProviderConfig(identity: ProviderConfigRow, revision: ProviderConfigRevisionRow): ProviderConfig {
-    return { id: identity.id, ownerId: identity.ownerId, installationId: identity.installationId, name: identity.name, revision: revision.revision, config: asJsonObject(revision.config), secretRefs: asSecretRefs(revision.secretRefs), etag: revision.etag, updatedAt: revision.createdAt.toISOString() }
+    return { id: identity.id, ownerId: identity.ownerId, installationId: identity.installationId, name: identity.name, revision: revision.revision, config: asJsonObject(revision.config), secretRefs: asSecretRefs(revision.secretRefs), etag: revision.etag, updatedAt: revision.createdAt.toISOString(), archivedAt: identity.archivedAt?.toISOString() ?? null }
   }
 
   private mapSession(row: ManagerSessionRow): ManagerSession {
@@ -815,7 +871,7 @@ export class PostgresStore implements Store {
     const configs = await this.listProviderConfigs(current.ownerId)
     const availableConfigs = configs.map((item) => {
       const installation = this.installations.find((candidate) => candidate.id === item.installationId)
-      return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayNameKey ?? item.installationId, availability: 'ready' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] }
+      return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayName ?? installation?.displayNameKey ?? item.installationId, availability: 'ready' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] }
     })
     return { assistantId: current.id, selections, availableConfigs, memory: { enabled: current.role.memoryEnabled !== false, itemCount: 0 }, memoryItems: [] }
   }

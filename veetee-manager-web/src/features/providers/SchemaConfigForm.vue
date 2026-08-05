@@ -139,7 +139,7 @@ watch(formValid, (valid) => emit('validity-change', valid), { immediate: true })
 <template>
   <section
     class="schema-config-form"
-    aria-label="Provider configuration fields"
+    aria-label="Trường cấu hình dịch vụ"
   >
     <div
       v-if="fields.length > 0"
@@ -157,9 +157,9 @@ watch(formValid, (valid) => emit('validity-change', valid), { immediate: true })
     </div>
     <VtFormField
       v-if="hasAdvancedFields"
-      label="Advanced JSON"
+      label="Cấu hình nâng cao"
       for-id="provider-config-advanced"
-      :hint="`Object/array hoặc field mở rộng: ${advancedKeys.join(', ')}`"
+      :hint="`Dành cho trường mở rộng: ${advancedKeys.join(', ')}`"
       :error="advancedError"
     >
       <template #default="{ describedby }">

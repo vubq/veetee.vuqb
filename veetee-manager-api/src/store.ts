@@ -7,6 +7,7 @@ export interface ProviderInstallation {
   id: string
   kind: ProviderKind
   displayNameKey: string
+  displayName?: string
   version: string
   manifest: Record<string, unknown>
   configSchema: Record<string, unknown>
@@ -22,6 +23,18 @@ export interface ProviderConfig {
   secretRefs: string[]
   etag: string
   updatedAt: string
+  /** Archived configs keep immutable revisions but are hidden from selection. */
+  archivedAt?: string | null
+}
+
+export type ProviderProbeCheckState = 'passed' | 'failed' | 'skipped'
+
+export interface ProviderProbeResult {
+  providerConfigId: string
+  state: 'ready' | 'unavailable'
+  checkedAt: string
+  durationMs: number
+  checks: Array<{ id: string; state: ProviderProbeCheckState; message: string }>
 }
 
 export interface Assistant {
@@ -308,6 +321,8 @@ export interface Store {
   listProviderConfigs(ownerId: string, kind?: ProviderKind): Promise<ProviderConfig[]>
   createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<ProviderConfig>
   updateProviderConfig(ownerId: string, id: string, value: Partial<Pick<ProviderConfig, 'name' | 'config' | 'secretRefs'>>, ifMatch: string): Promise<ProviderConfig>
+  deleteProviderConfig(ownerId: string, id: string, ifMatch: string): Promise<void>
+  probeProviderConfig(ownerId: string, id: string): Promise<ProviderProbeResult>
   listAssistants(ownerId: string): Promise<Assistant[]>
   getAssistant(ownerId: string, id: string): Promise<Assistant | undefined>
   createAssistant(ownerId: string, name: string): Promise<Assistant>
@@ -392,7 +407,7 @@ export class InMemoryStore implements Store {
   async listInstallations(): Promise<ProviderInstallation[]> { return this.installations.map((item) => structuredClone(item)) }
 
   async listProviderConfigs(ownerId: string, kind?: ProviderKind): Promise<ProviderConfig[]> {
-    return [...this.providerConfigs.values()].filter((item) => item.ownerId === ownerId && (!kind || this.kind(item.installationId) === kind)).map((item) => structuredClone(item))
+    return [...this.providerConfigs.values()].filter((item) => item.ownerId === ownerId && !item.archivedAt && (!kind || this.kind(item.installationId) === kind)).map((item) => structuredClone(item))
   }
 
   async createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<ProviderConfig> {
@@ -403,7 +418,7 @@ export class InMemoryStore implements Store {
     validateSecretBindings(installation, secretRefs)
     for (const referenceId of secretRefs) if (!this.secretReferences.has(referenceId) || this.secretReferences.get(referenceId)?.ownerId !== ownerId || this.secretReferences.get(referenceId)?.status !== 'available') throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
     const now = new Date().toISOString()
-    const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name, revision: 1, config: structuredClone(value.config), secretRefs, etag: etag({ ...value.config, revision: 1 }), updatedAt: now }
+    const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name, revision: 1, config: structuredClone(value.config), secretRefs, etag: etag({ ...value.config, revision: 1 }), updatedAt: now, archivedAt: null }
     this.providerConfigs.set(item.id, item)
     this.providerConfigSecretRefs.set(item.id, new Set(item.secretRefs))
     return structuredClone(item)
@@ -412,6 +427,7 @@ export class InMemoryStore implements Store {
   async updateProviderConfig(ownerId: string, id: string, value: Partial<Pick<ProviderConfig, 'name' | 'config' | 'secretRefs'>>, ifMatch: string): Promise<ProviderConfig> {
     const current = this.providerConfigs.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Provider config not found', 404)
+    if (current.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
     const installation = this.installations.find((item) => item.id === current.installationId)
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
@@ -426,6 +442,37 @@ export class InMemoryStore implements Store {
     for (const referenceId of next.secretRefs) historicalRefs.add(referenceId)
     this.providerConfigSecretRefs.set(id, historicalRefs)
     return structuredClone(next)
+  }
+
+  async deleteProviderConfig(ownerId: string, id: string, ifMatch: string): Promise<void> {
+    const current = this.providerConfigs.get(id)
+    if (!current || current.ownerId !== ownerId || current.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
+    const selected = [...this.assistants.values()].some((assistant) => Object.values(assistant.providerSelections).some((value) => value?.providerConfigId === id))
+    if (selected) throw problem('RESOURCE_IN_USE', 'Provider config is selected by an assistant', 409)
+    current.archivedAt = new Date().toISOString()
+    current.updatedAt = current.archivedAt
+    this.providerConfigs.set(id, current)
+  }
+
+  async probeProviderConfig(ownerId: string, id: string): Promise<ProviderProbeResult> {
+    const started = Date.now()
+    const current = this.providerConfigs.get(id)
+    if (!current || current.ownerId !== ownerId || current.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
+    const installation = this.installations.find((item) => item.id === current.installationId)
+    if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
+    const checks: ProviderProbeResult['checks'] = []
+    try {
+      validateJsonObject(current.config, installation.configSchema)
+      checks.push({ id: 'schema', state: 'passed', message: 'Cấu hình hợp lệ.' })
+    } catch {
+      checks.push({ id: 'schema', state: 'failed', message: 'Config không khớp JSON Schema.' })
+    }
+    const secretsReady = current.secretRefs.every((ref) => this.secretReferences.get(ref)?.ownerId === ownerId && this.secretReferences.get(ref)?.status === 'available')
+    checks.push({ id: 'secrets', state: secretsReady ? 'passed' : 'failed', message: secretsReady ? 'Khóa kết nối đã sẵn sàng.' : 'Có khóa kết nối thiếu hoặc không khả dụng.' })
+    checks.push({ id: 'manifest', state: 'passed', message: 'Dịch vụ đã được nạp.' })
+    const state = checks.some((check) => check.state === 'failed') ? 'unavailable' : 'ready'
+    return { providerConfigId: id, state, checkedAt: new Date().toISOString(), durationMs: Math.max(0, Date.now() - started), checks }
   }
 
   async listAssistants(ownerId: string): Promise<Assistant[]> {
@@ -918,7 +965,7 @@ export class InMemoryStore implements Store {
     return {
       assistantId: current.id,
       selections,
-      availableConfigs: [...this.providerConfigs.values()].filter((item) => item.ownerId === current.ownerId).map((item) => { const installation = this.installations.find((candidate) => candidate.id === item.installationId); return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayNameKey ?? item.installationId, availability: 'ready' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] } }),
+      availableConfigs: [...this.providerConfigs.values()].filter((item) => item.ownerId === current.ownerId && !item.archivedAt).map((item) => { const installation = this.installations.find((candidate) => candidate.id === item.installationId); return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayName ?? installation?.displayNameKey ?? item.installationId, availability: 'ready' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] } }),
       memory: { enabled: current.role.memoryEnabled !== false, itemCount: 0 },
       memoryItems: [],
     }
@@ -943,12 +990,13 @@ export function parseCatalog(raw: unknown): ProviderInstallation[] {
     const kindValue = catalogString(value.kind, `provider catalog installation[${index}].kind`)
     if (!providerKinds.has(kindValue as ProviderKind)) throw new Error(`provider catalog installation[${index}].kind is unsupported: ${kindValue}`)
     const displayNameKey = catalogString(value.displayNameKey, `provider catalog installation[${index}].displayNameKey`)
+    const displayName = value.displayName === undefined ? undefined : catalogString(value.displayName, `provider catalog installation[${index}].displayName`)
     const version = catalogString(value.version, `provider catalog installation[${index}].version`)
     const manifest = value.manifest == null ? {} : value.manifest
     const configSchema = value.configSchema == null ? {} : value.configSchema
     if (!isRecord(manifest)) throw new Error(`provider catalog installation[${index}].manifest must be an object`)
     if (!isRecord(configSchema)) throw new Error(`provider catalog installation[${index}].configSchema must be an object`)
-    return { id, kind: kindValue as ProviderKind, displayNameKey, version, manifest: normalizeCatalogManifest(manifest, index), configSchema }
+    return { id, kind: kindValue as ProviderKind, displayNameKey, ...(displayName ? { displayName } : {}), version, manifest: normalizeCatalogManifest(manifest, index), configSchema }
   })
 }
 

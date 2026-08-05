@@ -15,6 +15,12 @@ function relativeTime(value: string | null) {
   const date = new Date(value)
   return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
 }
+
+function displayValue(value: string, fallback: string) {
+  if (!value.trim() || value.startsWith('fixture-') || value.startsWith('preview.')) return fallback
+  if (value === 'natural') return 'Tự nhiên'
+  return value
+}
 </script>
 
 <template>
@@ -43,13 +49,13 @@ function relativeTime(value: string | null) {
         <span><VtIcon
           :icon="UserRound"
           :size="13"
-        /> Tính cách</span><strong :title="assistant.personalityName">{{ assistant.personalityName }}</strong>
+        /> Tính cách</span><strong :title="displayValue(assistant.personalityName, 'Tự nhiên')">{{ displayValue(assistant.personalityName, 'Tự nhiên') }}</strong>
       </div>
       <div class="metric">
         <span><VtIcon
           :icon="BrainCircuit"
           :size="13"
-        /> Giọng nói</span><strong>{{ assistant.voiceName }}</strong>
+        /> Giọng nói</span><strong>{{ displayValue(assistant.voiceName, 'Giọng mặc định') }}</strong>
       </div>
       <div class="metric">
         <span><VtIcon
@@ -121,4 +127,3 @@ function relativeTime(value: string | null) {
   .card-actions > :last-child { grid-column: 1 / -1; }
 }
 </style>
-

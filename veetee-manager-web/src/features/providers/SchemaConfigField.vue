@@ -5,6 +5,7 @@ import VtFormField from '@/ui/primitives/VtFormField.vue'
 import VtInput from '@/ui/primitives/VtInput.vue'
 import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
 import VtSwitch from '@/ui/primitives/VtSwitch.vue'
+import { i18n } from '@/i18n'
 
 import {
   decodeEnumValue,
@@ -33,6 +34,12 @@ const emit = defineEmits<{
 const inputText = ref('')
 const inputError = ref<string>()
 const fieldId = computed(() => `${props.idPrefix}-${props.field.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`)
+const label = computed(() => props.field.label === props.field.key || props.field.label === props.field.key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').replace(/^./, (value) => value.toUpperCase())
+  ? (() => {
+      const key = `schema.fields.${props.field.key}`
+      return i18n.global.te(key) ? i18n.global.t(key) : props.field.label
+    })()
+  : props.field.label)
 const effectiveValue = computed(() => valueForField(props.field, props.modelValue))
 const constraintHint = computed(() => formatSchemaConstraint(props.field))
 const hint = computed(() => [props.field.description, constraintHint.value].filter(Boolean).join(' · ') || undefined)
@@ -97,7 +104,7 @@ watch(
 <template>
   <VtFormField
     v-if="field.type !== 'boolean'"
-    :label="field.label"
+    :label="label"
     :for-id="fieldId"
     :optional="!field.required"
     :hint="hint"
@@ -109,7 +116,7 @@ watch(
         :id="fieldId"
         :model-value="effectiveValue === undefined ? '' : encodeEnumValue(effectiveValue)"
         :options="enumOptions"
-        :label="field.label"
+        :label="label"
         :disabled="disabled"
         :invalid="Boolean(inputError)"
         :aria-describedby="describedby"
@@ -138,7 +145,7 @@ watch(
   >
     <VtSwitch
       :model-value="Boolean(effectiveValue)"
-      :label="field.label"
+      :label="label"
       :disabled="disabled"
       @update:model-value="updateSwitch"
     />

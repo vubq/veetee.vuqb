@@ -3,6 +3,7 @@ import { LayoutGrid, Plus, Search, WifiOff } from '@lucide/vue'
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
+import { isPreviewMode } from '@/app/runtime-mode'
 import type { AssistantCard as Assistant } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import PairDeviceDialog from '@/features/devices/PairDeviceDialog.vue'
@@ -17,6 +18,7 @@ import VtSkeleton from '@/ui/primitives/VtSkeleton.vue'
 
 import AssistantCard from './AssistantCard.vue'
 import AssistantCreateDialog from './AssistantCreateDialog.vue'
+import AssistantOverviewSummary from './AssistantOverviewSummary.vue'
 
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
 
@@ -101,7 +103,7 @@ onUnmounted(() => {
     />
     <PageHeader
       title="Trợ lý"
-      :subtitle="`${assistants.length} trợ lý trong bản xem trước`"
+      :subtitle="`${assistants.length} trợ lý${isPreviewMode ? ' trong bản xem trước' : ''}`"
       :icon="LayoutGrid"
     >
       <template #actions>
@@ -133,6 +135,8 @@ onUnmounted(() => {
         </div>
       </template>
     </PageHeader>
+
+    <AssistantOverviewSummary :assistants="assistants" />
 
     <div
       v-if="stale"

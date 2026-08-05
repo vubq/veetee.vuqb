@@ -37,6 +37,7 @@ import type {
   VoicePreview,
   VoiceProfile,
   ProviderConfigRecord,
+  ProviderProbeResult,
   ProviderInstallationView,
   RetentionPolicy,
   RetentionPolicyInput,
@@ -432,6 +433,22 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     const next: ProviderConfigRecord = { ...current, name: input.name ?? current.name, config: clone(input.config ?? current.config), secretRefs: input.secretRefs ?? [...current.secretRefs], revision: current.revision + 1, etag: `"preview-provider-${current.revision + 1}"` }
     this.state.providerConfigs = [...this.state.providerConfigs.filter((item) => item.id !== id), next]
     return this.success(next, request)
+  }
+
+  async deleteProviderConfig(id: string, expectedEtag: string): Promise<GatewayResult<void, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const current = this.state.providerConfigs.find((item) => item.id === id)
+    if (!current) return this.failure(this.validationProblem([{ field: 'id', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    if (current.etag !== expectedEtag) return this.failure(this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)!, request)
+    this.state.providerConfigs = this.state.providerConfigs.filter((item) => item.id !== id)
+    return this.success(undefined, request)
+  }
+
+  async probeProviderConfig(id: string): Promise<GatewayResult<ProviderProbeResult, ValidationProblem>> {
+    const request = await this.begin('read')
+    const current = this.state.providerConfigs.find((item) => item.id === id)
+    if (!current) return this.failure(this.validationProblem([{ field: 'id', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    return this.success({ providerConfigId: id, state: 'ready', checkedAt: this.now(), durationMs: 0, checks: [{ id: 'mock', state: 'passed', message: 'Mock provider sẵn sàng.' }] }, request)
   }
 
   async listVoices(locale: string): Promise<GatewayResult<Page<VoiceProfile>, never>> {

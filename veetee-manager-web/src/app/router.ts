@@ -43,10 +43,10 @@ const routes: RouteRecordRaw[] = [
     component: AssistantHistoryView,
     meta: { title: 'Lịch sử hội thoại' },
   },
-  { path: '/providers', name: 'providers', component: ProviderRegistryView, meta: { title: 'Provider registry' } },
+  { path: '/providers', name: 'providers', component: ProviderRegistryView, meta: { title: 'Dịch vụ AI' } },
 ]
 
-if (import.meta.env.DEV) {
+if (import.meta.env.DEV && !import.meta.env.VITE_MANAGER_API_URL) {
   routes.push({
     path: '/_preview/components',
     name: 'component-preview',

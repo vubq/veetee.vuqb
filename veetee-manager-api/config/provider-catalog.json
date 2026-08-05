@@ -5,6 +5,7 @@
       "id": "veetee.vad.energy",
       "kind": "vad",
       "displayNameKey": "provider.vad.energy",
+      "displayName": "Phát hiện giọng nói cơ bản",
       "version": "1.0.0",
       "manifest": { "locales": ["*"], "supportsCancel": true },
       "configSchema": {
@@ -23,6 +24,7 @@
       "id": "veetee.vad.silero",
       "kind": "vad",
       "displayNameKey": "provider.vad.silero",
+      "displayName": "Phát hiện giọng nói chính xác",
       "version": "1.0.0",
       "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsCancel": true, "requiresLocalArtifact": true },
       "configSchema": {
@@ -45,6 +47,7 @@
       "id": "veetee.asr.fixture",
       "kind": "asr",
       "displayNameKey": "provider.asr.fixture",
+      "displayName": "Nhận dạng mẫu (kiểm tra)",
       "version": "1.0.0",
       "manifest": { "locales": ["*"], "supportsPartial": false, "supportsCancel": true },
       "configSchema": { "type": "object", "additionalProperties": false, "required": ["text"], "properties": { "text": { "type": "string", "minLength": 1 } } }
@@ -53,6 +56,7 @@
       "id": "veetee.asr.phowhisper",
       "kind": "asr",
       "displayNameKey": "provider.asr.phowhisper",
+      "displayName": "Nhận dạng tiếng Việt — PhoWhisper",
       "version": "1.0.0",
       "manifest": { "locales": ["vi-VN", "vi"], "supportsPartial": false, "supportsCancel": true, "requiresLocalArtifact": true },
       "configSchema": {
@@ -77,6 +81,7 @@
       "id": "groq.chat",
       "kind": "llm",
       "displayNameKey": "provider.llm.groq",
+      "displayName": "Groq — trả lời nhanh",
       "version": "1.0.0",
       "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsTools": true, "secretFields": ["apiKey"] },
       "configSchema": {
@@ -99,6 +104,7 @@
       "id": "veetee.llm.fixture",
       "kind": "llm",
       "displayNameKey": "provider.llm.fixture",
+      "displayName": "Trả lời mẫu (kiểm tra)",
       "version": "1.0.0",
       "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsTools": false },
       "configSchema": { "type": "object", "additionalProperties": false, "required": ["segments"], "properties": { "segments": { "type": "array", "items": { "type": "string" }, "minItems": 1 } } }
@@ -107,6 +113,7 @@
       "id": "vieneu.v3-turbo",
       "kind": "tts",
       "displayNameKey": "provider.tts.vieneu",
+      "displayName": "VieNeu — giọng nói tiếng Việt",
       "version": "1.0.0",
       "manifest": { "locales": ["vi-VN"], "supportsStreaming": true, "supportsCancel": true },
       "configSchema": {
@@ -138,6 +145,7 @@
       "id": "veetee.tts.fixture-tone",
       "kind": "tts",
       "displayNameKey": "provider.tts.fixture",
+      "displayName": "Âm báo mẫu (kiểm tra)",
       "version": "1.0.0",
       "manifest": { "locales": ["*"], "supportsStreaming": true, "supportsCancel": true },
       "configSchema": { "type": "object", "additionalProperties": false, "required": ["sampleRate", "toneHz", "chunkMs", "amplitude"], "properties": { "sampleRate": { "type": "integer", "minimum": 1 }, "toneHz": { "type": "number", "minimum": 1 }, "chunkMs": { "type": "integer", "minimum": 1 }, "amplitude": { "type": "number", "minimum": 0, "maximum": 1 } } }
@@ -146,6 +154,7 @@
       "id": "veetee.intent.patterns",
       "kind": "intent",
       "displayNameKey": "provider.intent.patterns",
+      "displayName": "Nhận diện ý định theo quy tắc",
       "version": "1.0.0",
       "manifest": { "locales": ["*"], "supportsCancel": true },
       "configSchema": {
@@ -161,6 +170,7 @@
       "id": "veetee.memory.session-window",
       "kind": "memory",
       "displayNameKey": "provider.memory.sessionWindow",
+      "displayName": "Bộ nhớ trong phiên nói chuyện",
       "version": "1.0.0",
       "manifest": { "locales": ["*"], "supportsCancel": true },
       "configSchema": {

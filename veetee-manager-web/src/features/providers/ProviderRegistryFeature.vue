@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
-import type { ProviderConfigRecord, ProviderInstallationView, SecretReference } from '@/domain'
+import type { ProviderConfigRecord, ProviderInstallationView, ProviderKind, ProviderProbeResult, SecretReference } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import FormSection from '@/ui/patterns/FormSection.vue'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
@@ -13,10 +13,12 @@ import VtFormField from '@/ui/primitives/VtFormField.vue'
 import VtInput from '@/ui/primitives/VtInput.vue'
 import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
 import VtStatus from '@/ui/primitives/VtStatus.vue'
+import VtDialog from '@/ui/primitives/VtDialog.vue'
 import { notify } from '@/ui/primitives/notifications'
 
 import SchemaConfigForm from './SchemaConfigForm.vue'
 import SecretReferencePanel from './SecretReferencePanel.vue'
+import ProviderConfigList from './ProviderConfigList.vue'
 import { cloneConfig } from './schema-config'
 
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
@@ -24,6 +26,12 @@ const installations = ref<ProviderInstallationView[]>([])
 const configs = ref<ProviderConfigRecord[]>([])
 const secretReferences = ref<SecretReference[]>([])
 const selectedSecretRefs = ref<string[]>([])
+const probeResults = ref<Record<string, ProviderProbeResult | undefined>>({})
+const providerQuery = ref('')
+const providerKindFilter = ref<ProviderKind | 'all'>('all')
+const probingId = ref('')
+const removeId = ref('')
+const removing = ref(false)
 const selectedId = ref('')
 const selectedConfigId = ref('')
 const name = ref('')
@@ -38,9 +46,15 @@ const stateHeading = ref<HTMLElement | null>(null)
 const saveErrorHeading = ref<HTMLElement | null>(null)
 let loadGeneration = 0
 
-const options = computed<VtSelectOption[]>(() => installations.value.map((item) => ({ value: item.id, label: item.displayNameKey, description: `${item.kind.toUpperCase()} · ${item.version}` })))
+const options = computed<VtSelectOption[]>(() => installations.value.map((item) => ({ value: item.id, label: item.displayName ?? item.displayNameKey, description: `${item.kind.toUpperCase()} · phiên bản ${item.version}` })))
 const selected = computed(() => installations.value.find((item) => item.id === selectedId.value))
 const schemaKeys = computed(() => Object.keys((selected.value?.configSchema.properties as Record<string, unknown> | undefined) ?? {}))
+const removeTarget = computed(() => configs.value.find((item) => item.id === removeId.value))
+const selectedProbe = computed(() => selectedConfigId.value ? probeResults.value[selectedConfigId.value] : undefined)
+
+function checkLabel(id: string) {
+  return ({ schema: 'Cấu hình', secrets: 'Khóa kết nối', manifest: 'Dịch vụ' } as Record<string, string>)[id] ?? id
+}
 
 function chooseInstallation(value: string) {
   selectedId.value = value
@@ -50,6 +64,22 @@ function chooseInstallation(value: string) {
   configDraft.value = cloneConfig(item?.config ?? {})
   configValid.value = true
   selectedSecretRefs.value = [...(item?.secretRefs ?? [])]
+}
+
+function chooseConfig(id: string) {
+  const config = configs.value.find((item) => item.id === id)
+  if (!config) return
+  selectedConfigId.value = config.id
+  chooseInstallation(config.installationId)
+  selectedConfigId.value = config.id
+}
+
+function startNew() {
+  selectedConfigId.value = ''
+  name.value = ''
+  configDraft.value = {}
+  selectedSecretRefs.value = []
+  configValid.value = true
 }
 
 async function load() {
@@ -94,6 +124,7 @@ async function load() {
     configs.value = configured.data
     installations.value = catalog.data
     secretReferences.value = secrets.data
+    probeResults.value = Object.fromEntries(Object.entries(probeResults.value).filter(([id]) => configured.data.some((item) => item.id === id)))
     if (!catalog.data.some((item) => item.id === selectedId.value)) {
       selectedId.value = ''
       selectedConfigId.value = ''
@@ -108,6 +139,49 @@ async function load() {
   } finally {
     if (generation === loadGeneration) loading.value = false
   }
+}
+
+async function probe(id: string) {
+  probingId.value = id
+  const result = await gateway.probeProviderConfig(id)
+  probingId.value = ''
+  if (result.ok) {
+    probeResults.value = { ...probeResults.value, [id]: result.data }
+    notify(result.data.state === 'ready' ? 'Provider sẵn sàng' : 'Provider chưa sẵn sàng', { tone: result.data.state === 'ready' ? 'success' : 'error', message: result.data.checks.map((check) => check.message).join(' · '), assertive: result.data.state !== 'ready' })
+  } else {
+    notify('Không thể kiểm tra provider', { tone: 'error', message: result.meta.offline ? 'Manager API đang ngoại tuyến.' : 'Cấu hình provider không còn khả dụng.', assertive: true })
+  }
+}
+
+function requestRemove(id: string) {
+  removeId.value = id
+}
+
+function closeRemove() {
+  removeId.value = ''
+}
+
+async function remove() {
+  const target = removeTarget.value
+  if (!target) return
+  removing.value = true
+  const result = await gateway.deleteProviderConfig(target.id, target.etag)
+  removing.value = false
+  if (!result.ok) {
+    notify('Không thể xóa provider config', { tone: 'error', message: result.meta.offline ? 'Manager API đang ngoại tuyến.' : 'Config đang được dùng hoặc đã thay đổi; hãy tải lại.', assertive: true })
+    return
+  }
+  configs.value = configs.value.filter((item) => item.id !== target.id)
+  const nextProbeResults = { ...probeResults.value }
+  delete nextProbeResults[target.id]
+  probeResults.value = nextProbeResults
+  removeId.value = ''
+  if (selectedConfigId.value === target.id) {
+    const fallback = configs.value.find((item) => item.installationId === target.installationId)
+    if (fallback) chooseConfig(fallback.id)
+    else startNew()
+  }
+  notify('Đã ẩn provider config', { tone: 'success', message: 'Các revision lịch sử vẫn được giữ nguyên.' })
 }
 
 async function focusStateHeading() {
@@ -132,7 +206,7 @@ async function save() {
     if (result.ok) {
       configs.value = [...configs.value.filter((item) => item.id !== result.data.id), result.data]
       selectedConfigId.value = result.data.id
-      notify('Đã lưu provider config', { tone: 'success', message: 'Revision đã được cập nhật; selection chỉ đổi sau khi bạn chọn và publish trong Assistant.' })
+      notify('Đã lưu cấu hình dịch vụ', { tone: 'success', message: 'Cấu hình mới đã sẵn sàng; trợ lý chỉ đổi dịch vụ khi bạn chọn và áp dụng.' })
     } else {
       saveError.value = result.meta.offline
         ? 'Đang ngoại tuyến; bản nháp vẫn được giữ trên màn hình và chưa được gửi.'
@@ -170,13 +244,13 @@ function toggleSecretReference(id: string, checked: boolean) {
     <header class="provider-header">
       <div>
         <p class="eyebrow">
-          Control plane
-        </p><h1>Provider registry</h1><p class="lede">
-          Cài đặt và cấu hình VAD, ASR, LLM, TTS, Intent, Memory bằng manifest/schema; không sửa source provider.
+          Dịch vụ AI
+        </p><h1>Các dịch vụ AI</h1><p class="lede">
+          Chọn cách Veetee nghe, hiểu và trả lời. Bạn có thể thay đổi cấu hình mà không cần sửa code.
         </p>
       </div>
       <VtBadge tone="primary">
-        Config-driven
+        Có thể tùy chỉnh
       </VtBadge>
     </header>
     <div
@@ -209,117 +283,163 @@ function toggleSecretReference(id: string, checked: boolean) {
     </VtCard>
     <div
       v-else-if="loadState === 'ready' && selected"
-      class="provider-layout"
+      class="provider-content"
     >
-      <FormSection
-        title="Provider installation"
-        description="Catalog do server publish; field form không hardcode theo vendor."
-      >
-        <VtFormField
-          label="Installation"
-          for-id="provider-installation"
+      <div class="provider-list-toolbar">
+        <p>Mỗi dịch vụ có một cấu hình đang dùng. Khi kiểm tra lỗi, Veetee không tự đổi sang dịch vụ khác.</p>
+        <VtButton
+          size="sm"
+          variant="primary"
+          @click="startNew"
         >
-          <VtSelect
-            id="provider-installation"
-            :model-value="selectedId"
-            label="Installation"
-            :options="options"
-            @update:model-value="chooseInstallation"
+          Tạo cấu hình
+        </VtButton>
+      </div>
+      <ProviderConfigList
+        v-model:query="providerQuery"
+        v-model:kind="providerKindFilter"
+        :configs="configs"
+        :installations="installations"
+        :selected-id="selectedConfigId"
+        :probe-results="probeResults"
+        :probing-id="probingId"
+        @select="chooseConfig"
+        @probe="probe"
+        @remove="requestRemove"
+      />
+      <div class="provider-layout">
+        <FormSection
+          title="Loại dịch vụ"
+          description="Chọn dịch vụ cần cấu hình; các trường bên dưới tự sinh theo loại đã chọn."
+        >
+          <VtFormField
+            label="Dịch vụ"
+            for-id="provider-installation"
+          >
+            <VtSelect
+              id="provider-installation"
+              :model-value="selectedId"
+              label="Dịch vụ"
+              :options="options"
+              @update:model-value="chooseInstallation"
+            />
+          </VtFormField>
+          <div class="provider-meta">
+            <VtStatus
+              tone="online"
+              :label="selected.kind.toUpperCase()"
+            /><span>Phiên bản {{ selected.version }}</span><span>{{ schemaKeys.length }} trường cấu hình</span>
+          </div>
+        </FormSection>
+        <VtCard class="config-card">
+          <h2>Cấu hình dịch vụ</h2>
+          <p class="muted">
+            Các trường được sinh tự động. Khóa kết nối chỉ được lưu an toàn và không hiển thị lại trên trình duyệt.
+          </p>
+          <VtFormField
+            label="Tên cấu hình"
+            for-id="provider-name"
+          >
+            <VtInput
+              id="provider-name"
+              v-model="name"
+              name="provider-config-name"
+              autocomplete="off"
+              placeholder="Tên hiển thị…"
+            />
+          </VtFormField>
+          <SchemaConfigForm
+            v-model="configDraft"
+            :schema="selected.configSchema"
+            :disabled="saving"
+            @validity-change="configValid = $event"
           />
-        </VtFormField>
-        <div class="provider-meta">
-          <VtStatus
-            tone="online"
-            :label="selected.kind.toUpperCase()"
-          /><span>manifest v{{ selected.version }}</span><span>schema fields: {{ schemaKeys.length }}</span>
-        </div>
-      </FormSection>
-      <VtCard class="config-card">
-        <h2>Config revision</h2>
-        <p class="muted">
-          Field được sinh từ manifest JSON Schema; secret chỉ tham chiếu bằng secretRef và plaintext key không đi vào browser.
-        </p>
-        <VtFormField
-          label="Tên cấu hình"
-          for-id="provider-name"
-        >
-          <VtInput
-            id="provider-name"
-            v-model="name"
-            name="provider-config-name"
-            autocomplete="off"
-            placeholder="Tên hiển thị…"
-          />
-        </VtFormField>
-        <SchemaConfigForm
-          v-model="configDraft"
-          :schema="selected.configSchema"
-          :disabled="saving"
-          @validity-change="configValid = $event"
-        />
-        <VtFormField
-          label="Secret references"
-          for-id="provider-secrets"
-          hint="Chọn metadata secret; plaintext không đi vào browser."
-        >
-          <div
-            id="provider-secrets"
-            class="secret-selection"
+          <VtFormField
+            label="Khóa kết nối"
+            for-id="provider-secrets"
+            hint="Chọn khóa đã lưu an toàn; giá trị bí mật không hiển thị trên màn hình."
           >
             <div
-              v-for="item in secretReferences"
-              :key="item.id"
-              class="secret-option"
+              id="provider-secrets"
+              class="secret-selection"
             >
-              <VtCheckbox
-                :model-value="selectedSecretRefs.includes(item.id)"
-                :label="`${item.name} · v${item.version}`"
-                :disabled="saving"
-                @update:model-value="toggleSecretReference(item.id, $event)"
-              />
-              <span class="secret-option-meta"><small>{{ item.status }}</small></span>
+              <div
+                v-for="item in secretReferences"
+                :key="item.id"
+                class="secret-option"
+              >
+                <VtCheckbox
+                  :model-value="selectedSecretRefs.includes(item.id)"
+                  :label="`${item.name} · v${item.version}`"
+                  :disabled="saving"
+                  @update:model-value="toggleSecretReference(item.id, $event)"
+                />
+                <span class="secret-option-meta"><small>{{ item.status }}</small></span>
+              </div>
+              <p
+                v-if="unknownSecretRefs.length"
+                class="unknown-secret"
+              >
+                Một khóa kết nối cũ chưa có thông tin hiển thị vẫn được giữ nguyên: {{ unknownSecretRefs.join(', ') }}
+              </p>
+              <p
+                v-if="!secretReferences.length && !unknownSecretRefs.length"
+                class="unknown-secret"
+              >
+                Chưa có khóa kết nối. Bạn có thể tạo khóa ở phần bên dưới rồi chọn lại.
+              </p>
             </div>
+          </VtFormField>
+          <div class="actions">
             <p
-              v-if="unknownSecretRefs.length"
-              class="unknown-secret"
+              v-if="saveError"
+              ref="saveErrorHeading"
+              class="provider-save-error"
+              role="alert"
+              tabindex="-1"
             >
-              Secret reference chưa có metadata trong danh sách vẫn được giữ nguyên: {{ unknownSecretRefs.join(', ') }}
+              {{ saveError }}
             </p>
-            <p
-              v-if="!secretReferences.length && !unknownSecretRefs.length"
-              class="unknown-secret"
+            <VtButton
+              variant="primary"
+              :loading="saving"
+              :disabled="!name.trim() || !configValid"
+              @click="save"
             >
-              Chưa có secret. Tạo secret ở panel bên dưới rồi chọn lại.
-            </p>
+              Lưu cấu hình
+            </VtButton>
           </div>
-        </VtFormField>
-        <div class="actions">
-          <p
-            v-if="saveError"
-            ref="saveErrorHeading"
-            class="provider-save-error"
-            role="alert"
-            tabindex="-1"
+          <VtCard
+            v-if="selectedProbe"
+            class="probe-card"
+            role="status"
           >
-            {{ saveError }}
-          </p>
-          <VtButton
-            variant="primary"
-            :loading="saving"
-            :disabled="!name.trim() || !configValid"
-            @click="save"
-          >
-            Lưu config revision
-          </VtButton>
-        </div>
-      </VtCard>
-      <SecretReferencePanel
-        :gateway="gateway"
-        :items="secretReferences"
-        :selected-ids="selectedSecretRefs"
-        @update:selected-ids="selectedSecretRefs = $event"
-        @changed="load"
-      />
+            <div class="probe-heading">
+              <div><h3>Kết quả kiểm tra</h3><p>{{ selectedProbe.checkedAt }} · {{ selectedProbe.durationMs }} ms</p></div>
+              <VtStatus
+                :tone="selectedProbe.state === 'ready' ? 'online' : 'error'"
+                :label="selectedProbe.state === 'ready' ? 'Sẵn sàng' : 'Không khả dụng'"
+              />
+            </div>
+            <ul class="probe-checks">
+              <li
+                v-for="check in selectedProbe.checks"
+                :key="check.id"
+                :class="`is-${check.state}`"
+              >
+                <strong>{{ checkLabel(check.id) }}</strong><span>{{ check.message }}</span>
+              </li>
+            </ul>
+          </VtCard>
+        </VtCard>
+        <SecretReferencePanel
+          :gateway="gateway"
+          :items="secretReferences"
+          :selected-ids="selectedSecretRefs"
+          @update:selected-ids="selectedSecretRefs = $event"
+          @changed="load"
+        />
+      </div>
     </div>
     <VtCard
       v-else
@@ -331,7 +451,7 @@ function toggleSecretReference(id: string, checked: boolean) {
       >
         Catalog provider đang trống
       </h2>
-      <p>Catalog chưa được publish hoặc API đang ở chế độ preview fixture.</p>
+      <p>Catalog chưa được publish hoặc chưa có installation khả dụng.</p>
       <VtButton
         variant="secondary"
         :loading="loading"
@@ -340,12 +460,38 @@ function toggleSecretReference(id: string, checked: boolean) {
         Tải lại catalog
       </VtButton>
     </VtCard>
+    <VtDialog
+      :open="Boolean(removeTarget)"
+      title="Ẩn provider config?"
+      :description="removeTarget ? `${removeTarget.name} sẽ không còn xuất hiện trong danh sách chọn. Các revision lịch sử vẫn được giữ.` : undefined"
+      width="sm"
+      @update:open="!$event && closeRemove()"
+    >
+      <p class="dialog-warning">
+        Nếu config đang được assistant sử dụng, thao tác sẽ bị từ chối để không làm gián đoạn phiên đang chạy.
+      </p>
+      <template #footer>
+        <VtButton @click="removeId = ''">
+          Hủy
+        </VtButton>
+        <VtButton
+          variant="danger"
+          :loading="removing"
+          @click="remove"
+        >
+          Ẩn cấu hình
+        </VtButton>
+      </template>
+    </VtDialog>
   </main>
 </template>
 
 <style scoped>
 .provider-page { display: grid; gap: 16px; }
 .provider-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.provider-content { display: grid; gap: 14px; }
+.provider-list-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--vt-text-muted); font-size: 10px; }
+.provider-list-toolbar p { margin: 0; }
 .secret-selection { display: grid; gap: 7px; min-height: 38px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); padding: 9px 10px; }
 .secret-option { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--vt-text-soft); font-size: 11px; }
 .secret-option :deep(.vt-checkbox-label) { min-width: 0; flex: 1; cursor: pointer; }
@@ -361,7 +507,16 @@ h2 { margin-bottom: 6px; font-size: 14px; }
 .provider-layout { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(0, 1.2fr); gap: 14px; align-items: start; }
 .provider-meta { display: flex; align-items: center; gap: 10px; margin-top: 12px; color: var(--vt-text-muted); font-size: 10px; }
 .config-card { display: grid; gap: 12px; }
+.probe-card { display: grid; gap: 9px; background: var(--vt-surface-subtle); padding: 12px; }
+.probe-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.probe-heading h3 { margin: 0; color: var(--vt-text); font-size: 12px; }
+.probe-heading p { margin: 2px 0 0; color: var(--vt-text-muted); font-size: 9px; }
+.probe-checks { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.probe-checks li { display: flex; gap: 8px; border: 1px solid var(--vt-border); border-radius: 4px; background: var(--vt-surface); padding: 6px 7px; color: var(--vt-text-muted); font-size: 9px; }
+.probe-checks li strong { min-width: 52px; color: var(--vt-text-soft); font-weight: 600; }
+.probe-checks li.is-failed { border-color: #efc2c6; background: var(--vt-danger-soft); color: var(--vt-danger); }
 .actions { display: flex; justify-content: flex-end; border-top: 1px solid var(--vt-border); padding-top: 12px; }
+.dialog-warning { margin: 0; color: var(--vt-text-muted); font-size: 11px; line-height: 1.5; }
 .provider-state, .empty-card { color: var(--vt-text-muted); padding: 24px; text-align: center; }
 .provider-state h2, .empty-card h2 { color: var(--vt-text); font-size: 14px; }
 .provider-state p, .empty-card p { margin: 7px auto 13px; max-width: 460px; font-size: 11px; line-height: 1.5; }

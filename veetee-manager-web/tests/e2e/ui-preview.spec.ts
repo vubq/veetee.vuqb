@@ -126,15 +126,15 @@ test('provider unavailable không fallback và conflict giữ draft', async ({ p
 
 test('provider registry sinh form từ schema và lưu revision', async ({ page }) => {
   await page.goto('/providers')
-  await expect(page.getByRole('heading', { name: 'Provider registry' })).toBeVisible()
-  await expect(page.getByRole('textbox', { name: 'Endpoint' })).toHaveValue('https://api.groq.com/openai/v1')
-  await expect(page.getByRole('spinbutton', { name: 'Max Tokens' })).toHaveValue('512')
-  await expect(page.getByRole('switch', { name: 'Supports Tools' })).toBeChecked()
-  await expect(page.getByRole('textbox', { name: 'Advanced JSON' })).toHaveValue(/toolPolicy/)
+  await expect(page.getByRole('heading', { name: 'Các dịch vụ AI' })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Địa chỉ dịch vụ' })).toHaveValue('https://api.groq.com/openai/v1')
+  await expect(page.getByRole('spinbutton', { name: 'Độ dài trả lời tối đa' })).toHaveValue('512')
+  await expect(page.getByRole('switch', { name: 'Cho phép gọi công cụ' })).toBeChecked()
+  await expect(page.getByRole('textbox', { name: 'Cấu hình nâng cao' })).toHaveValue(/toolPolicy/)
 
-  await page.getByRole('spinbutton', { name: 'Max Tokens' }).fill('640')
-  await page.getByRole('button', { name: 'Lưu config revision' }).click()
-  await expect(page.getByText('Đã lưu provider config', { exact: true })).toBeVisible()
+  await page.getByRole('spinbutton', { name: 'Độ dài trả lời tối đa' }).fill('640')
+  await page.getByRole('button', { name: 'Lưu cấu hình' }).click()
+  await expect(page.getByText('Đã lưu cấu hình dịch vụ', { exact: true })).toBeVisible()
 })
 
 test('mobile không overflow và contextual navigation còn label', async ({ page }) => {

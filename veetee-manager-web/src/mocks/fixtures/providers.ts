@@ -32,6 +32,7 @@ export function createProviderRegistryFixtures(): {
     id: PROVIDER_INSTALLATION_IDS.groq,
     kind: 'llm',
     displayNameKey: 'Groq streaming (preview)',
+    displayName: 'Groq — trả lời nhanh',
     version: '1.0.0',
     manifest: { locales: ['*'], supportsStreaming: true, supportsTools: true, secretFields: ['apiKey'] },
     configSchema: {
@@ -51,6 +52,7 @@ export function createProviderRegistryFixtures(): {
     id: PROVIDER_INSTALLATION_IDS.vieneu,
     kind: 'tts',
     displayNameKey: 'VieNeu streaming (preview)',
+    displayName: 'VieNeu — giọng nói tiếng Việt',
     version: '1.0.0',
     manifest: { locales: ['vi-VN'], supportsStreaming: true, supportsCancel: true },
     configSchema: {

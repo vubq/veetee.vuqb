@@ -175,7 +175,7 @@ const providerInstallationResponseSchema = {
   type: 'object', additionalProperties: false, required: ['id', 'kind', 'displayNameKey', 'version', 'manifest', 'configSchema'],
   properties: {
     id: { type: 'string' }, kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] },
-    displayNameKey: { type: 'string' }, version: { type: 'string' }, manifest: { type: 'object', additionalProperties: true }, configSchema: { type: 'object', additionalProperties: true },
+    displayNameKey: { type: 'string' }, displayName: { type: 'string' }, version: { type: 'string' }, manifest: { type: 'object', additionalProperties: true }, configSchema: { type: 'object', additionalProperties: true },
   },
 } as const
 const providerConfigResponseSchema = {
@@ -183,7 +183,14 @@ const providerConfigResponseSchema = {
   properties: {
     id: { type: 'string' }, ownerId: { type: 'string' }, installationId: { type: 'string' }, name: { type: 'string' },
     revision: { type: 'integer' }, config: { type: 'object', additionalProperties: true }, secretRefs: { type: 'array', items: { type: 'string' } },
-    etag: { type: 'string' }, updatedAt: { type: 'string' },
+    etag: { type: 'string' }, updatedAt: { type: 'string' }, archivedAt: { type: ['string', 'null'] },
+  },
+} as const
+const providerProbeResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['providerConfigId', 'state', 'checkedAt', 'durationMs', 'checks'],
+  properties: {
+    providerConfigId: { type: 'string' }, state: { type: 'string', enum: ['ready', 'unavailable'] }, checkedAt: { type: 'string' }, durationMs: { type: 'number', minimum: 0 },
+    checks: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'state', 'message'], properties: { id: { type: 'string' }, state: { type: 'string', enum: ['passed', 'failed', 'skipped'] }, message: { type: 'string' } } } },
   },
 } as const
 const assistantResponseSchema = {
@@ -664,6 +671,14 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
     try { const value = await store.updateProviderConfig(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.delete<{ Params: { id: string } }>('/api/v1/provider-configs/:id', { schema: { params: resourceIdParamsSchema, response: { 204: { type: 'null' } } } }, async (request, reply) => {
+    const ifMatch = request.headers['if-match']
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
+    try { await store.deleteProviderConfig(owner(request), request.params.id, ifMatch); return reply.code(204).send() } catch (error) { return sendProblem(reply, error) }
+  })
+  app.post<{ Params: { id: string } }>('/api/v1/provider-configs/:id/probe', { schema: { params: resourceIdParamsSchema, response: { 200: providerProbeResponseSchema } } }, async (request, reply) => {
+    try { return await store.probeProviderConfig(owner(request), request.params.id) } catch (error) { return sendProblem(reply, error) }
   })
 
   app.get<{ Querystring: { search?: string } }>('/api/v1/assistants', { schema: {

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { requireInjection } from '@/app/requireInjection'
+import { isPreviewMode } from '@/app/runtime-mode'
 import type { PreviewScenarioId } from '@/domain'
 import { previewControlGatewayKey } from '@/gateways'
 import VtButton from '@/ui/primitives/VtButton.vue'
@@ -40,6 +41,7 @@ async function reset() {
 
 <template>
   <aside
+    v-if="isPreviewMode"
     class="scenario-toolbar"
     aria-label="Điều khiển bản xem trước"
   >

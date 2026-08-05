@@ -51,18 +51,18 @@ describe('SchemaConfigForm', () => {
   it('renders primitive fields from schema without provider-specific keys', async () => {
     const { view } = renderForm()
 
-    expect(await view.findByRole('textbox', { name: 'Endpoint' })).toBeTruthy()
-    expect(view.getByRole('textbox', { name: 'Model' })).toBeTruthy()
-    expect(view.getByRole('spinbutton', { name: 'Max Tokens' })).toBeTruthy()
-    expect(view.getByRole('switch', { name: 'Enabled' })).toBeTruthy()
-    expect(view.getByRole('combobox', { name: 'Mode' })).toBeTruthy()
-    expect(view.getByRole('textbox', { name: 'Advanced JSON' })).toBeTruthy()
+    expect(await view.findByRole('textbox', { name: 'Địa chỉ dịch vụ' })).toBeTruthy()
+    expect(view.getByRole('textbox', { name: 'Mô hình trả lời' })).toBeTruthy()
+    expect(view.getByRole('spinbutton', { name: 'Độ dài trả lời tối đa' })).toBeTruthy()
+    expect(view.getByRole('switch', { name: 'Bật dịch vụ' })).toBeTruthy()
+    expect(view.getByRole('combobox', { name: 'Chế độ tổng hợp' })).toBeTruthy()
+    expect(view.getByRole('textbox', { name: 'Cấu hình nâng cao' })).toBeTruthy()
   })
 
   it('coerces numeric and enum values while preserving unknown/advanced config', async () => {
     const { view, onUpdate } = renderForm()
 
-    await fireEvent.update(view.getByRole('spinbutton', { name: 'Max Tokens' }), '240')
+    await fireEvent.update(view.getByRole('spinbutton', { name: 'Độ dài trả lời tối đa' }), '240')
     const value = lastConfig(onUpdate)
     expect(value.maxTokens).toBe(240)
     expect(value.unknownField).toBe('preserve-me')
@@ -74,7 +74,7 @@ describe('SchemaConfigForm', () => {
   it('uses VtSwitch for boolean fields and emits typed values', async () => {
     const { view, onUpdate } = renderForm()
 
-    await fireEvent.click(view.getByRole('switch', { name: 'Enabled' }))
+    await fireEvent.click(view.getByRole('switch', { name: 'Bật dịch vụ' }))
     expect(lastConfig(onUpdate).enabled).toBe(false)
   })
 
@@ -82,7 +82,7 @@ describe('SchemaConfigForm', () => {
     const { view, onUpdate, onValidity } = renderForm()
     const before = onUpdate.mock.calls.length
 
-    await fireEvent.update(view.getByRole('textbox', { name: 'Advanced JSON' }), '{')
+    await fireEvent.update(view.getByRole('textbox', { name: 'Cấu hình nâng cao' }), '{')
 
     expect(await view.findByText('JSON nâng cao không hợp lệ; cần một object JSON.')).toBeTruthy()
     expect(onUpdate.mock.calls.length).toBe(before)
@@ -94,7 +94,7 @@ describe('SchemaConfigForm', () => {
     const before = onUpdate.mock.calls.length
 
     await fireEvent.update(
-      view.getByRole('textbox', { name: 'Advanced JSON' }),
+      view.getByRole('textbox', { name: 'Cấu hình nâng cao' }),
       JSON.stringify({ rules: 'not-an-array', unknownField: 'preserve-me' }),
     )
 
@@ -106,7 +106,7 @@ describe('SchemaConfigForm', () => {
     const { view, onUpdate } = renderForm()
     const before = onUpdate.mock.calls.length
 
-    await fireEvent.update(view.getByRole('textbox', { name: 'Endpoint' }), 'not-a-uri')
+    await fireEvent.update(view.getByRole('textbox', { name: 'Địa chỉ dịch vụ' }), 'not-a-uri')
 
     expect(await view.findByText('Cần một URI hợp lệ.')).toBeTruthy()
     expect(onUpdate.mock.calls.length).toBe(before)

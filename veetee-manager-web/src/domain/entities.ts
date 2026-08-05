@@ -139,6 +139,7 @@ export interface ProviderInstallationView {
   id: string
   kind: ProviderKind
   displayNameKey: string
+  displayName?: string
   version: string
   manifest: Record<string, unknown>
   configSchema: Record<string, unknown>
@@ -152,6 +153,17 @@ export interface ProviderConfigRecord {
   config: Record<string, unknown>
   secretRefs: string[]
   etag: string
+  archivedAt?: IsoDateTime | null
+}
+
+export type ProviderProbeCheckState = 'passed' | 'failed' | 'skipped'
+
+export interface ProviderProbeResult {
+  providerConfigId: string
+  state: 'ready' | 'unavailable'
+  checkedAt: IsoDateTime
+  durationMs: number
+  checks: Array<{ id: string; state: ProviderProbeCheckState; message: string }>
 }
 
 export type SecretReferenceStatus = 'available' | 'unavailable' | 'revoked'
