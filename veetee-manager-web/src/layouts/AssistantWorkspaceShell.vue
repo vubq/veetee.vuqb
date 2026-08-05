@@ -138,6 +138,8 @@ function localeLabel(locale: string) {
   .heading-actions { width: 100%; margin-left: 0; padding-left: 42px; }
   .workspace-header { align-items: flex-start; padding: 13px 14px; }
   .workspace-content { padding: 14px 12px 24px; }
-  .workspace-link { padding-inline: 8px; font-size: 10px; }
+  .workspace-navigation { overflow-x: visible; }
+  .workspace-navigation nav { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+  .workspace-link { min-width: 0; padding-inline: 8px; font-size: 10px; }
 }
 </style>

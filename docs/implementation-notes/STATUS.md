@@ -1720,3 +1720,26 @@
   `/etc/hosts` cho `103.84.155.153` và `103.84.155.217`; truy cập đúng hostname
   trên chính máy trả HTML `200` và API unauthenticated `401`. Đây là thay đổi
   hostname-only, không đổi Wi-Fi/route; cần cập nhật nếu Funnel thay IP.
+
+### Mobile UX regression và ESP32 revalidation (2026-08-05)
+
+- Web đã có menu mobile “Dịch vụ AI”, workspace navigation grid 2 cột, provider
+  CTA full-width/badge nowrap, role advanced sections collapsed mặc định và
+  dialog guard cho draft chưa lưu. Regression hiện tại: `npm run test` pass với
+  **96/96 unit**, typecheck, ESLint và production build; Chromium E2E **15/15**
+  (menu, collapse, draft guard, overflow, provider CTA và axe gate).
+- Firmware source không đổi bởi lát cắt UI. ESP-IDF **6.0.2** build pass
+  (`0c1c487-dirty`, app `0x15a540`, 66% free), host CTest **9/9**; flash
+  `/dev/ttyACM0` không erase NVS/Wi-Fi. Serial xác nhận ESP32-S3 rev 0.2,
+  16 MB flash, 8 MB PSRAM, ST7789 240x280, AEC/noise suppression, WakeNet
+  `Computer`, Wi-Fi profile NVS, `connecting → listening`, WebSocket v3 và
+  `server hello accepted; session ready`, không panic/reset loop.
+- Audio permission smoke phát được wake + utterance (player exit 0), WakeNet
+  nhận `wake detected`/`wake start`; lượt không tới `state=speaking` trong 45 s,
+  nên không đánh dấu speaker/TTS physical pass. Report redact:
+  `/tmp/veetee-wake-after-ui-20260805.json`. Board được reset RTS (không erase)
+  để drain lượt dở; readiness cuối Voice/API/Web HTTP 200, Voice
+  `active_connections=1`, `active_turns=0`, `protocol_errors=0`.
+- Physical LCD backlight/orientation, âm lượng loa, PTT và barge-in vẫn cần chủ
+  dự án nhìn/nghe/chạm để đóng gate; serial/host evidence không thay thế các
+  kiểm tra này.

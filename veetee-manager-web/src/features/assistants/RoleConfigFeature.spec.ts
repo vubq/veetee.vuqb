@@ -70,6 +70,10 @@ function renderFeature(managerGateway: ManagerGateway) {
   })
 }
 
+async function openSection(view: ReturnType<typeof renderFeature>, title: string) {
+  await fireEvent.click(await view.findByRole('button', { name: new RegExp(title) }))
+}
+
 afterEach(() => vi.restoreAllMocks())
 
 describe('RoleConfigFeature read states', () => {
@@ -113,6 +117,7 @@ describe('RoleConfigFeature mutations', () => {
     })
     const view = renderFeature(gateway({ saveRoleConfig }))
 
+    await openSection(view, 'Giới hạn sử dụng')
     const maxTurns = await view.findByRole('spinbutton', { name: 'Lượt hội thoại đồng thời' })
     const retryAfter = view.getByRole('spinbutton', { name: 'Thời gian thử lại khi bận' })
     expect((maxTurns as HTMLInputElement).value).toBe('1')
@@ -152,6 +157,7 @@ describe('RoleConfigFeature mutations', () => {
     })
     const view = renderFeature(gateway({ saveRoleConfig }))
 
+    await openSection(view, 'Ngắt khi robot đang nói')
     const duplex = await view.findByRole('switch', { name: 'Vẫn nghe khi robot nói' })
     await fireEvent.click(duplex)
     await fireEvent.update(view.getByRole('spinbutton', { name: 'Số frame speech để xác nhận' }), '4')
@@ -169,6 +175,7 @@ describe('RoleConfigFeature mutations', () => {
     })
     const view = renderFeature(gateway({ saveRoleConfig }))
 
+    await openSection(view, 'Tự kết thúc khi chưa nghe thấy lời nói')
     const toggle = await view.findByRole('switch', { name: 'Bật tự kết thúc' })
     await fireEvent.click(toggle)
     const timeout = view.getByRole('spinbutton', { name: 'Thời gian chờ' })
@@ -192,6 +199,7 @@ describe('RoleConfigFeature mutations', () => {
     })
     const view = renderFeature(gateway({ saveRoleConfig }))
 
+    await openSection(view, 'Phản hồi khi đang xử lý')
     const deadline = await view.findByRole('spinbutton', { name: 'Thời gian chờ trước khi báo' })
     const message = view.getByRole('textbox', { name: 'Câu phản hồi khi đang xử lý' })
     await fireEvent.update(deadline, '800')
@@ -217,6 +225,7 @@ describe('RoleConfigFeature mutations', () => {
 
     const toggle = await view.findByRole('switch', { name: 'Bật phản hồi' })
     await fireEvent.click(toggle)
+    await openSection(view, 'Phản hồi khi đang xử lý')
     await fireEvent.update(view.getByRole('textbox', { name: 'Câu phản hồi khi đang xử lý' }), 'Đang xử lý.')
     await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
 

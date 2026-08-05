@@ -182,8 +182,75 @@ test('mobile không overflow và contextual navigation còn label', async ({ pag
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`/assistants/${assistantId}/config/role`)
   await expect(page.getByRole('link', { name: 'Mô hình & bộ nhớ' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Lịch sử hội thoại' })).toBeVisible()
+  const navigationMetrics = await page.locator('.workspace-navigation').evaluate((navigation) => ({
+    clientWidth: navigation.clientWidth,
+    scrollWidth: navigation.scrollWidth,
+  }))
+  expect(navigationMetrics.scrollWidth).toBeLessThanOrEqual(navigationMetrics.clientWidth)
   const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
   expect(hasOverflow).toBe(false)
+})
+
+test('mobile menu có Dịch vụ AI và điều hướng đúng màn hình', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/assistants')
+  await page.getByRole('button', { name: 'Mở điều hướng' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Dịch vụ AI' })).toBeVisible()
+  await page.getByRole('menuitem', { name: 'Dịch vụ AI' }).click()
+  await expect(page).toHaveURL(/\/providers$/)
+  await expect(page.getByRole('heading', { name: 'Các dịch vụ AI' })).toBeVisible()
+})
+
+test('role nâng cao thu gọn mặc định và cảnh báo bản nháp khi rời trang', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/assistants/${assistantId}/config/role`)
+
+  const limits = page.getByRole('button', { name: /Giới hạn sử dụng/ })
+  await expect(limits).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('spinbutton', { name: 'Lượt hội thoại đồng thời' })).toBeHidden()
+  await limits.click()
+  await expect(limits).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('spinbutton', { name: 'Lượt hội thoại đồng thời' })).toBeVisible()
+
+  const prompt = page.getByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })
+  const draft = 'Bản nháp chưa lưu cần được giữ lại.'
+  await prompt.fill(draft)
+  await page.getByRole('link', { name: 'Mô hình & bộ nhớ' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Bạn có thay đổi chưa lưu' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Ở lại' }).click()
+  await expect(page).toHaveURL(new RegExp(`/assistants/${assistantId}/config/role$`))
+  await expect(prompt).toHaveValue(draft)
+
+  await page.getByRole('link', { name: 'Mô hình & bộ nhớ' }).click()
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Rời trang' }).click()
+  await expect(page).toHaveURL(new RegExp(`/assistants/${assistantId}/config/model-memory$`))
+})
+
+test('provider CTA và badge không gây vỡ bố cục trên mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/providers')
+  const create = page.getByRole('button', { name: 'Tạo cấu hình' })
+  await expect(create).toBeVisible()
+  const metrics = await page.locator('.provider-list-toolbar').evaluate((toolbar) => {
+    const button = toolbar.querySelector<HTMLElement>('.vt-button')
+    const badge = document.querySelector<HTMLElement>('.list-heading .vt-badge')
+    if (!button || !badge) throw new Error('Khong tim thay CTA hoac badge provider')
+    return {
+      buttonWidth: button.getBoundingClientRect().width,
+      toolbarWidth: toolbar.getBoundingClientRect().width,
+      badgeHeight: badge.getBoundingClientRect().height,
+      badgeWhiteSpace: getComputedStyle(badge).whiteSpace,
+      bodyScrollWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    }
+  })
+  expect(metrics.buttonWidth).toBeGreaterThanOrEqual(metrics.toolbarWidth - 1)
+  expect(metrics.badgeWhiteSpace).toBe('nowrap')
+  expect(metrics.badgeHeight).toBeLessThanOrEqual(24)
+  expect(metrics.bodyScrollWidth).toBeLessThanOrEqual(metrics.viewportWidth)
 })
 
 test('@a11y core surfaces không có serious hoặc critical violation', async ({ page }) => {

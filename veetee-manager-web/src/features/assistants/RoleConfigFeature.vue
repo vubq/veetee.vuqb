@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Play, Save } from '@lucide/vue'
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
+import { useUnsavedChangesGuard } from '@/app/useUnsavedChangesGuard'
 import type { ProviderInstallationView, RevisionConflictProblem, RoleConfig, RoleConfigDraft, Versioned, VoiceProfile } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import FormSection from '@/ui/patterns/FormSection.vue'
@@ -17,6 +18,7 @@ import VtSkeleton from '@/ui/primitives/VtSkeleton.vue'
 import VtSwitch from '@/ui/primitives/VtSwitch.vue'
 import VtTextArea from '@/ui/primitives/VtTextArea.vue'
 import { notify } from '@/ui/primitives/notifications'
+import UnsavedChangesDialog from '@/ui/patterns/UnsavedChangesDialog.vue'
 
 import RevisionConflictDialog from './RevisionConflictDialog.vue'
 import { deriveLocaleOptions } from './locale-options'
@@ -43,6 +45,7 @@ const actionError = ref('')
 const stateHeading = ref<HTMLElement | null>(null)
 const actionErrorHeading = ref<HTMLElement | null>(null)
 const progressValid = ref(true)
+const advancedSectionsOpen = reactive({ limits: false, autoTurn: false, bargeIn: false, progress: false })
 let loadGeneration = 0
 let voiceGeneration = 0
 
@@ -100,6 +103,7 @@ const dirty = computed(() => {
   const original = toDraft(resource.value.value)
   return JSON.stringify(original) !== JSON.stringify(draft.value)
 })
+const unsavedGuard = useUnsavedChangesGuard(dirty)
 
 const maxActiveTurnsInvalid = computed(() => {
   const value = draft.value?.admission.maxActiveTurns
@@ -509,6 +513,9 @@ onMounted(load)
     <FormSection
       title="Giới hạn sử dụng"
       description="Giúp robot luôn ổn định khi có nhiều yêu cầu cùng lúc."
+      collapsible
+      :open="advancedSectionsOpen.limits"
+      @update:open="advancedSectionsOpen.limits = $event"
     >
       <div class="two-columns">
         <VtFormField
@@ -559,6 +566,9 @@ onMounted(load)
     <FormSection
       title="Tự kết thúc khi chưa nghe thấy lời nói"
       description="Sau khi được đánh thức, robot sẽ dừng lượt chờ nếu bạn chưa bắt đầu nói. Các cuộc trò chuyện đã bắt đầu không bị giới hạn."
+      collapsible
+      :open="advancedSectionsOpen.autoTurn"
+      @update:open="advancedSectionsOpen.autoTurn = $event"
     >
       <template #trailing>
         <VtSwitch
@@ -642,6 +652,9 @@ onMounted(load)
     <FormSection
       title="Ngắt khi robot đang nói"
       description="Cho phép robot dừng câu trả lời khi nhận ra bạn đang nói. Mặc định ưu tiên ổn định để tránh nghe nhầm."
+      collapsible
+      :open="advancedSectionsOpen.bargeIn"
+      @update:open="advancedSectionsOpen.bargeIn = $event"
     >
       <div class="policy-switches">
         <VtSwitch
@@ -704,8 +717,11 @@ onMounted(load)
 
     <ProgressAcknowledgementSection
       :model-value="draft.progress"
+      collapsible
+      :open="advancedSectionsOpen.progress"
       @update:model-value="updateProgress"
       @validity="progressValid = $event"
+      @update:open="advancedSectionsOpen.progress = $event"
     />
 
     <footer class="form-actions">
@@ -762,6 +778,11 @@ onMounted(load)
     @reload="reloadConflict"
     @copy="copyAndReload"
     @cancel="conflict = undefined"
+  />
+  <UnsavedChangesDialog
+    :open="unsavedGuard.open.value"
+    @stay="unsavedGuard.stay"
+    @leave="unsavedGuard.leave"
   />
 </template>
 

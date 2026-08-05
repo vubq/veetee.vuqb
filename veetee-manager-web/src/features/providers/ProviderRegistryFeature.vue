@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
+import { useUnsavedChangesGuard } from '@/app/useUnsavedChangesGuard'
 import type { ProviderConfigRecord, ProviderInstallationView, ProviderKind, ProviderProbeResult, SecretReference } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import FormSection from '@/ui/patterns/FormSection.vue'
@@ -19,6 +20,7 @@ import { notify } from '@/ui/primitives/notifications'
 import SchemaConfigForm from './SchemaConfigForm.vue'
 import SecretReferencePanel from './SecretReferencePanel.vue'
 import ProviderConfigList from './ProviderConfigList.vue'
+import UnsavedChangesDialog from '@/ui/patterns/UnsavedChangesDialog.vue'
 import { cloneConfig } from './schema-config'
 
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
@@ -241,6 +243,14 @@ async function save() {
 onMounted(load)
 
 const unknownSecretRefs = computed(() => selectedSecretRefs.value.filter((id) => !secretReferences.value.some((item) => item.id === id)))
+
+const editorDirty = computed(() => {
+  const current = configs.value.find((item) => item.id === selectedConfigId.value)
+  const draft = { name: name.value.trim(), config: cloneConfig(configDraft.value), secretRefs: [...selectedSecretRefs.value].sort() }
+  const saved = { name: current?.name ?? '', config: cloneConfig(current?.config ?? {}), secretRefs: [...(current?.secretRefs ?? [])].sort() }
+  return JSON.stringify(draft) !== JSON.stringify(saved)
+})
+const unsavedGuard = useUnsavedChangesGuard(editorDirty)
 
 function toggleSecretReference(id: string, checked: boolean) {
   const next = new Set(selectedSecretRefs.value)
@@ -498,6 +508,11 @@ function toggleSecretReference(id: string, checked: boolean) {
         </VtButton>
       </template>
     </VtDialog>
+    <UnsavedChangesDialog
+      :open="unsavedGuard.open.value"
+      @stay="unsavedGuard.stay"
+      @leave="unsavedGuard.leave"
+    />
   </main>
 </template>
 
@@ -540,4 +555,5 @@ h2 { margin-bottom: 6px; font-size: 14px; }
 .provider-state-error h2:focus-visible, .empty-card h2:focus-visible, .provider-save-error:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--vt-focus); border-radius: 3px; }
 .provider-save-error { flex: 1; margin: 0; color: var(--vt-danger); font-size: 11px; line-height: 1.45; }
 @media (max-width: 760px) { .provider-header, .provider-layout { grid-template-columns: 1fr; display: grid; } }
+@media (max-width: 600px) { .provider-list-toolbar { align-items: stretch; flex-direction: column; } .provider-list-toolbar .vt-button { width: 100%; } }
 </style>

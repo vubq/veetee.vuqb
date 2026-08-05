@@ -154,6 +154,7 @@ function probeLabel(result: ProviderProbeResult | undefined) {
 .list-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .list-heading h2 { margin: 0; color: var(--vt-text); font-size: 14px; }
 .list-heading p { max-width: 650px; margin: 4px 0 0; color: var(--vt-text-muted); font-size: 10px; line-height: 1.5; }
+.list-heading :deep(.vt-badge) { white-space: nowrap; }
 .list-filters { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 9px; }
 .provider-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .provider-row { display: flex; min-width: 0; align-items: center; gap: 10px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); padding: 6px 7px 6px 10px; transition: border-color var(--vt-transition), background var(--vt-transition), box-shadow var(--vt-transition); }

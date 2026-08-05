@@ -18,12 +18,14 @@ const logoutLoading = ref(false)
 const isAuthenticated = computed(() => authSession.status.value === 'authenticated')
 const mobileItems = computed<VtMenuItem[]>(() => [
   { id: 'assistants', label: 'Trợ lý' },
+  { id: 'providers', label: 'Dịch vụ AI' },
   ...(!isApiMode ? [{ id: 'components', label: 'Thư viện giao diện' }] : []),
   ...(!isApiMode ? [{ id: 'reset-hint', label: 'Đặt lại dữ liệu ở thanh công cụ', disabled: true, separatorBefore: true }] : []),
 ])
 
 function navigate(id: string) {
   if (id === 'assistants') void router.push('/assistants')
+  if (id === 'providers') void router.push('/providers')
   if (id === 'components') void router.push('/_preview/components')
 }
 

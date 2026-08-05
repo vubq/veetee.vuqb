@@ -8,10 +8,18 @@ import VtInput from '@/ui/primitives/VtInput.vue'
 import VtSwitch from '@/ui/primitives/VtSwitch.vue'
 import VtTextArea from '@/ui/primitives/VtTextArea.vue'
 
-const props = defineProps<{ modelValue?: ProgressAcknowledgementSettings }>()
+const props = withDefaults(defineProps<{
+  modelValue?: ProgressAcknowledgementSettings
+  collapsible?: boolean
+  open?: boolean
+}>(), {
+  collapsible: false,
+  open: true,
+})
 const emit = defineEmits<{
   'update:modelValue': [value: ProgressAcknowledgementSettings]
   validity: [value: boolean]
+  'update:open': [value: boolean]
 }>()
 
 const enabled = computed(() => props.modelValue?.enabled === true)
@@ -81,6 +89,9 @@ function updateMessage(value: string) {
   <FormSection
     title="Phản hồi khi đang xử lý"
     description="Nói một câu đã cấu hình nếu robot cần thêm thời gian để suy nghĩ hoặc thực hiện tác vụ."
+    :collapsible="props.collapsible"
+    :open="props.open"
+    @update:open="$emit('update:open', $event)"
   >
     <template #trailing>
       <VtSwitch
