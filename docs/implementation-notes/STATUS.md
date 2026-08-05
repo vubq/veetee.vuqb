@@ -1357,3 +1357,15 @@
 - Không flash/reset/erase ESP32, không đổi Wi-Fi/NVS/NetworkManager/route/
   firewall/Tailscale và không ghi raw audio, microphone capture, transcript hay
   credential.
+
+### Deployed handshake/no-speech verification — host + physical (2026-08-05)
+
+- Read-only probe trên Voice Server đã reload: WebSocket idle không gửi hello
+  nhận close `1002`; `hello_timeouts` tăng từ `0` lên `1`,
+  `protocol_errors` giữ `0`, active connection không bị rò.
+- `wake-test-no-speech.local.json` đạt lifecycle `wake detected → wake start →
+  NO_SPEECH_TIMEOUT → wake detector armed`; clip im lặng exit `0`, không forbidden
+  marker. Metrics sau scenario: `active_turns=0`, `turn_admissions=5`,
+  `turn_releases=5`, `auto_no_speech_timeouts=2`, `protocol_errors=0`.
+- Report redact ngoài Git: `/tmp/veetee-wake-no-speech-after-timeout-20260805.json`.
+  Không flash/reset/erase, đổi Wi-Fi/NVS/Tailscale hoặc lưu raw audio/transcript.
