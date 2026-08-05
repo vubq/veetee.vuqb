@@ -40,6 +40,12 @@ function formatTime(value: string) {
   return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
 }
 
+function boardLabel(value: string) {
+  const normalized = value.trim().toLocaleLowerCase()
+  if (!normalized || normalized.includes('bread') || normalized.includes('compact') || normalized.includes('wifi') || normalized.includes('lcd')) return 'Robot Veetee'
+  return value
+}
+
 async function load() {
   const generation = ++loadGeneration
   loading.value = true
@@ -52,7 +58,7 @@ async function load() {
       loadState.value = result.meta.offline ? 'offline' : 'error'
       loadError.value = result.meta.offline
         ? 'Đang ngoại tuyến; chưa thể đồng bộ danh sách thiết bị.'
-        : 'Không tải được danh sách thiết bị từ Manager API.'
+        : 'Không tải được danh sách thiết bị từ máy chủ quản trị.'
       await focusStateHeading()
       return
     }
@@ -61,7 +67,7 @@ async function load() {
   } catch {
     if (generation !== loadGeneration) return
     loadState.value = 'offline'
-    loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+    loadError.value = 'Không kết nối được máy chủ quản trị. Kiểm tra service hoặc mạng LAN.'
     await focusStateHeading()
   } finally {
     if (generation === loadGeneration) loading.value = false
@@ -210,7 +216,7 @@ onMounted(load)
         ref="stateHeading"
         tabindex="-1"
       >
-        {{ loadState === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được thiết bị' }}
+        {{ loadState === 'offline' ? 'Máy chủ quản trị đang ngoại tuyến' : 'Không tải được thiết bị' }}
       </h2>
       <p>{{ loadError }}</p>
       <VtButton
@@ -225,7 +231,7 @@ onMounted(load)
       v-else-if="loadState === 'empty'"
       :icon="Cpu"
       title="Chưa có thiết bị"
-      description="Ghép nối robot đầu tiên để quản lý firmware và trạng thái kết nối."
+      description="Ghép nối robot đầu tiên để theo dõi kết nối và phiên bản phần mềm."
     >
       <VtButton
         variant="primary"
@@ -256,10 +262,10 @@ onMounted(load)
               :tone="device.onlineState === 'online' ? 'online' : 'neutral'"
               :label="device.onlineState === 'online' ? 'Trực tuyến' : 'Ngoại tuyến'"
             />
-          </div><VtBadge>{{ device.board }}</VtBadge>
+          </div><VtBadge>{{ boardLabel(device.board) }}</VtBadge>
         </header>
         <dl class="device-details">
-          <div><dt>Địa chỉ</dt><dd>{{ device.maskedMac }}</dd></div><div><dt>Firmware</dt><dd>{{ device.firmwareVersion }}</dd></div><div><dt>Liên lạc gần nhất</dt><dd>{{ formatTime(device.lastSeenAt) }}</dd></div><div><dt>Hội thoại gần nhất</dt><dd>{{ device.lastConversationAt ? formatTime(device.lastConversationAt) : 'Chưa có' }}</dd></div>
+          <div><dt>Mã thiết bị</dt><dd>{{ device.maskedMac }}</dd></div><div><dt>Phiên bản phần mềm</dt><dd>{{ device.firmwareVersion }}</dd></div><div><dt>Liên lạc gần nhất</dt><dd>{{ formatTime(device.lastSeenAt) }}</dd></div><div><dt>Hội thoại gần nhất</dt><dd>{{ device.lastConversationAt ? formatTime(device.lastConversationAt) : 'Chưa có' }}</dd></div>
         </dl>
         <footer>
           <span><VtIcon

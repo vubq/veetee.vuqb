@@ -80,7 +80,7 @@ function updateMessage(value: string) {
 <template>
   <FormSection
     title="Phản hồi khi đang xử lý"
-    description="Phát một câu đã cấu hình nếu LLM hoặc tool chưa có token có nghĩa trước deadline."
+    description="Nói một câu đã cấu hình nếu robot cần thêm thời gian để suy nghĩ hoặc thực hiện tác vụ."
   >
     <template #trailing>
       <VtSwitch
@@ -91,10 +91,10 @@ function updateMessage(value: string) {
     </template>
     <div class="two-columns">
       <VtFormField
-        label="Deadline trước khi phản hồi (ms)"
+        label="Thời gian chờ trước khi báo (mili giây)"
         for-id="role-progress-deadline"
-        :error="deadlineInvalid ? 'Chọn giá trị từ 1 đến 1.499 ms.' : undefined"
-        hint="Phải thấp hơn mục tiêu TTFA 1.500 ms."
+        :error="deadlineInvalid ? 'Chọn giá trị từ 1 đến 1.499 mili giây.' : undefined"
+        hint="Nên thấp hơn 1.500 mili giây để robot phản hồi sớm."
       >
         <VtInput
           id="role-progress-deadline"
@@ -106,15 +106,15 @@ function updateMessage(value: string) {
           :model-value="String(deadlineMs)"
           name="progress-deadline-ms"
           :invalid="deadlineInvalid"
-          aria-label="Deadline trước khi phản hồi"
+          aria-label="Thời gian chờ trước khi báo"
           @update:model-value="updateDeadline"
         />
       </VtFormField>
       <VtFormField
-        label="Acknowledgement ID"
+        label="Tên mẫu phản hồi"
         for-id="role-progress-id"
-        :error="acknowledgementIdInvalid ? 'Nhập ID không rỗng, tối đa 64 ký tự.' : undefined"
-        hint="Stable key, không phải câu được đọc."
+        :error="acknowledgementIdInvalid ? 'Nhập tên không trống, tối đa 64 ký tự.' : undefined"
+        hint="Tên này chỉ giúp quản lý mẫu, không phải câu robot đọc."
       >
         <VtInput
           id="role-progress-id"
@@ -122,7 +122,7 @@ function updateMessage(value: string) {
           name="progress-acknowledgement-id"
           autocomplete="off"
           :invalid="acknowledgementIdInvalid"
-          aria-label="Acknowledgement ID"
+          aria-label="Tên mẫu phản hồi"
           @update:model-value="updateAcknowledgementId"
         />
       </VtFormField>

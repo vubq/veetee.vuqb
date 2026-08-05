@@ -53,7 +53,7 @@ watch(() => props.state, async () => {
         ref="heading"
         tabindex="-1"
       >
-        {{ state === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được thông tin trợ lý' }}
+        {{ state === 'offline' ? 'Máy chủ quản trị đang ngoại tuyến' : 'Không tải được thông tin trợ lý' }}
       </h1>
       <p>{{ errorMessage }}</p>
       <VtButton

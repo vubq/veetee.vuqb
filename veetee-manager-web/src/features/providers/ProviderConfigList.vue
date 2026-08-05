@@ -28,13 +28,17 @@ const kind = defineModel<ProviderKind | 'all'>('kind', { default: 'all' })
 
 const kindOptions: VtSelectOption[] = [
   { value: 'all', label: 'Tất cả loại' },
-  { value: 'vad', label: 'VAD' },
-  { value: 'asr', label: 'ASR' },
-  { value: 'llm', label: 'LLM' },
-  { value: 'tts', label: 'TTS' },
-  { value: 'intent', label: 'Intent' },
-  { value: 'memory', label: 'Memory' },
+  { value: 'vad', label: 'Lọc tiếng ồn' },
+  { value: 'asr', label: 'Nhận dạng lời nói' },
+  { value: 'llm', label: 'Bộ não trả lời' },
+  { value: 'tts', label: 'Giọng nói' },
+  { value: 'intent', label: 'Hiểu ý định' },
+  { value: 'memory', label: 'Ghi nhớ' },
 ]
+
+function kindLabel(kind: ProviderKind | undefined) {
+  return kindOptions.find((option) => option.value === kind)?.label ?? 'Dịch vụ'
+}
 
 const filtered = computed(() => {
   const normalized = query.value.trim().toLocaleLowerCase()
@@ -72,7 +76,7 @@ function probeLabel(result: ProviderProbeResult | undefined) {
         <p>Chọn một cấu hình để chỉnh sửa. Mỗi loại dịch vụ có một lựa chọn cho từng trợ lý.</p>
       </div>
       <VtBadge tone="primary">
-        {{ filtered.length }}/{{ configs.length }}
+        {{ filtered.length }} dịch vụ
       </VtBadge>
     </header>
     <div class="list-filters">
@@ -108,7 +112,7 @@ function probeLabel(result: ProviderProbeResult | undefined) {
           <span class="provider-row-copy">
             <strong :title="config.name">{{ config.name }}</strong>
             <span :title="installationLabel(config)">
-              {{ installationFor(config)?.kind?.toUpperCase() ?? 'UNKNOWN' }} · {{ installationLabel(config) }} · lần cập nhật {{ config.revision }}
+              {{ kindLabel(installationFor(config)?.kind) }} · {{ installationLabel(config) }}
             </span>
           </span>
           <VtStatus
@@ -120,7 +124,7 @@ function probeLabel(result: ProviderProbeResult | undefined) {
           <VtButton
             size="sm"
             :loading="probingId === config.id"
-            :aria-label="`Kiểm tra ${config.name}`"
+            :aria-label="`Kiểm tra kết nối ${config.name}`"
             @click="emit('probe', config.id)"
           >
             Kiểm tra
@@ -128,10 +132,10 @@ function probeLabel(result: ProviderProbeResult | undefined) {
           <VtButton
             size="sm"
             variant="ghost"
-            :aria-label="`Xóa ${config.name}`"
+            :aria-label="`Ẩn ${config.name}`"
             @click="emit('remove', config.id)"
           >
-            Xóa
+            Ẩn
           </VtButton>
         </div>
       </li>
@@ -140,7 +144,7 @@ function probeLabel(result: ProviderProbeResult | undefined) {
       v-else
       class="list-empty"
     >
-      {{ configs.length ? 'Không có cấu hình khớp bộ lọc.' : 'Chưa có cấu hình provider. Chọn installation để tạo cấu hình đầu tiên.' }}
+      {{ configs.length ? 'Không có dịch vụ nào khớp bộ lọc.' : 'Chưa có dịch vụ nào. Hãy chọn một dịch vụ để bắt đầu.' }}
     </p>
   </VtCard>
 </template>

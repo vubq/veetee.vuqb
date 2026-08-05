@@ -76,8 +76,8 @@ describe('RoleConfigFeature read states', () => {
   it('shows a retryable error when role config cannot be read', async () => {
     const view = renderFeature(gateway({ getRoleConfig: vi.fn(async () => failure()) }))
 
-    const heading = await view.findByRole('heading', { name: 'Không tải được role config' })
-    expect(view.getByText('Không tải được role config từ Manager API.')).toBeTruthy()
+    const heading = await view.findByRole('heading', { name: 'Không tải được cấu hình vai trò' })
+    expect(view.getByText('Không tải được cấu hình vai trò.')).toBeTruthy()
     expect(view.getByRole('button', { name: 'Thử lại' })).toBeTruthy()
     await waitFor(() => expect(document.activeElement).toBe(heading))
   })
@@ -85,8 +85,8 @@ describe('RoleConfigFeature read states', () => {
   it('does not expose a partial form when voice catalog read fails', async () => {
     const view = renderFeature(gateway({ listVoices: vi.fn(async () => failure()) }))
 
-    await view.findByRole('heading', { name: 'Không tải được role config' })
-    expect(view.getByText('Không tải được danh sách giọng nói; form tạm thời bị khóa để tránh chọn voice chưa đồng bộ.')).toBeTruthy()
+    await view.findByRole('heading', { name: 'Không tải được cấu hình vai trò' })
+    expect(view.getByText('Không tải được danh sách giọng nói; biểu mẫu tạm thời bị khóa để tránh chọn giọng chưa đồng bộ.')).toBeTruthy()
     expect(view.queryByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })).toBeNull()
   })
 
@@ -152,7 +152,7 @@ describe('RoleConfigFeature mutations', () => {
     })
     const view = renderFeature(gateway({ saveRoleConfig }))
 
-    const duplex = await view.findByRole('switch', { name: 'Duplex acoustic khi AI nói' })
+    const duplex = await view.findByRole('switch', { name: 'Vẫn nghe khi robot nói' })
     await fireEvent.click(duplex)
     await fireEvent.update(view.getByRole('spinbutton', { name: 'Số frame speech để xác nhận' }), '4')
     await fireEvent.update(view.getByRole('spinbutton', { name: 'Khoảng khóa sau khi ngắt' }), '1200')
@@ -169,9 +169,9 @@ describe('RoleConfigFeature mutations', () => {
     })
     const view = renderFeature(gateway({ saveRoleConfig }))
 
-    const toggle = await view.findByRole('switch', { name: 'Bật timeout' })
+    const toggle = await view.findByRole('switch', { name: 'Bật tự kết thúc' })
     await fireEvent.click(toggle)
-    const timeout = view.getByRole('spinbutton', { name: 'Chờ speech tối đa' })
+    const timeout = view.getByRole('spinbutton', { name: 'Thời gian chờ' })
     const message = view.getByRole('textbox', { name: 'Thông báo khi chưa nghe thấy' })
     await fireEvent.update(timeout, '7000')
     await fireEvent.update(message, 'Mình chưa nghe thấy bạn.')
@@ -192,7 +192,7 @@ describe('RoleConfigFeature mutations', () => {
     })
     const view = renderFeature(gateway({ saveRoleConfig }))
 
-    const deadline = await view.findByRole('spinbutton', { name: 'Deadline trước khi phản hồi' })
+    const deadline = await view.findByRole('spinbutton', { name: 'Thời gian chờ trước khi báo' })
     const message = view.getByRole('textbox', { name: 'Câu phản hồi khi đang xử lý' })
     await fireEvent.update(deadline, '800')
     await fireEvent.update(message, 'Mình đang xử lý yêu cầu của bạn.')
@@ -230,16 +230,16 @@ describe('RoleConfigFeature mutations', () => {
     await fireEvent.update(prompt, 'Draft role phải được giữ khi offline.')
     await fireEvent.click(view.getByRole('button', { name: 'Lưu bản nháp' }))
 
-    expect(await view.findByText('Đang ngoại tuyến; draft vẫn được giữ trên màn hình.')).toBeTruthy()
+    expect(await view.findByText('Đang ngoại tuyến; thay đổi vẫn được giữ trên màn hình.')).toBeTruthy()
     expect((prompt as HTMLTextAreaElement).value).toContain('Draft role')
   })
 
   it('surfaces a publish error without losing the loaded form', async () => {
     const view = renderFeature(gateway({ publishAssistant: vi.fn(async () => failure()) }))
     await view.findByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })
-    await fireEvent.click(view.getByRole('button', { name: 'Áp dụng runtime' }))
+    await fireEvent.click(view.getByRole('button', { name: 'Áp dụng cho robot' }))
 
-    expect(await view.findByText('Revision hiện tại không còn mới; hãy tải lại trước khi publish.')).toBeTruthy()
+    expect(await view.findByText('Cấu hình đã thay đổi ở nơi khác; hãy tải lại trước khi áp dụng.')).toBeTruthy()
     expect(view.getByRole('textbox', { name: 'Chỉ dẫn cho trợ lý' })).toBeTruthy()
   })
 })

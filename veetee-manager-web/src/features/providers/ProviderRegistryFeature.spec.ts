@@ -103,9 +103,9 @@ describe('ProviderRegistryFeature loading states', () => {
       listProviderInstallations: vi.fn(async () => failure()),
     }))
 
-    const heading = await view.findByRole('heading', { name: 'Không tải được provider registry' })
-    expect(heading.textContent).toContain('Không tải được provider registry')
-    expect(view.getByText('Không tải được catalog provider từ Manager API.')).toBeTruthy()
+    const heading = await view.findByRole('heading', { name: 'Không tải được danh sách dịch vụ' })
+    expect(heading.textContent).toContain('Không tải được danh sách dịch vụ')
+    expect(view.getByText('Không tải được danh sách dịch vụ.')).toBeTruthy()
     expect(view.getByRole('button', { name: 'Thử lại' })).toBeTruthy()
     expect(document.activeElement).toBe(heading)
   })
@@ -115,8 +115,8 @@ describe('ProviderRegistryFeature loading states', () => {
       listProviderConfigs: vi.fn(async () => failure()),
     }))
 
-    await view.findByRole('heading', { name: 'Không tải được provider registry' })
-    expect(view.getByText('Không tải được các config provider từ Manager API.')).toBeTruthy()
+    await view.findByRole('heading', { name: 'Không tải được danh sách dịch vụ' })
+    expect(view.getByText('Không tải được cấu hình dịch vụ.')).toBeTruthy()
     expect(view.queryByRole('textbox', { name: 'Tên cấu hình' })).toBeNull()
   })
 
@@ -125,7 +125,7 @@ describe('ProviderRegistryFeature loading states', () => {
       listProviderInstallations: vi.fn(async () => failure(true)),
     }))
 
-    expect(await view.findByRole('heading', { name: 'Manager API đang ngoại tuyến' })).toBeTruthy()
+    expect(await view.findByRole('heading', { name: 'Máy chủ quản trị đang ngoại tuyến' })).toBeTruthy()
     expect(view.getByRole('button', { name: 'Thử lại' })).toBeTruthy()
   })
 
@@ -149,8 +149,8 @@ describe('ProviderRegistryFeature loading states', () => {
       listProviderInstallations: vi.fn(async () => success([])),
     }))
 
-    expect(await view.findByRole('heading', { name: 'Catalog provider đang trống' })).toBeTruthy()
-    expect(view.getByRole('button', { name: 'Tải lại catalog' })).toBeTruthy()
+    expect(await view.findByRole('heading', { name: 'Chưa có dịch vụ nào' })).toBeTruthy()
+    expect(view.getByRole('button', { name: 'Tải lại danh sách' })).toBeTruthy()
     expect(view.queryByRole('textbox', { name: 'Tên cấu hình' })).toBeNull()
   })
 })
@@ -165,7 +165,7 @@ describe('ProviderRegistryFeature mutations', () => {
     await fireEvent.update(nameInput, 'Cấu hình offline')
     await fireEvent.click(view.getByRole('button', { name: 'Lưu cấu hình' }))
 
-    expect(await view.findByText('Đang ngoại tuyến; bản nháp vẫn được giữ trên màn hình và chưa được gửi.')).toBeTruthy()
+    expect(await view.findByText('Đang ngoại tuyến; thay đổi vẫn được giữ trên màn hình và chưa được gửi.')).toBeTruthy()
     expect((nameInput as HTMLInputElement).value).toBe('Cấu hình offline')
   })
 
@@ -179,7 +179,7 @@ describe('ProviderRegistryFeature mutations', () => {
     await fireEvent.click(view.getByRole('button', { name: 'Lưu cấu hình' }))
 
     const error = await view.findByRole('alert')
-    expect(error.textContent).toContain('bản nháp vẫn được giữ')
+    expect(error.textContent).toContain('thay đổi vẫn được giữ')
     expect((nameInput as HTMLInputElement).value).toBe('Cấu hình lỗi')
   })
 })

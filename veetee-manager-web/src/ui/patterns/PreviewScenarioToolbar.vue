@@ -46,7 +46,7 @@ async function reset() {
     aria-label="Điều khiển bản xem trước"
   >
     <div class="scenario-copy">
-      <strong>Tình huống</strong><span>Chỉ tác động MockGateway</span>
+      <strong>Tình huống</strong><span>Chỉ dùng để xem thử giao diện</span>
     </div>
     <div class="scenario-select">
       <VtSelect

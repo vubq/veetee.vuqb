@@ -206,7 +206,7 @@ async function runLongAction() {
               label="Xác nhận trước thao tác nhạy cảm"
             />
             <VtSwitch
-              label="Provider không khả dụng"
+              label="Dịch vụ tạm thời không khả dụng"
               disabled
             />
           </div>
@@ -216,7 +216,7 @@ async function runLongAction() {
       <VtCard class="preview-panel">
         <header><div><h3>Status & feedback</h3><p>Không dùng màu làm tín hiệu duy nhất.</p></div></header>
         <div class="specimen-row">
-          <VtBadge>Nháp #8</VtBadge><VtBadge tone="primary">
+          <VtBadge>Đang chỉnh sửa</VtBadge><VtBadge tone="primary">
             Đang cấu hình
           </VtBadge><VtBadge tone="success">
             Đã lưu
@@ -239,7 +239,7 @@ async function runLongAction() {
           />
         </div>
         <div class="specimen-row">
-          <VtButton @click="notify('Đã lưu bản nháp', { tone: 'success', message: 'Revision mới là #9.' })">
+          <VtButton @click="notify('Đã lưu thay đổi', { tone: 'success', message: 'Bạn có thể áp dụng thay đổi bất cứ lúc nào.' })">
             Toast thành công
           </VtButton><VtButton @click="notify('Không thể kết nối', { tone: 'error', message: 'Dữ liệu cũ vẫn được giữ để xem.', assertive: true })">
             Toast lỗi
@@ -265,7 +265,7 @@ async function runLongAction() {
             v-else
             class="error-copy"
           >
-            Provider đang không khả dụng. Không tự động đổi provider khác.
+            Dịch vụ đang không khả dụng. Lựa chọn hiện tại vẫn được giữ nguyên.
           </p>
         </div>
         <VtAccordion :items="accordionItems" />

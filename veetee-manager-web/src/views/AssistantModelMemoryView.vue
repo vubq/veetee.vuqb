@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 import { useAssistantSummary } from '@/features/assistants/useAssistantSummary'
 import AssistantSummaryState from '@/features/assistants/AssistantSummaryState.vue'
@@ -8,7 +8,6 @@ import AssistantWorkspaceShell from '@/layouts/AssistantWorkspaceShell.vue'
 import VtSkeleton from '@/ui/primitives/VtSkeleton.vue'
 
 const { assistant, assistantId, loading, loadState, loadError, reloadAssistant } = useAssistantSummary()
-const revision = ref(0)
 const shellAssistant = computed(() => assistant.value ? { id: assistant.value.id, name: assistant.value.name, locale: assistant.value.locale, status: assistant.value.onlineDeviceCount > 0 ? 'online' : 'offline' } : undefined)
 </script>
 
@@ -26,12 +25,12 @@ const shellAssistant = computed(() => assistant.value ? { id: assistant.value.id
     v-else-if="loadState === 'ready' && shellAssistant"
     :assistant="shellAssistant"
     section-title="Mô hình & bộ nhớ"
-    section-description="Provider selection và memory policy"
-    :revision-label="`Revision #${revision || '—'}`"
+    section-description="Chọn cách trợ lý nghe, hiểu, trả lời và ghi nhớ"
+    revision-label="Đã lưu"
   >
     <ModelMemoryFeature
       :assistant-id="assistantId"
-      @revision="revision = $event"
+      @revision="void $event"
     />
   </AssistantWorkspaceShell>
   <AssistantSummaryState

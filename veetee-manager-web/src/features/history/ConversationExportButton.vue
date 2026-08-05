@@ -28,6 +28,6 @@ defineEmits<{
         :size="14"
       />
     </template>
-    Tải JSON
+    Tải nội dung
   </VtButton>
 </template>

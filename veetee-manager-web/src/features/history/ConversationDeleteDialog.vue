@@ -19,8 +19,8 @@ const emit = defineEmits<{
 <template>
   <VtDialog
     :open="open"
-    title="Xóa conversation"
-    description="Xóa transcript và metadata của conversation này khỏi Manager."
+    title="Xóa cuộc trò chuyện"
+    description="Xóa nội dung và thông tin đi kèm của cuộc trò chuyện này khỏi hệ thống."
     width="sm"
     :prevent-close="loading"
     @update:open="emit('update:open', $event)"
@@ -43,7 +43,7 @@ const emit = defineEmits<{
         </div>
       </dl>
       <p class="delete-warning">
-        Thao tác không thể hoàn tác. Audio recording đang tắt ở baseline; mọi dữ liệu transcript/tool hiện có sẽ được dọn bởi delete job.
+        Thao tác không thể hoàn tác. Bản ghi âm đang tắt; nội dung và thông tin đi kèm sẽ được dọn dẹp.
       </p>
       <p
         v-if="error"
@@ -66,7 +66,7 @@ const emit = defineEmits<{
         :loading="loading"
         @click="emit('confirm')"
       >
-        Xóa conversation
+        Xóa cuộc trò chuyện
       </VtButton>
     </template>
   </VtDialog>

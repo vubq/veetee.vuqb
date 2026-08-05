@@ -74,8 +74,8 @@ describe('ModelMemoryFeature read states', () => {
   it('shows a retryable error when provider workspace cannot be read', async () => {
     const view = renderFeature(gateway({ getModelMemory: vi.fn(async () => failure()) }))
 
-    const heading = await view.findByRole('heading', { name: 'Không tải được model & memory' })
-    expect(view.getByText('Không tải được provider selection và bộ nhớ từ Manager API.')).toBeTruthy()
+    const heading = await view.findByRole('heading', { name: 'Không tải được dịch vụ và phần ghi nhớ' })
+    expect(view.getByText('Không tải được dịch vụ và phần ghi nhớ.')).toBeTruthy()
     expect(view.getByRole('button', { name: 'Thử lại' })).toBeTruthy()
     expect(document.activeElement).toBe(heading)
   })
@@ -83,8 +83,8 @@ describe('ModelMemoryFeature read states', () => {
   it('shows offline without exposing stale provider controls as current', async () => {
     const view = renderFeature(gateway({ getModelMemory: vi.fn(async () => failure(true)) }))
 
-    expect(await view.findByRole('heading', { name: 'Manager API đang ngoại tuyến' })).toBeTruthy()
-    expect(view.queryByRole('combobox', { name: 'Provider LLM' })).toBeNull()
+    expect(await view.findByRole('heading', { name: 'Máy chủ quản trị đang ngoại tuyến' })).toBeTruthy()
+    expect(view.queryByRole('combobox', { name: 'Dịch vụ Bộ não trả lời' })).toBeNull()
   })
 
   it('retries a transient workspace error and restores provider controls', async () => {
@@ -96,15 +96,15 @@ describe('ModelMemoryFeature read states', () => {
     await view.findByRole('button', { name: 'Thử lại' })
     await fireEvent.click(view.getByRole('button', { name: 'Thử lại' }))
 
-    expect(await view.findByRole('combobox', { name: 'Provider LLM' })).toBeTruthy()
+    expect(await view.findByRole('combobox', { name: 'Dịch vụ Bộ não trả lời' })).toBeTruthy()
     expect(getModelMemory).toHaveBeenCalledTimes(2)
   })
 
   it('renders all configured provider kinds on a successful read', async () => {
     const view = renderFeature(gateway())
 
-    expect(await view.findByRole('combobox', { name: 'Provider VAD' })).toBeTruthy()
-    expect(view.getByRole('combobox', { name: 'Provider TTS' })).toBeTruthy()
+    expect(await view.findByRole('combobox', { name: 'Dịch vụ Lọc tiếng ồn' })).toBeTruthy()
+    expect(view.getByRole('combobox', { name: 'Dịch vụ Giọng nói' })).toBeTruthy()
     expect(view.getByText('Bộ nhớ hội thoại')).toBeTruthy()
   })
 })

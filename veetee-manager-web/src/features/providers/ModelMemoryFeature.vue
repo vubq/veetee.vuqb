@@ -45,12 +45,20 @@ function cloneWorkspace(workspace: ModelMemoryWorkspace): ModelMemoryWorkspace {
 }
 
 const kindInfo: Record<ProviderKind, { label: string; description: string }> = {
-  vad: { label: 'VAD', description: 'Xác định đoạn có giọng nói' },
-  asr: { label: 'ASR', description: 'Chuyển giọng nói thành văn bản' },
-  llm: { label: 'LLM', description: 'Suy luận, token stream và tool call' },
-  tts: { label: 'TTS', description: 'Tổng hợp giọng nói streaming' },
-  intent: { label: 'Intent', description: 'Phân loại ý định bổ sung' },
-  memory: { label: 'Memory', description: 'Ghi nhớ qua nhiều lượt nói' },
+  vad: { label: 'Lọc tiếng ồn', description: 'Nhận biết khi bạn đang nói' },
+  asr: { label: 'Nhận dạng lời nói', description: 'Đổi lời nói thành chữ' },
+  llm: { label: 'Bộ não trả lời', description: 'Suy luận và gọi công cụ' },
+  tts: { label: 'Giọng nói', description: 'Đọc câu trả lời thành tiếng' },
+  intent: { label: 'Hiểu ý định', description: 'Nhận biết yêu cầu đặc biệt' },
+  memory: { label: 'Ghi nhớ', description: 'Giữ thông tin qua các lượt nói' },
+}
+
+function localeLabel(locale: string) {
+  return locale === '*' ? 'mọi ngôn ngữ' : locale === 'vi-VN' ? 'tiếng Việt' : locale === 'en-US' ? 'tiếng Anh' : locale
+}
+
+function memoryKindLabel(kind: string) {
+  return kind === 'preference' ? 'Sở thích' : kind === 'fact' ? 'Thông tin' : kind === 'instruction' ? 'Chỉ dẫn' : 'Ghi nhớ'
 }
 
 function selectionValue(kind: ProviderKind) {
@@ -63,10 +71,10 @@ function optionsFor(kind: ProviderKind): VtSelectOption[] {
   const options: VtSelectOption[] = configs.map((config) => ({
     value: config.id,
     label: config.name,
-    description: `${config.providerName} · ${config.supportedLocales.join(', ')}`,
+    description: `Hỗ trợ ${config.supportedLocales.map(localeLabel).join(', ')}`,
     disabled: config.availability !== 'ready',
   }))
-  if (kind === 'intent' || kind === 'memory') options.unshift({ value: '__disabled__', label: 'Tắt', description: 'Không dùng provider cho loại này' })
+  if (kind === 'intent' || kind === 'memory') options.unshift({ value: '__disabled__', label: 'Tắt', description: 'Không dùng dịch vụ cho loại này' })
   return options
 }
 
@@ -86,8 +94,8 @@ async function load() {
     if (!result.ok) {
       loadState.value = result.meta.offline ? 'offline' : 'error'
       loadError.value = result.meta.offline
-        ? 'Đang ngoại tuyến; chưa thể đồng bộ provider và bộ nhớ.'
-        : 'Không tải được provider selection và bộ nhớ từ Manager API.'
+        ? 'Đang ngoại tuyến; chưa thể đồng bộ dịch vụ và phần ghi nhớ.'
+        : 'Không tải được dịch vụ và phần ghi nhớ.'
       await focusStateHeading()
       return
     }
@@ -97,7 +105,7 @@ async function load() {
   } catch {
     if (generation !== loadGeneration) return
     loadState.value = 'offline'
-    loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+    loadError.value = 'Không kết nối được máy chủ quản trị. Kiểm tra service hoặc mạng LAN.'
     await focusStateHeading()
   } finally {
     if (generation === loadGeneration) loading.value = false
@@ -120,10 +128,10 @@ async function changeProvider(kind: ProviderKind, value: string) {
   const input: UpdateProviderSelectionInput = value === '__disabled__' ? { kind, mode: 'disabled' } : { kind, mode: 'selected', providerConfigId: value }
   const result = await gateway.updateProviderSelection(props.assistantId, input, resource.value.etag)
   mutatingKind.value = undefined
-  if (result.ok) { applyResult(result.data); notify(`Đã cập nhật ${kindInfo[kind].label}`, { tone: 'success', message: 'Không có provider fallback tự động.' }); return }
+  if (result.ok) { applyResult(result.data); notify(`Đã cập nhật ${kindInfo[kind].label}`, { tone: 'success', message: 'Veetee không tự chuyển sang dịch vụ khác.' }); return }
   if (result.problem.type === 'revision-conflict') { conflict.value = result.problem; return }
-  const message = result.problem.type === 'provider-unavailable' ? 'Provider này đang không khả dụng; selection cũ được giữ nguyên.' : result.problem.type === 'offline' ? 'Đang ngoại tuyến; thay đổi đã bị chặn.' : 'Selection không hợp lệ.'
-  notify('Không thể đổi provider', { tone: 'error', message, assertive: true })
+  const message = result.problem.type === 'provider-unavailable' ? 'Dịch vụ này chưa sẵn sàng; lựa chọn cũ được giữ nguyên.' : result.problem.type === 'offline' ? 'Đang ngoại tuyến; thay đổi đã bị chặn.' : 'Lựa chọn chưa hợp lệ.'
+  notify('Không thể đổi dịch vụ', { tone: 'error', message, assertive: true })
 }
 
 async function setMemory(enabled: boolean) {
@@ -141,7 +149,7 @@ function reloadConflict() {
   resource.value = { value: cloneWorkspace(conflict.value.current), revision: conflict.value.currentRevision, etag: conflict.value.currentEtag }
   emit('revision', conflict.value.currentRevision)
   conflict.value = undefined
-  notify('Đã tải revision mới', { tone: 'success' })
+  notify('Đã dùng cấu hình mới nhất', { tone: 'success' })
 }
 
 async function copyAndReload() {
@@ -166,7 +174,7 @@ onMounted(load)
     class="workspace-loading"
     role="status"
     aria-live="polite"
-    aria-label="Đang tải provider và bộ nhớ"
+    aria-label="Đang tải dịch vụ và phần ghi nhớ"
   >
     <VtSkeleton
       v-for="index in 3"
@@ -183,7 +191,7 @@ onMounted(load)
       ref="stateHeading"
       tabindex="-1"
     >
-      {{ loadState === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được model & memory' }}
+      {{ loadState === 'offline' ? 'Máy chủ quản trị đang ngoại tuyến' : 'Không tải được dịch vụ và phần ghi nhớ' }}
     </h2>
     <p>{{ loadError }}</p>
     <VtButton
@@ -199,8 +207,8 @@ onMounted(load)
     class="model-memory"
   >
     <FormSection
-      title="Provider đang sử dụng"
-      description="Mỗi loại chỉ có một selection; phiên bản hiện tại không tự fallback."
+      title="Dịch vụ đang dùng"
+      description="Mỗi nhóm chỉ chọn một dịch vụ; Veetee không tự chuyển sang dịch vụ khác."
     >
       <div class="provider-grid">
         <VtCard
@@ -225,7 +233,7 @@ onMounted(load)
           </div>
           <VtSelect
             :model-value="selectionValue(kind)"
-            :label="`Provider ${kindInfo[kind].label}`"
+            :label="`Dịch vụ ${kindInfo[kind].label}`"
             :options="optionsFor(kind)"
             :disabled="mutatingKind === kind"
             @update:model-value="changeProvider(kind, $event)"
@@ -237,7 +245,7 @@ onMounted(load)
             <VtIcon
               :icon="ShieldAlert"
               :size="14"
-            /> Selection được giữ nguyên; không chuyển sang provider khác.
+            /> Lựa chọn hiện tại được giữ nguyên; không tự chuyển sang dịch vụ khác.
           </p>
         </VtCard>
       </div>
@@ -266,7 +274,7 @@ onMounted(load)
           :class="{ disabled: !item.enabled }"
         >
           <VtBadge :tone="item.kind === 'instruction' ? 'primary' : 'neutral'">
-            {{ item.kind }}
+            {{ memoryKindLabel(item.kind) }}
           </VtBadge><p>{{ item.content }}</p><VtStatus
             :tone="item.enabled ? 'online' : 'neutral'"
             :label="item.enabled ? 'Đang dùng' : 'Đã tắt'"
@@ -277,7 +285,7 @@ onMounted(load)
         v-else
         class="memory-empty"
       >
-        Chưa có memory item. Dữ liệu sẽ chỉ xuất hiện sau khi backend thật được triển khai và policy được duyệt.
+        Chưa có thông tin được ghi nhớ. Nội dung sẽ xuất hiện khi tính năng này được bật.
       </p>
     </FormSection>
   </div>

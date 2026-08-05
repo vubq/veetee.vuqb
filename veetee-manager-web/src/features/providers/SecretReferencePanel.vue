@@ -97,7 +97,7 @@ async function rotate() {
     rotateOpen.value = false
     rotateValue.value = ''
     emit('changed')
-    notify('Đã đổi khóa kết nối', { tone: 'success', message: `Phiên bản ${result.data.version} đã sẵn sàng.` })
+    notify('Đã đổi khóa kết nối', { tone: 'success', message: 'Khóa mới đã sẵn sàng để dùng.' })
   } finally {
     saving.value = false
     rotateValue.value = ''
@@ -165,7 +165,7 @@ async function focusError() {
           v-model="name"
           name="secret-reference-name"
           autocomplete="off"
-          placeholder="Groq production…"
+          placeholder="Tên dễ nhớ…"
           :disabled="saving"
         />
       </VtFormField>
@@ -192,7 +192,6 @@ async function focusError() {
         variant="secondary"
         :loading="saving"
         :disabled="!name.trim() || !secretValue"
-        @click="create"
       >
         Lưu khóa
       </VtButton>
@@ -218,7 +217,7 @@ async function focusError() {
       >
         <VtCheckbox
           :model-value="selectedSet.has(item.id)"
-          :label="`${item.name} · v${item.version}`"
+          :label="item.name"
           @update:model-value="toggle(item.id, $event)"
         />
         <span class="secret-meta">{{ item.status === 'available' ? 'Sẵn sàng' : item.status === 'unavailable' ? 'Chưa sẵn sàng' : 'Đang kiểm tra' }} · lưu an toàn</span>

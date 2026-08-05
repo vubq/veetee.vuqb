@@ -72,7 +72,7 @@
 - Đã tạo backup trước khi dọn dữ liệu: `.runtime/backups/veetee_vubq-20260805T095339Z.dump`;
   restore rehearsal đã pass. Không chạm database của checkout cũ.
 - Runtime PostgreSQL `veetee_vubq` hiện chỉ còn assistant `Veetee`, bốn cấu hình
-  mẫu cần cho pipeline, một device presence chưa ghép nối đang online và không
+  mặc định cần cho pipeline, một device presence chưa ghép nối đang online và không
   còn conversation/audit/challenge/secret test data. Các session còn hạn được
   giữ lại vì có thể là phiên dashboard đang mở.
 - Provider API có archive/probe và test lifecycle; Manager Web đã bỏ các nhãn raw
@@ -82,6 +82,37 @@
 - Evidence hiện tại: Manager API InMemory **35 passed / 12 skipped**; Manager Web
   **96/96 unit**, **11/11 Chromium E2E**, build/typecheck/lint pass. Đây là gate
   host/control-plane, chưa đóng các gate physical LCD/nút/mic/loa.
+
+### UX copy/data trim follow-up (2026-08-05)
+
+- Các bề mặt chính đã bỏ thêm dữ liệu nội bộ không giúp người dùng thao tác:
+  revision/version, provider kind viết tắt, trạng thái secret thô, mã secret cũ,
+  thời gian probe theo mili giây và locale dạng `vi-VN` được thay bằng nhãn dễ
+  hiểu. Các ID/ETag vẫn chỉ nằm ở boundary/API, không bị xóa khỏi lịch sử cần
+  cho optimistic concurrency.
+- Provider list dùng nhãn “Lọc tiếng ồn”, “Nhận dạng lời nói”, “Bộ não trả lời”,
+  “Giọng nói”, “Hiểu ý định”, “Ghi nhớ”; nút archive hiển thị “Ẩn” và dialog
+  giải thích rõ dữ liệu lịch sử vẫn được giữ. Select/list tiếp tục ellipsis và
+  accessible name đầy đủ ở màn hình hẹp.
+- Role form dùng copy tiếng Việt phổ thông cho timeout, ngắt lời, thông báo khi
+  chưa nghe thấy và áp dụng cấu hình; conflict dialog giữ thay đổi người dùng
+  mà không đưa số revision vào UI. Nút lưu secret chỉ submit một lần (loại bỏ
+  double-submit do vừa `submit` vừa `click`).
+- Verification sau lát cắt: Web unit **96/96**, full Chromium E2E **11/11**,
+  typecheck/lint/build pass. Không mutate DB/runtime/provider.
+
+### Firmware LCD status renderer (2026-08-05)
+
+- `veetee-firmware/main/veetee_display.c` nay render trạng thái idle/connecting/
+  listening/thinking/speaking bằng palette, dải màu, vòng trung tâm và icon hình
+  học; không nhúng câu chữ hoặc locale vào renderer. Đây là nền tảng để bổ sung
+  asset/i18n sau mà không sửa state machine.
+- ESP-IDF **6.0.2** build/flash image `2779702-dirty` pass, app partition còn
+  khoảng **66%**; serial xác nhận `ST7789 ready 240x280`, startup chime, WakeNet,
+  Wi-Fi profile từ NVS và `server hello accepted; session ready`. Flash không
+  erase NVS/Wi-Fi.
+- LCD có hình đúng trên phần cứng vẫn là physical acceptance cần chủ dự án nhìn
+  trực tiếp; serial không thay thế kiểm tra backlight, orientation và dây GPIO.
 
 ### Firmware wake pre-arm slice (2026-08-05)
 

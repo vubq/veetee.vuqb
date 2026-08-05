@@ -21,9 +21,9 @@ describe('RetentionPolicyPanel', () => {
     const view = render(RetentionPolicyPanel, { props: { policy } })
 
     expect(view.getByRole('heading', { name: 'Lưu trữ hội thoại' })).toBeTruthy()
-    expect(view.getByRole('switch', { name: 'Lưu transcript' }).getAttribute('data-state')).toBe('checked')
-    expect(view.getByRole('switch', { name: 'Lưu audio recording' }).getAttribute('data-disabled')).toBe('')
-    await fireEvent.click(view.getByRole('button', { name: 'Lưu retention policy' }))
+    expect(view.getByRole('switch', { name: 'Lưu nội dung trò chuyện' }).getAttribute('data-state')).toBe('checked')
+    expect(view.getByRole('switch', { name: 'Lưu bản ghi âm' }).getAttribute('data-disabled')).toBe('')
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu thời hạn' }))
 
     expect((view.emitted('save') as unknown[][] | undefined)?.[0]?.[0]).toEqual({
       captureTranscript: true,
@@ -35,8 +35,8 @@ describe('RetentionPolicyPanel', () => {
 
   it('clears transcript days when transcript capture is disabled', async () => {
     const view = render(RetentionPolicyPanel, { props: { policy } })
-    await fireEvent.click(view.getByRole('switch', { name: 'Lưu transcript' }))
-    await fireEvent.click(view.getByRole('button', { name: 'Lưu retention policy' }))
+    await fireEvent.click(view.getByRole('switch', { name: 'Lưu nội dung trò chuyện' }))
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu thời hạn' }))
 
     expect((view.emitted('save') as unknown[][] | undefined)?.[0]?.[0]).toEqual({
       captureTranscript: false,
@@ -48,9 +48,9 @@ describe('RetentionPolicyPanel', () => {
 
   it('accepts the full configured retention range instead of a fixed option list', async () => {
     const view = render(RetentionPolicyPanel, { props: { policy } })
-    const days = view.getByRole('spinbutton', { name: 'Thời hạn transcript' })
+    const days = view.getByRole('spinbutton', { name: 'Thời hạn lưu' })
     await fireEvent.update(days, '3650')
-    await fireEvent.click(view.getByRole('button', { name: 'Lưu retention policy' }))
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu thời hạn' }))
 
     expect((view.emitted('save') as unknown[][] | undefined)?.[0]?.[0]).toMatchObject({ transcriptDays: 3650 })
   })

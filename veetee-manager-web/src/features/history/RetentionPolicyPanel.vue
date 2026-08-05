@@ -57,28 +57,28 @@ function save() {
     <header class="retention-header">
       <div>
         <p class="eyebrow">
-          Privacy & retention
+          Riêng tư & thời hạn lưu
         </p>
         <h2>Lưu trữ hội thoại</h2>
         <p class="muted">
-          Thay đổi áp dụng cho các lượt ingest mới; audio recording vẫn tắt trong baseline hiện tại.
+          Thay đổi áp dụng cho các lượt nói mới; bản ghi âm đang tắt để bảo vệ riêng tư.
         </p>
       </div>
       <VtStatus
         tone="neutral"
-        label="Retention đang áp dụng"
+        label="Đang áp dụng"
       />
     </header>
     <div class="retention-summary">
-      <strong>{{ policy.captureTranscript ? `${policy.transcriptDays} ngày transcript` : 'Không lưu transcript' }}</strong>
-      <span>Revision {{ policy.revision }}</span>
+      <strong>{{ policy.captureTranscript ? `${policy.transcriptDays} ngày nội dung` : 'Không lưu nội dung' }}</strong>
+      <span>Thiết lập hiện tại</span>
     </div>
 
     <div class="retention-controls">
       <div class="retention-toggle">
         <VtSwitch
           v-model="transcriptEnabled"
-          label="Lưu transcript"
+          label="Lưu nội dung trò chuyện"
           :disabled="saving"
         />
         <span>Cho phép xem lại nội dung đã nhận dạng trong thời hạn bên cạnh.</span>
@@ -87,7 +87,7 @@ function save() {
         <label
           class="control-label"
           for="retention-transcript-days"
-        >Thời hạn transcript</label>
+        >Thời hạn lưu</label>
         <VtInput
           id="retention-transcript-days"
           v-model="transcriptDays"
@@ -106,16 +106,16 @@ function save() {
           id="retention-days-hint"
           class="control-hint"
         >
-          Tối đa 3.650 ngày khi bật lưu transcript.
+          Tối đa 3.650 ngày khi bật lưu nội dung.
         </p>
       </div>
       <div class="retention-audio">
         <VtSwitch
           :model-value="false"
-          label="Lưu audio recording"
+          label="Lưu bản ghi âm"
           disabled
         />
-        <span>Đang tắt để bảo vệ riêng tư và chưa được hỗ trợ trong runtime.</span>
+        <span>Đang tắt để bảo vệ riêng tư; tính năng này chưa được bật.</span>
       </div>
     </div>
 
@@ -125,7 +125,7 @@ function save() {
       class="field-error"
       role="alert"
     >
-      Thời hạn transcript phải là số nguyên từ 1 đến 3.650 ngày.
+      Thời hạn lưu phải là số nguyên từ 1 đến 3.650 ngày.
     </p>
     <p
       v-if="error"
@@ -145,7 +145,7 @@ function save() {
         :disabled="!transcriptDaysValid"
         @click="save"
       >
-        Lưu retention policy
+        Lưu thời hạn
       </VtButton>
     </footer>
   </VtCard>

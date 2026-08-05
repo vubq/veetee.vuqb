@@ -90,7 +90,7 @@ async function logout() {
 
       <div class="top-meta">
         <VtBadge tone="primary">
-          {{ isApiMode ? 'Manager API' : 'UI preview' }}
+          {{ isApiMode ? 'Đã kết nối' : 'Bản xem trước' }}
         </VtBadge>
         <span
           v-if="isApiMode && isAuthenticated && authSession.user.value?.email"

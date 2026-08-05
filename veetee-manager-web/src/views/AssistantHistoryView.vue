@@ -25,8 +25,7 @@ const shellAssistant = computed(() => assistant.value ? { id: assistant.value.id
     v-else-if="loadState === 'ready' && shellAssistant && assistant"
     :assistant="shellAssistant"
     section-title="Lịch sử hội thoại"
-    section-description="Transcript, latency và retention policy của trợ lý"
-    :revision-label="`${assistant.locale}`"
+    section-description="Nội dung trò chuyện và thời hạn lưu"
   >
     <ConversationHistoryFeature :assistant="assistant" />
   </AssistantWorkspaceShell>

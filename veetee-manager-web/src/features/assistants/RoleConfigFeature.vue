@@ -146,8 +146,8 @@ async function load() {
       if (generation !== loadGeneration) return
       loadState.value = configResult.meta.offline ? 'offline' : 'error'
       loadError.value = configResult.meta.offline
-        ? 'Đang ngoại tuyến; chưa thể tải role config.'
-        : 'Không tải được role config từ Manager API.'
+        ? 'Đang ngoại tuyến; chưa thể tải cấu hình vai trò.'
+        : 'Không tải được cấu hình vai trò.'
       await focusStateHeading()
       return
     }
@@ -161,10 +161,10 @@ async function load() {
       const offline = voicesResult.meta.offline || installationsResult.meta.offline
       loadState.value = offline ? 'offline' : 'error'
       loadError.value = !voicesResult.ok && !installationsResult.ok
-        ? 'Không tải được danh sách giọng nói và provider catalog từ Manager API.'
+        ? 'Không tải được danh sách giọng nói và dịch vụ hỗ trợ.'
         : !voicesResult.ok
-          ? 'Không tải được danh sách giọng nói; form tạm thời bị khóa để tránh chọn voice chưa đồng bộ.'
-          : 'Không tải được provider catalog; form tạm thời bị khóa để tránh chọn locale chưa đồng bộ.'
+          ? 'Không tải được danh sách giọng nói; biểu mẫu tạm thời bị khóa để tránh chọn giọng chưa đồng bộ.'
+          : 'Không tải được danh sách dịch vụ; biểu mẫu tạm thời bị khóa để tránh chọn ngôn ngữ chưa đồng bộ.'
       await focusStateHeading()
       return
     }
@@ -177,7 +177,7 @@ async function load() {
   } catch {
     if (generation !== loadGeneration) return
     loadState.value = 'offline'
-    loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+    loadError.value = 'Không kết nối được máy chủ quản trị. Kiểm tra service hoặc mạng LAN.'
     await focusStateHeading()
   } finally {
     if (generation === loadGeneration) loading.value = false
@@ -191,12 +191,12 @@ async function loadVoices(locale: string) {
     const result = await gateway.listVoices(locale)
     if (generation !== voiceGeneration) return
     if (!result.ok) {
-      notify('Không thể tải giọng theo ngôn ngữ', { tone: 'error', message: result.meta.offline ? 'Manager API đang ngoại tuyến.' : 'Provider TTS chưa sẵn sàng.', assertive: true })
+      notify('Không thể tải giọng theo ngôn ngữ', { tone: 'error', message: result.meta.offline ? 'Máy chủ quản trị đang ngoại tuyến.' : 'Dịch vụ giọng nói chưa sẵn sàng.', assertive: true })
       return
     }
     voices.value = result.data.items
   } catch {
-    if (generation === voiceGeneration) notify('Không thể tải giọng theo ngôn ngữ', { tone: 'error', message: 'Không kết nối được Manager API.', assertive: true })
+    if (generation === voiceGeneration) notify('Không thể tải giọng theo ngôn ngữ', { tone: 'error', message: 'Không kết nối được máy chủ quản trị.', assertive: true })
   } finally {
     if (generation === voiceGeneration) voiceLoading.value = false
   }
@@ -258,7 +258,7 @@ async function save() {
       resource.value = result.data
       draft.value = toDraft(result.data.value)
       emit('revision', result.data.revision, false)
-      notify('Đã lưu bản nháp', { tone: 'success', message: `Revision mới là #${result.data.revision}.` })
+      notify('Đã lưu thay đổi', { tone: 'success', message: 'Bạn có thể áp dụng thay đổi này cho robot bất cứ lúc nào.' })
       return
     }
     if (result.problem.type === 'revision-conflict') {
@@ -266,13 +266,13 @@ async function save() {
       return
     }
     actionError.value = result.meta.offline
-      ? 'Đang ngoại tuyến; draft vẫn được giữ trên màn hình.'
-      : 'Không thể lưu bản nháp; draft vẫn được giữ để bạn sửa hoặc thử lại.'
-    notify('Không thể lưu bản nháp', { tone: 'error', message: actionError.value, assertive: true })
+      ? 'Đang ngoại tuyến; thay đổi vẫn được giữ trên màn hình.'
+      : 'Không thể lưu thay đổi; nội dung vẫn được giữ để bạn sửa hoặc thử lại.'
+    notify('Không thể lưu thay đổi', { tone: 'error', message: actionError.value, assertive: true })
     await focusActionError()
   } catch {
-    actionError.value = 'Không kết nối được Manager API; draft vẫn được giữ trên màn hình.'
-    notify('Không thể lưu bản nháp', { tone: 'error', message: actionError.value, assertive: true })
+    actionError.value = 'Không kết nối được máy chủ quản trị; thay đổi vẫn được giữ trên màn hình.'
+    notify('Không thể lưu thay đổi', { tone: 'error', message: actionError.value, assertive: true })
     await focusActionError()
   }
   finally { saving.value = false }
@@ -286,16 +286,16 @@ async function publish() {
     const result = await gateway.publishAssistant(props.assistantId, resource.value.etag)
     if (result.ok) {
       await load()
-      notify('Đã áp dụng cấu hình', { tone: 'success', message: `Revision runtime #${result.data.revision} đã được publish.` })
+      notify('Đã áp dụng cấu hình', { tone: 'success', message: 'Robot sẽ dùng cấu hình này ở cuộc trò chuyện tiếp theo.' })
     } else {
       actionError.value = result.meta.offline
         ? 'Đang ngoại tuyến; chưa thể áp dụng cấu hình.'
-        : 'Revision hiện tại không còn mới; hãy tải lại trước khi publish.'
+        : 'Cấu hình đã thay đổi ở nơi khác; hãy tải lại trước khi áp dụng.'
       notify('Không thể áp dụng cấu hình', { tone: 'error', message: actionError.value, assertive: true })
       await focusActionError()
     }
   } catch {
-    actionError.value = 'Không kết nối được Manager API; cấu hình chưa được publish.'
+    actionError.value = 'Không kết nối được máy chủ quản trị; cấu hình chưa được áp dụng.'
     notify('Không thể áp dụng cấu hình', { tone: 'error', message: actionError.value, assertive: true })
     await focusActionError()
   } finally {
@@ -309,7 +309,7 @@ function reloadConflict() {
   draft.value = toDraft(conflict.value.current)
   emit('revision', conflict.value.currentRevision, false)
   conflict.value = undefined
-  notify('Đã tải revision mới', { tone: 'success' })
+  notify('Đã dùng cấu hình mới nhất', { tone: 'success' })
 }
 
 async function copyAndReload() {
@@ -317,10 +317,10 @@ async function copyAndReload() {
   copying.value = true
   try {
     await navigator.clipboard.writeText(JSON.stringify(conflict.value.localDraft, null, 2))
-    notify('Đã sao chép draft', { tone: 'success', message: 'Draft local đã nằm trong clipboard trước khi tải lại.' })
+    notify('Đã sao chép thay đổi', { tone: 'success', message: 'Nội dung đang sửa đã được lưu tạm trước khi tải lại.' })
     reloadConflict()
   } catch {
-    notify('Không thể truy cập clipboard', { tone: 'error', message: 'Draft vẫn được giữ; chưa tải revision mới.', assertive: true })
+    notify('Không thể sao chép thay đổi', { tone: 'error', message: 'Thay đổi vẫn được giữ; chưa tải cấu hình mới.', assertive: true })
   } finally { copying.value = false }
 }
 
@@ -333,7 +333,7 @@ onMounted(load)
     class="role-loading"
     role="status"
     aria-live="polite"
-    aria-label="Đang tải role config"
+    aria-label="Đang tải cấu hình vai trò"
   >
     <VtSkeleton height="52px" /><VtSkeleton height="180px" /><VtSkeleton height="150px" />
   </div>
@@ -346,7 +346,7 @@ onMounted(load)
       ref="stateHeading"
       tabindex="-1"
     >
-      {{ loadState === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được role config' }}
+      {{ loadState === 'offline' ? 'Máy chủ quản trị đang ngoại tuyến' : 'Không tải được cấu hình vai trò' }}
     </h2>
     <p>{{ loadError }}</p>
     <VtButton
@@ -367,7 +367,7 @@ onMounted(load)
   >
     <FormSection
       title="Vai trò giọng nói"
-      description="Ngôn ngữ hội thoại và giọng TTS được cấu hình riêng."
+      description="Ngôn ngữ hội thoại và giọng nói được cấu hình riêng."
     >
       <template #trailing>
         <VtSwitch
@@ -435,8 +435,8 @@ onMounted(load)
     </FormSection>
 
     <FormSection
-      title="Base prompt"
-      description="Chỉ dẫn nền được version hóa cùng Assistant config."
+      title="Chỉ dẫn nền"
+      description="Chỉ dẫn nền được lưu cùng cấu hình trợ lý."
     >
       <template #trailing>
         <VtBadge :tone="draft.basePrompt.length > 2000 ? 'danger' : 'neutral'">
@@ -446,8 +446,8 @@ onMounted(load)
       <VtFormField
         label="Chỉ dẫn cho trợ lý"
         for-id="role-prompt"
-        :error="draft.basePrompt.length > 2000 ? 'Prompt vượt quá 2.000 ký tự trong bản preview.' : undefined"
-        hint="Không hardcode tính cách trong pipeline; prompt này là dữ liệu cấu hình."
+        :error="draft.basePrompt.length > 2000 ? 'Chỉ dẫn vượt quá 2.000 ký tự trong bản xem trước.' : undefined"
+        hint="Viết cách robot nên cư xử; nội dung này là cấu hình có thể thay đổi."
       >
         <template #default="{ describedby }">
           <VtTextArea
@@ -465,7 +465,7 @@ onMounted(load)
 
     <FormSection
       title="Cách nói"
-      description="Nhịp nói áp dụng cho TTS streaming."
+      description="Nhịp nói áp dụng khi robot phát câu trả lời."
     >
       <div class="three-columns">
         <VtFormField
@@ -507,15 +507,15 @@ onMounted(load)
     </FormSection>
 
     <FormSection
-      title="Giới hạn tài nguyên"
-      description="Admission policy bảo vệ VRAM và giữ phiên còn lại ổn định."
+      title="Giới hạn sử dụng"
+      description="Giúp robot luôn ổn định khi có nhiều yêu cầu cùng lúc."
     >
       <div class="two-columns">
         <VtFormField
           label="Lượt hội thoại đồng thời"
           for-id="role-max-active-turns"
           :error="maxActiveTurnsInvalid ? 'Chọn từ 1 đến 8 lượt.' : undefined"
-          hint="Mặc định 1 trên máy local hiện tại."
+          hint="Nên giữ ở mức 1 trên máy hiện tại."
         >
           <VtInput
             id="role-max-active-turns"
@@ -536,7 +536,7 @@ onMounted(load)
           label="Thời gian thử lại khi bận"
           for-id="role-retry-after-ms"
           :error="retryAfterInvalid ? 'Chọn từ 100 đến 10.000 ms.' : undefined"
-          hint="Khoảng chờ gửi trong alert SERVER_BUSY."
+          hint="Khoảng chờ trước khi robot thử lại khi đang bận."
         >
           <VtInput
             id="role-retry-after-ms"
@@ -557,21 +557,21 @@ onMounted(load)
     </FormSection>
 
     <FormSection
-      title="Wake không có lời nói"
-      description="Tự giải phóng lượt auto sau khi wake word nhưng chưa có speech xác nhận. Không giới hạn các cuộc hội thoại đã bắt đầu."
+      title="Tự kết thúc khi chưa nghe thấy lời nói"
+      description="Sau khi được đánh thức, robot sẽ dừng lượt chờ nếu bạn chưa bắt đầu nói. Các cuộc trò chuyện đã bắt đầu không bị giới hạn."
     >
       <template #trailing>
         <VtSwitch
           v-model="draft.autoTurn.enabled"
-          label="Bật timeout"
+          label="Bật tự kết thúc"
         />
       </template>
       <div class="two-columns">
         <VtFormField
-          label="Chờ speech tối đa (ms)"
+          label="Thời gian chờ (mili giây)"
           for-id="role-no-speech-timeout"
           :error="draft.autoTurn.enabled && noSpeechTimeoutInvalid ? 'Chọn từ 1.000 đến 60.000 ms.' : undefined"
-          hint="Chỉ áp dụng trước speech đầu tiên của auto turn."
+          hint="Chỉ áp dụng trước câu nói đầu tiên sau khi đánh thức."
         >
           <VtInput
             id="role-no-speech-timeout"
@@ -585,15 +585,15 @@ onMounted(load)
             name="no-speech-timeout-ms"
             :invalid="draft.autoTurn.enabled && noSpeechTimeoutInvalid"
             :disabled="!draft.autoTurn.enabled"
-            aria-label="Chờ speech tối đa"
+            aria-label="Thời gian chờ"
             @update:model-value="draft.autoTurn.noSpeechTimeoutMs = Number($event)"
           />
         </VtFormField>
         <VtFormField
           label="Thông báo khi chưa nghe thấy"
           for-id="role-no-speech-message"
-          :error="draft.autoTurn.enabled && noSpeechAlertInvalid ? 'Nhập thông báo và metadata alert hợp lệ.' : undefined"
-          hint="Nội dung đi từ i18n/config, không nằm trong server core."
+          :error="draft.autoTurn.enabled && noSpeechAlertInvalid ? 'Nhập thông báo và thông tin hiển thị hợp lệ.' : undefined"
+          hint="Bạn có thể tự viết câu thông báo phù hợp với tính cách robot."
         >
           <VtInput
             id="role-no-speech-message"
@@ -609,7 +609,7 @@ onMounted(load)
       </div>
       <div class="two-columns">
         <VtFormField
-          label="Alert status"
+          label="Trạng thái thông báo"
           for-id="role-no-speech-status"
           optional
         >
@@ -619,11 +619,11 @@ onMounted(load)
             name="no-speech-status"
             autocomplete="off"
             :disabled="!draft.autoTurn.enabled"
-            aria-label="Alert status"
+            aria-label="Trạng thái thông báo"
           />
         </VtFormField>
         <VtFormField
-          label="Emotion"
+          label="Cảm xúc khi thông báo"
           for-id="role-no-speech-emotion"
           optional
         >
@@ -633,25 +633,25 @@ onMounted(load)
             name="no-speech-emotion"
             autocomplete="off"
             :disabled="!draft.autoTurn.enabled"
-            aria-label="Emotion"
+            aria-label="Cảm xúc khi thông báo"
           />
         </VtFormField>
       </div>
     </FormSection>
 
     <FormSection
-      title="Ngắt khi trợ lý đang nói"
-      description="Cho phép phát hiện giọng người dùng bằng AEC khi AI đang phát TTS. Mặc định giữ half-duplex để tránh false trigger."
+      title="Ngắt khi robot đang nói"
+      description="Cho phép robot dừng câu trả lời khi nhận ra bạn đang nói. Mặc định ưu tiên ổn định để tránh nghe nhầm."
     >
       <div class="policy-switches">
         <VtSwitch
           :model-value="draft.bargeIn?.enabled === true"
-          label="Bật policy barge-in"
+          label="Cho phép ngắt lời"
           @update:model-value="draft!.bargeIn!.enabled = $event"
         />
         <VtSwitch
           :model-value="draft.bargeIn?.deviceDuplex === true"
-          label="Duplex acoustic khi AI nói"
+          label="Vẫn nghe khi robot nói"
           :disabled="draft.bargeIn?.enabled !== true"
           @update:model-value="draft!.bargeIn!.deviceDuplex = $event"
         />
@@ -660,7 +660,7 @@ onMounted(load)
         label="Số frame speech để xác nhận"
         for-id="role-barge-in-min-speech-frames"
         :error="bargeInError ? 'Chọn từ 1 đến 32 frame.' : undefined"
-        hint="Ngưỡng bounded do server dùng; không tự đổi provider hoặc bật fallback."
+        hint="Số đoạn âm thanh liên tiếp cần có để xác nhận bạn đang nói."
       >
         <VtInput
           id="role-barge-in-min-speech-frames"
@@ -679,10 +679,10 @@ onMounted(load)
         />
       </VtFormField>
       <VtFormField
-        label="Khoảng khóa sau khi ngắt (ms)"
+        label="Thời gian chống nghe nhầm (mili giây)"
         for-id="role-barge-in-cooldown-ms"
         :error="bargeInCooldownError ? 'Chọn từ 0 đến 5000 ms.' : undefined"
-        hint="Bỏ qua đuôi echo/clip trong thời gian ngắn để tránh retrigger; không đổi provider."
+        hint="Bỏ qua phần âm thanh vọng lại trong thời gian ngắn sau khi ngắt."
       >
         <VtInput
           id="role-barge-in-cooldown-ms"
@@ -749,7 +749,7 @@ onMounted(load)
         :loading="publishing"
         @click="publish"
       >
-        Áp dụng runtime
+        Áp dụng cho robot
       </VtButton>
     </footer>
   </form>

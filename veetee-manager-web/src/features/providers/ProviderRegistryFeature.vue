@@ -46,14 +46,29 @@ const stateHeading = ref<HTMLElement | null>(null)
 const saveErrorHeading = ref<HTMLElement | null>(null)
 let loadGeneration = 0
 
-const options = computed<VtSelectOption[]>(() => installations.value.map((item) => ({ value: item.id, label: item.displayName ?? item.displayNameKey, description: `${item.kind.toUpperCase()} · phiên bản ${item.version}` })))
+const kindLabels: Record<ProviderKind, string> = {
+  vad: 'Lọc tiếng ồn',
+  asr: 'Nhận dạng lời nói',
+  llm: 'Bộ não trả lời',
+  tts: 'Giọng nói',
+  intent: 'Hiểu ý định',
+  memory: 'Ghi nhớ',
+}
+const options = computed<VtSelectOption[]>(() => installations.value.map((item) => ({ value: item.id, label: item.displayName ?? item.displayNameKey, description: kindLabels[item.kind] })))
 const selected = computed(() => installations.value.find((item) => item.id === selectedId.value))
-const schemaKeys = computed(() => Object.keys((selected.value?.configSchema.properties as Record<string, unknown> | undefined) ?? {}))
 const removeTarget = computed(() => configs.value.find((item) => item.id === removeId.value))
 const selectedProbe = computed(() => selectedConfigId.value ? probeResults.value[selectedConfigId.value] : undefined)
 
 function checkLabel(id: string) {
-  return ({ schema: 'Cấu hình', secrets: 'Khóa kết nối', manifest: 'Dịch vụ' } as Record<string, string>)[id] ?? id
+  return ({ schema: 'Cấu hình', secrets: 'Khóa kết nối', manifest: 'Dịch vụ' } as Record<string, string>)[id] ?? 'Chi tiết kiểm tra'
+}
+
+function secretStatusLabel(status: SecretReference['status']) {
+  return status === 'available' ? 'Sẵn sàng' : status === 'revoked' ? 'Đã thu hồi' : 'Chưa sẵn sàng'
+}
+
+function formatCheckedAt(value: string) {
+  return new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value))
 }
 
 function chooseInstallation(value: string) {
@@ -104,18 +119,18 @@ async function load() {
       const offline = catalog.meta.offline || configured.meta.offline || secrets.meta.offline
       loadState.value = offline ? 'offline' : 'error'
       loadError.value = failures.includes('catalog') && failures.includes('config') && failures.includes('secret')
-        ? 'Không tải được catalog, config provider và secret references.'
+        ? 'Không tải được danh sách dịch vụ và khóa kết nối.'
         : failures.includes('catalog') && failures.includes('config')
-          ? 'Không tải được catalog và các config provider.'
+          ? 'Không tải được danh sách dịch vụ.'
           : failures.includes('catalog') && failures.includes('secret')
-            ? 'Không tải được catalog provider và secret references.'
+          ? 'Không tải được danh sách dịch vụ và khóa kết nối.'
             : failures.includes('config') && failures.includes('secret')
-              ? 'Không tải được config provider và secret references.'
+              ? 'Không tải được cấu hình dịch vụ và khóa kết nối.'
               : failures[0] === 'catalog'
-                ? 'Không tải được catalog provider từ Manager API.'
+                ? 'Không tải được danh sách dịch vụ.'
                 : failures[0] === 'config'
-                  ? 'Không tải được các config provider từ Manager API.'
-                  : 'Không tải được secret references từ Manager API.'
+                  ? 'Không tải được cấu hình dịch vụ.'
+                  : 'Không tải được danh sách khóa kết nối.'
       await focusStateHeading()
       return
     }
@@ -134,7 +149,7 @@ async function load() {
   } catch {
     if (generation !== loadGeneration) return
     loadState.value = 'offline'
-    loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+    loadError.value = 'Không kết nối được máy chủ quản trị. Kiểm tra service hoặc mạng LAN.'
     await focusStateHeading()
   } finally {
     if (generation === loadGeneration) loading.value = false
@@ -147,9 +162,9 @@ async function probe(id: string) {
   probingId.value = ''
   if (result.ok) {
     probeResults.value = { ...probeResults.value, [id]: result.data }
-    notify(result.data.state === 'ready' ? 'Provider sẵn sàng' : 'Provider chưa sẵn sàng', { tone: result.data.state === 'ready' ? 'success' : 'error', message: result.data.checks.map((check) => check.message).join(' · '), assertive: result.data.state !== 'ready' })
+    notify(result.data.state === 'ready' ? 'Dịch vụ sẵn sàng' : 'Dịch vụ chưa sẵn sàng', { tone: result.data.state === 'ready' ? 'success' : 'error', message: result.data.checks.map((check) => check.message).join(' · '), assertive: result.data.state !== 'ready' })
   } else {
-    notify('Không thể kiểm tra provider', { tone: 'error', message: result.meta.offline ? 'Manager API đang ngoại tuyến.' : 'Cấu hình provider không còn khả dụng.', assertive: true })
+    notify('Không thể kiểm tra dịch vụ', { tone: 'error', message: result.meta.offline ? 'Máy chủ quản trị đang ngoại tuyến.' : 'Cấu hình dịch vụ không còn khả dụng.', assertive: true })
   }
 }
 
@@ -168,7 +183,7 @@ async function remove() {
   const result = await gateway.deleteProviderConfig(target.id, target.etag)
   removing.value = false
   if (!result.ok) {
-    notify('Không thể xóa provider config', { tone: 'error', message: result.meta.offline ? 'Manager API đang ngoại tuyến.' : 'Config đang được dùng hoặc đã thay đổi; hãy tải lại.', assertive: true })
+    notify('Không thể ẩn cấu hình', { tone: 'error', message: result.meta.offline ? 'Máy chủ quản trị đang ngoại tuyến.' : 'Cấu hình đang được dùng hoặc đã thay đổi; hãy tải lại.', assertive: true })
     return
   }
   configs.value = configs.value.filter((item) => item.id !== target.id)
@@ -181,7 +196,7 @@ async function remove() {
     if (fallback) chooseConfig(fallback.id)
     else startNew()
   }
-  notify('Đã ẩn provider config', { tone: 'success', message: 'Các revision lịch sử vẫn được giữ nguyên.' })
+  notify('Đã ẩn cấu hình', { tone: 'success', message: 'Lịch sử cấu hình vẫn được giữ nguyên.' })
 }
 
 async function focusStateHeading() {
@@ -209,14 +224,14 @@ async function save() {
       notify('Đã lưu cấu hình dịch vụ', { tone: 'success', message: 'Cấu hình mới đã sẵn sàng; trợ lý chỉ đổi dịch vụ khi bạn chọn và áp dụng.' })
     } else {
       saveError.value = result.meta.offline
-        ? 'Đang ngoại tuyến; bản nháp vẫn được giữ trên màn hình và chưa được gửi.'
-        : 'Không thể lưu provider config; bản nháp vẫn được giữ để bạn sửa hoặc thử lại.'
-      notify('Không thể lưu provider config', { tone: 'error', message: saveError.value, assertive: true })
+        ? 'Đang ngoại tuyến; thay đổi vẫn được giữ trên màn hình và chưa được gửi.'
+        : 'Không thể lưu cấu hình dịch vụ; thay đổi vẫn được giữ để bạn sửa hoặc thử lại.'
+      notify('Không thể lưu cấu hình dịch vụ', { tone: 'error', message: saveError.value, assertive: true })
       await focusSaveError()
     }
   } catch {
-    saveError.value = 'Không kết nối được Manager API; bản nháp vẫn được giữ trên màn hình.'
-    notify('Không thể lưu provider config', { tone: 'error', message: saveError.value, assertive: true })
+    saveError.value = 'Không kết nối được máy chủ quản trị; thay đổi vẫn được giữ trên màn hình.'
+    notify('Không thể lưu cấu hình dịch vụ', { tone: 'error', message: saveError.value, assertive: true })
     await focusSaveError()
   } finally {
     saving.value = false
@@ -259,7 +274,7 @@ function toggleSecretReference(id: string, checked: boolean) {
       role="status"
       aria-live="polite"
     >
-      Đang tải catalog…
+      Đang tải danh sách dịch vụ…
     </div>
     <VtCard
       v-else-if="loadState === 'error' || loadState === 'offline'"
@@ -270,7 +285,7 @@ function toggleSecretReference(id: string, checked: boolean) {
         ref="stateHeading"
         tabindex="-1"
       >
-        {{ loadState === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được provider registry' }}
+        {{ loadState === 'offline' ? 'Máy chủ quản trị đang ngoại tuyến' : 'Không tải được danh sách dịch vụ' }}
       </h2>
       <p>{{ loadError }}</p>
       <VtButton
@@ -327,8 +342,8 @@ function toggleSecretReference(id: string, checked: boolean) {
           <div class="provider-meta">
             <VtStatus
               tone="online"
-              :label="selected.kind.toUpperCase()"
-            /><span>Phiên bản {{ selected.version }}</span><span>{{ schemaKeys.length }} trường cấu hình</span>
+              :label="kindLabels[selected.kind]"
+            /><span>Cấu hình tự động theo dịch vụ</span>
           </div>
         </FormSection>
         <VtCard class="config-card">
@@ -370,17 +385,17 @@ function toggleSecretReference(id: string, checked: boolean) {
               >
                 <VtCheckbox
                   :model-value="selectedSecretRefs.includes(item.id)"
-                  :label="`${item.name} · v${item.version}`"
+                  :label="item.name"
                   :disabled="saving"
                   @update:model-value="toggleSecretReference(item.id, $event)"
                 />
-                <span class="secret-option-meta"><small>{{ item.status }}</small></span>
+                <span class="secret-option-meta"><small>{{ secretStatusLabel(item.status) }}</small></span>
               </div>
               <p
                 v-if="unknownSecretRefs.length"
                 class="unknown-secret"
               >
-                Một khóa kết nối cũ chưa có thông tin hiển thị vẫn được giữ nguyên: {{ unknownSecretRefs.join(', ') }}
+                Một khóa kết nối cũ vẫn được giữ nguyên để không làm gián đoạn dịch vụ.
               </p>
               <p
                 v-if="!secretReferences.length && !unknownSecretRefs.length"
@@ -415,7 +430,7 @@ function toggleSecretReference(id: string, checked: boolean) {
             role="status"
           >
             <div class="probe-heading">
-              <div><h3>Kết quả kiểm tra</h3><p>{{ selectedProbe.checkedAt }} · {{ selectedProbe.durationMs }} ms</p></div>
+              <div><h3>Kết quả kiểm tra</h3><p>Lần gần nhất: {{ formatCheckedAt(selectedProbe.checkedAt) }}</p></div>
               <VtStatus
                 :tone="selectedProbe.state === 'ready' ? 'online' : 'error'"
                 :label="selectedProbe.state === 'ready' ? 'Sẵn sàng' : 'Không khả dụng'"
@@ -449,26 +464,26 @@ function toggleSecretReference(id: string, checked: boolean) {
         ref="stateHeading"
         tabindex="-1"
       >
-        Catalog provider đang trống
+        Chưa có dịch vụ nào
       </h2>
-      <p>Catalog chưa được publish hoặc chưa có installation khả dụng.</p>
+      <p>Danh sách dịch vụ chưa sẵn sàng. Hãy tải lại để thử lại.</p>
       <VtButton
         variant="secondary"
         :loading="loading"
         @click="load"
       >
-        Tải lại catalog
+        Tải lại danh sách
       </VtButton>
     </VtCard>
     <VtDialog
       :open="Boolean(removeTarget)"
-      title="Ẩn provider config?"
-      :description="removeTarget ? `${removeTarget.name} sẽ không còn xuất hiện trong danh sách chọn. Các revision lịch sử vẫn được giữ.` : undefined"
+      title="Ẩn cấu hình?"
+      :description="removeTarget ? `${removeTarget.name} sẽ không còn xuất hiện trong danh sách chọn. Lịch sử cấu hình vẫn được giữ.` : undefined"
       width="sm"
       @update:open="!$event && closeRemove()"
     >
       <p class="dialog-warning">
-        Nếu config đang được assistant sử dụng, thao tác sẽ bị từ chối để không làm gián đoạn phiên đang chạy.
+        Nếu cấu hình đang được trợ lý sử dụng, thao tác sẽ bị từ chối để không làm gián đoạn cuộc trò chuyện.
       </p>
       <template #footer>
         <VtButton @click="removeId = ''">

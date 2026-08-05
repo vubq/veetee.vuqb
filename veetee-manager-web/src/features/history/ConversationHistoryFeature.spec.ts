@@ -109,7 +109,7 @@ describe('ConversationHistoryFeature list states', () => {
     const view = renderFeature(gateway({ listConversations: vi.fn(async () => failure()) }))
 
     const heading = await view.findByRole('heading', { name: 'Không tải được lịch sử' })
-    expect(view.getByText('Không tải được lịch sử hội thoại từ Manager API.')).toBeTruthy()
+    expect(view.getByText('Không tải được lịch sử hội thoại từ máy chủ quản trị.')).toBeTruthy()
     expect(view.getByRole('button', { name: 'Thử lại' })).toBeTruthy()
     expect(document.activeElement).toBe(heading)
   })
@@ -118,8 +118,8 @@ describe('ConversationHistoryFeature list states', () => {
     const view = renderFeature(gateway({ getRetentionPolicy: vi.fn(async () => failure()) }))
 
     await view.findByRole('heading', { name: 'Không tải được lịch sử' })
-    expect(view.getByText('Không tải được retention policy; lịch sử tạm thời bị khóa để tránh hiểu sai chính sách lưu trữ.')).toBeTruthy()
-    expect(view.queryByText('Retention đang áp dụng')).toBeNull()
+    expect(view.getByText('Không tải được thời hạn lưu; lịch sử tạm thời bị khóa để tránh hiểu sai chính sách.')).toBeTruthy()
+    expect(view.queryByText('Đang áp dụng')).toBeNull()
   })
 
   it('keeps valid empty history distinct from a failed read', async () => {
@@ -134,9 +134,9 @@ describe('ConversationHistoryFeature list states', () => {
   it('marks a valid stale snapshot without presenting it as live data', async () => {
     const view = renderFeature(gateway({ getRetentionPolicy: vi.fn(async () => success(retention, true)) }))
 
-    expect(await view.findByText('Dữ liệu ngoại tuyến')).toBeTruthy()
-    expect(view.getByText(/snapshot retention\/lịch sử cũ/)).toBeTruthy()
-    expect(view.getByRole('button', { name: 'Lưu retention policy' })).toBeTruthy()
+    expect(await view.findByText('Dữ liệu chưa đồng bộ')).toBeTruthy()
+    expect(view.getByText(/bản lưu cũ/)).toBeTruthy()
+    expect(view.getByRole('button', { name: 'Lưu thời hạn' })).toBeTruthy()
   })
 
   it('retries a transient list failure and restores the history item', async () => {
@@ -148,7 +148,7 @@ describe('ConversationHistoryFeature list states', () => {
     await view.findByRole('button', { name: 'Thử lại' })
     await fireEvent.click(view.getByRole('button', { name: 'Thử lại' }))
 
-    expect(await view.findByText(/1 lượt · TTFA/)).toBeTruthy()
+    expect(await view.findByText(/1 lượt · Phản hồi đầu tiên/)).toBeTruthy()
     expect(listConversations).toHaveBeenCalledTimes(2)
   })
 })
@@ -157,11 +157,11 @@ describe('ConversationHistoryFeature detail states', () => {
   it('shows a retryable detail error and keeps the selected context', async () => {
     const view = renderFeature(gateway({ getConversation: vi.fn(async () => failure()) }))
 
-    await view.findByText(/1 lượt · TTFA/)
+    await view.findByText(/1 lượt · Phản hồi đầu tiên/)
     await fireEvent.click(historyItem(view))
 
     const detailHeading = await view.findByText('Chi tiết lượt nói', { selector: 'strong' })
-    expect(await view.findByText('Không tải được chi tiết lượt nói từ Manager API.')).toBeTruthy()
+    expect(await view.findByText('Không tải được chi tiết lượt nói từ máy chủ quản trị.')).toBeTruthy()
     expect(view.getByRole('button', { name: 'Thử lại chi tiết' })).toBeTruthy()
     expect(document.activeElement).toBe(detailHeading)
   })
@@ -172,7 +172,7 @@ describe('ConversationHistoryFeature detail states', () => {
       .mockResolvedValueOnce(success(detail))
     const view = renderFeature(gateway({ getConversation }))
 
-    await view.findByText(/1 lượt · TTFA/)
+    await view.findByText(/1 lượt · Phản hồi đầu tiên/)
     await fireEvent.click(historyItem(view))
     await view.findByRole('button', { name: 'Thử lại chi tiết' })
     await fireEvent.click(view.getByRole('button', { name: 'Thử lại chi tiết' }))
@@ -187,8 +187,8 @@ describe('ConversationHistoryFeature retention mutation', () => {
     const updateRetentionPolicy = vi.fn(async () => success({ ...retention, revision: 3, etag: '"retention-3"' }))
     const view = renderFeature(gateway({ updateRetentionPolicy }))
 
-    await view.findByRole('button', { name: 'Lưu retention policy' })
-    await fireEvent.click(view.getByRole('button', { name: 'Lưu retention policy' }))
+    await view.findByRole('button', { name: 'Lưu thời hạn' })
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu thời hạn' }))
 
     expect(updateRetentionPolicy).toHaveBeenCalledWith({ captureTranscript: true, transcriptDays: 30, captureAudio: false, audioDays: null }, retention.etag)
   })
@@ -197,10 +197,10 @@ describe('ConversationHistoryFeature retention mutation', () => {
     const updateRetentionPolicy = vi.fn(async () => failure(true))
     const view = renderFeature(gateway({ updateRetentionPolicy }))
 
-    await view.findByRole('button', { name: 'Lưu retention policy' })
-    await fireEvent.click(view.getByRole('button', { name: 'Lưu retention policy' }))
+    await view.findByRole('button', { name: 'Lưu thời hạn' })
+    await fireEvent.click(view.getByRole('button', { name: 'Lưu thời hạn' }))
 
-    expect((await view.findByRole('alert')).textContent).toContain('Đang ngoại tuyến; retention policy chưa được thay đổi.')
+    expect((await view.findByRole('alert')).textContent).toContain('Đang ngoại tuyến; thời hạn lưu chưa được thay đổi.')
     expect(view.getByRole('heading', { name: 'Lưu trữ hội thoại' })).toBeTruthy()
   })
 })
@@ -209,12 +209,12 @@ describe('ConversationHistoryFeature export', () => {
   it('keeps an export error local to the selected conversation', async () => {
     const view = renderFeature(gateway({ exportConversation: vi.fn(async () => failure()) }))
 
-    await view.findByText(/1 lượt · TTFA/)
+    await view.findByText(/1 lượt · Phản hồi đầu tiên/)
     await fireEvent.click(historyItem(view))
-    await view.findByRole('button', { name: 'Tải JSON' })
-    await fireEvent.click(view.getByRole('button', { name: 'Tải JSON' }))
+    await view.findByRole('button', { name: 'Tải nội dung' })
+    await fireEvent.click(view.getByRole('button', { name: 'Tải nội dung' }))
 
-    expect((await view.findByRole('alert')).textContent).toContain('Không tải được bản export')
+    expect((await view.findByRole('alert')).textContent).toContain('Không tải được nội dung')
     expect(view.getByText('Chi tiết lượt nói')).toBeTruthy()
   })
 })
@@ -233,14 +233,14 @@ describe('ConversationHistoryFeature delete', () => {
     const deleteConversation = vi.fn(async () => success(job))
     const view = renderFeature(gateway({ deleteConversation }))
 
-    await view.findByText(/1 lượt · TTFA/)
+    await view.findByText(/1 lượt · Phản hồi đầu tiên/)
     await fireEvent.click(historyItem(view))
     await view.findByRole('button', { name: 'Xóa' })
     await fireEvent.click(view.getByRole('button', { name: 'Xóa' }))
 
     const dialog = await view.findByRole('dialog')
     expect(within(dialog).getByText(/không thể hoàn tác/i)).toBeTruthy()
-    await fireEvent.click(within(dialog).getByRole('button', { name: 'Xóa conversation' }))
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Xóa cuộc trò chuyện' }))
 
     expect(deleteConversation).toHaveBeenCalledWith(detail.summary.id)
     expect(await view.findByText('Chưa có hội thoại', { selector: 'strong' })).toBeTruthy()
@@ -250,13 +250,13 @@ describe('ConversationHistoryFeature delete', () => {
   it('keeps the confirmation open and announces an offline delete failure', async () => {
     const view = renderFeature(gateway({ deleteConversation: vi.fn(async () => failure(true)) }))
 
-    await view.findByText(/1 lượt · TTFA/)
+    await view.findByText(/1 lượt · Phản hồi đầu tiên/)
     await fireEvent.click(historyItem(view))
     await fireEvent.click(view.getByRole('button', { name: 'Xóa' }))
     const dialog = await view.findByRole('dialog')
-    await fireEvent.click(within(dialog).getByRole('button', { name: 'Xóa conversation' }))
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Xóa cuộc trò chuyện' }))
 
-    expect((await within(dialog).findByRole('alert')).textContent).toContain('Đang ngoại tuyến; conversation chưa được xóa.')
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('Đang ngoại tuyến; cuộc trò chuyện chưa được xóa.')
     expect(view.getByText('Chi tiết lượt nói')).toBeTruthy()
   })
 })

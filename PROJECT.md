@@ -31,8 +31,8 @@ và các service port `18xxx`).
 - Visual approval không thay cho full primitive-state inventory, keyboard-only
   core flows, demo/catalog cleanup hoặc snapshot matrix mọi surface/viewport;
   các gate này vẫn cần evidence riêng trước production promotion.
-- Evidence hiện tại của Web: typecheck/lint/production build pass, **66 unit
-  tests** và **9 Chromium E2E** pass; gồm history keyboard, responsive overflow,
+- Evidence hiện tại của Web: typecheck/lint/production build pass, **96 unit
+  tests** và **11 Chromium E2E** pass; gồm history keyboard, responsive overflow,
   provider schema flow và axe scan không có violation `serious`/`critical` trên
   critical surfaces. Preview/API mode vẫn phải tách rõ khi đọc report.
 - Hai thư mục dưới `references/` là snapshot bằng chứng **read-only**. Chỉ đọc
@@ -152,6 +152,21 @@ plane dùng manifest `tools/runtime/manifests/host-native-postgres-dev.json`,
 database `veetee_vubq` trên instance loopback riêng. Không coi preview, fixture
 memory hoặc API unit test là bằng chứng cho physical firmware hay các M2
 provider/VRAM/presence promotion gate.
+
+### 6.1 Quy tắc UX và dữ liệu hiển thị
+
+- Bề mặt dành cho người dùng phổ thông dùng tiếng Việt rõ ràng; không hiển thị
+  provider ID, board ID, revision, locator bí mật, trạng thái nội bộ hoặc tên
+  transport nếu không cần cho thao tác hiện tại.
+- Dữ liệu kỹ thuật vẫn được giữ ở API/log có redaction và trong audit cần thiết;
+  ẩn khỏi UI không đồng nghĩa xóa khỏi lịch sử cấu hình.
+- Mọi thao tác xóa/ẩn phải có xác nhận và ưu tiên archive, không xóa revision
+  immutable. Empty/error/offline state luôn có một hành động tiếp theo.
+- Danh sách/select phải truncate khi cần, có `title`/accessible name để đọc đủ
+  nội dung, không làm vỡ bố cục ở màn hình hẹp.
+- UI preview có fixture riêng để kiểm thử component; runtime production dùng
+  PostgreSQL `veetee_vubq` đã được dọn dữ liệu trước khi kiểm thử. Không đưa
+  fixture, secret test hoặc report audio vào production database.
 
 ## 7. Skill routing
 

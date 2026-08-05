@@ -48,7 +48,7 @@ async function loadAssistants() {
       loadState.value = result.meta.offline ? 'offline' : 'error'
       loadError.value = result.meta.offline
         ? 'Đang ngoại tuyến; chưa thể đồng bộ danh sách trợ lý.'
-        : 'Không tải được danh sách trợ lý từ Manager API.'
+        : 'Không tải được danh sách trợ lý từ máy chủ quản trị.'
       await focusStateHeading()
       return
     }
@@ -59,7 +59,7 @@ async function loadAssistants() {
     if (generation !== loadGeneration) return
     stale.value = false
     loadState.value = 'offline'
-    loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+    loadError.value = 'Không kết nối được máy chủ quản trị. Kiểm tra service hoặc mạng LAN.'
     await focusStateHeading()
   } finally {
     if (generation === loadGeneration) loading.value = false
@@ -186,7 +186,7 @@ onUnmounted(() => {
         ref="stateHeading"
         tabindex="-1"
       >
-        {{ loadState === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được danh sách trợ lý' }}
+        {{ loadState === 'offline' ? 'Máy chủ quản trị đang ngoại tuyến' : 'Không tải được danh sách trợ lý' }}
       </h2>
       <p>{{ loadError }}</p>
       <VtButton

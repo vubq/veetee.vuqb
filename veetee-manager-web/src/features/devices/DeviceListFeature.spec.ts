@@ -113,7 +113,7 @@ describe('DeviceListFeature data states', () => {
     const view = renderFeature(gateway({ listDevices: vi.fn(async () => failure()) }))
 
     const heading = await view.findByRole('heading', { name: 'Không tải được thiết bị' })
-    expect(view.getByText('Không tải được danh sách thiết bị từ Manager API.')).toBeTruthy()
+    expect(view.getByText('Không tải được danh sách thiết bị từ máy chủ quản trị.')).toBeTruthy()
     expect(view.getByRole('button', { name: 'Thử lại' })).toBeTruthy()
     expect(document.activeElement).toBe(heading)
     expect(view.queryByRole('heading', { name: 'Chưa có thiết bị' })).toBeNull()
@@ -122,7 +122,7 @@ describe('DeviceListFeature data states', () => {
   it('marks stale device reads as offline', async () => {
     const view = renderFeature(gateway({ listDevices: vi.fn(async () => failure(true)) }))
 
-    expect(await view.findByRole('heading', { name: 'Manager API đang ngoại tuyến' })).toBeTruthy()
+    expect(await view.findByRole('heading', { name: 'Máy chủ quản trị đang ngoại tuyến' })).toBeTruthy()
     expect(view.getByText('Đang ngoại tuyến; chưa thể đồng bộ danh sách thiết bị.')).toBeTruthy()
   })
 

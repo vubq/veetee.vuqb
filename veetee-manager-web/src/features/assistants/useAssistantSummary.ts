@@ -31,7 +31,7 @@ export function useAssistantSummary() {
         loadState.value = result.meta.offline ? 'offline' : 'error'
         loadError.value = result.meta.offline
           ? 'Đang ngoại tuyến; chưa thể tải thông tin trợ lý.'
-          : 'Không tải được thông tin trợ lý từ Manager API.'
+          : 'Không tải được thông tin trợ lý từ máy chủ quản trị.'
         return
       }
       assistant.value = result.data.items.find((item) => item.id === assistantId.value)
@@ -40,7 +40,7 @@ export function useAssistantSummary() {
     } catch {
       if (generation !== loadGeneration) return
       loadState.value = 'offline'
-      loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+      loadError.value = 'Không kết nối được máy chủ quản trị. Kiểm tra service hoặc mạng LAN.'
     } finally {
       if (generation === loadGeneration) loading.value = false
     }

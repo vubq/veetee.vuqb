@@ -54,6 +54,16 @@ function statusLabel(status: ConversationSummary['status']) {
   return status === 'completed' ? 'Hoàn tất' : status === 'aborted' ? 'Đã dừng' : status === 'error' ? 'Lỗi' : 'Đang diễn ra'
 }
 
+function localeLabel(locale: string) {
+  return locale === 'vi-VN' ? 'Tiếng Việt' : locale === 'en-US' ? 'Tiếng Anh' : locale
+}
+
+function formatResponseTime(value: number | null | undefined) {
+  if (value == null) return '—'
+  if (value < 1000) return `${value} mili giây`
+  return `${(value / 1000).toFixed(1).replace('.', ',')} giây`
+}
+
 async function load() {
   const generation = ++loadGeneration
   detailGeneration += 1
@@ -76,10 +86,10 @@ async function load() {
       const offline = history.meta.offline || policy.meta.offline
       loadState.value = offline ? 'offline' : 'error'
       loadError.value = !history.ok && !policy.ok
-        ? 'Không tải được lịch sử và retention policy từ Manager API.'
+        ? 'Không tải được lịch sử và thời hạn lưu từ máy chủ quản trị.'
         : !history.ok
-          ? 'Không tải được lịch sử hội thoại từ Manager API.'
-          : 'Không tải được retention policy; lịch sử tạm thời bị khóa để tránh hiểu sai chính sách lưu trữ.'
+          ? 'Không tải được lịch sử hội thoại từ máy chủ quản trị.'
+          : 'Không tải được thời hạn lưu; lịch sử tạm thời bị khóa để tránh hiểu sai chính sách.'
       await focusListState()
       return
     }
@@ -91,7 +101,7 @@ async function load() {
     if (generation !== loadGeneration) return
     loadState.value = 'offline'
     stale.value = false
-    loadError.value = 'Không kết nối được Manager API. Kiểm tra service hoặc mạng LAN.'
+    loadError.value = 'Không kết nối được máy chủ quản trị. Kiểm tra service hoặc mạng LAN.'
     await focusListState()
   } finally {
     if (generation === loadGeneration) loading.value = false
@@ -116,15 +126,15 @@ async function openConversation(item: ConversationSummary) {
     }
     detailState.value = result.meta.offline ? 'offline' : 'error'
     detailError.value = result.meta.offline
-      ? 'Đang ngoại tuyến; chưa thể tải chi tiết lượt nói.'
-      : result.problem.code === 'RETENTION_EXPIRED'
-        ? 'Conversation đã hết retention hoặc đã bị xóa.'
-      : 'Không tải được chi tiết lượt nói từ Manager API.'
+        ? 'Đang ngoại tuyến; chưa thể tải chi tiết lượt nói.'
+        : result.problem.code === 'RETENTION_EXPIRED'
+        ? 'Cuộc trò chuyện đã hết thời hạn lưu hoặc đã bị xóa.'
+      : 'Không tải được chi tiết lượt nói từ máy chủ quản trị.'
     await focusDetailState()
   } catch {
     if (generation !== detailGeneration) return
     detailState.value = 'offline'
-    detailError.value = 'Không kết nối được Manager API; hãy thử lại sau.'
+    detailError.value = 'Không kết nối được máy chủ quản trị; hãy thử lại sau.'
     await focusDetailState()
   } finally {
     if (generation === detailGeneration) detailLoading.value = false
@@ -142,13 +152,13 @@ async function exportSelectedConversation() {
       exportError.value = result.meta.offline
         ? 'Đang ngoại tuyến; chưa thể tải bản export.'
         : result.problem.code === 'RETENTION_EXPIRED'
-          ? 'Conversation đã hết retention hoặc đã bị xóa; không còn bản export.'
-        : 'Không tải được bản export của conversation.'
+          ? 'Cuộc trò chuyện đã hết thời hạn lưu hoặc đã bị xóa; không còn bản tải xuống.'
+        : 'Không tải được nội dung của cuộc trò chuyện.'
       await focusExportError()
       return
     }
     downloadJsonFile(result.data, `veetee-conversation-${conversation.summary.id}.json`)
-    notify('Đã tải conversation export', { tone: 'success', message: 'File JSON chỉ chứa các trường được phép export.' })
+    notify('Đã tải nội dung cuộc trò chuyện', { tone: 'success', message: 'Tệp chỉ chứa các trường được phép tải xuống.' })
   } catch {
     exportError.value = 'Trình duyệt không thể tạo file export; dữ liệu gốc vẫn giữ nguyên.'
     await focusExportError()
@@ -173,10 +183,10 @@ async function deleteSelectedConversation() {
     const result = await gateway.deleteConversation(item.id)
     if (!result.ok) {
       deleteError.value = result.meta.offline
-        ? 'Đang ngoại tuyến; conversation chưa được xóa.'
+        ? 'Đang ngoại tuyến; cuộc trò chuyện chưa được xóa.'
         : result.problem.code === 'RETENTION_EXPIRED'
-          ? 'Conversation đã được xóa hoặc hết retention.'
-          : 'Không thể tạo delete job cho conversation này.'
+          ? 'Cuộc trò chuyện đã được xóa hoặc hết thời hạn lưu.'
+          : 'Không thể tạo yêu cầu xóa cuộc trò chuyện này.'
       return
     }
     let job = result.data
@@ -184,13 +194,13 @@ async function deleteSelectedConversation() {
       await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 250))
       const status = await gateway.getRetentionDeleteJob(job.id)
       if (!status.ok) {
-        deleteError.value = status.meta.offline ? 'Đang ngoại tuyến; chưa thể kiểm tra delete job.' : 'Không đọc được trạng thái delete job.'
+        deleteError.value = status.meta.offline ? 'Đang ngoại tuyến; chưa thể kiểm tra tiến trình xóa.' : 'Không đọc được trạng thái tiến trình xóa.'
         return
       }
       job = status.data
     }
     if (job.status !== 'completed') {
-      deleteError.value = job.errorCode ? `Delete job kết thúc với lỗi ${job.errorCode}.` : 'Delete job chưa hoàn tất; hãy thử lại sau.'
+      deleteError.value = job.errorCode ? 'Tiến trình xóa gặp lỗi; dữ liệu vẫn được giữ nguyên.' : 'Tiến trình xóa chưa hoàn tất; hãy thử lại sau.'
       return
     }
     conversations.value = conversations.value.filter((conversation) => conversation.id !== item.id)
@@ -198,9 +208,9 @@ async function deleteSelectedConversation() {
     selected.value = undefined
     selectedItem.value = undefined
     deleteDialogOpen.value = false
-    notify('Đã xóa conversation', { tone: 'success', message: 'Transcript và metadata đã được đưa qua delete job.' })
+    notify('Đã xóa cuộc trò chuyện', { tone: 'success', message: 'Nội dung và thông tin đi kèm đã được dọn dẹp.' })
   } catch {
-    deleteError.value = 'Không kết nối được Manager API; conversation vẫn giữ nguyên.'
+    deleteError.value = 'Không kết nối được máy chủ quản trị; cuộc trò chuyện vẫn giữ nguyên.'
   } finally {
     deleting.value = false
   }
@@ -215,18 +225,18 @@ async function saveRetentionPolicy(input: RetentionPolicyInput) {
     const result = await gateway.updateRetentionPolicy(input, current.etag)
     if (result.ok) {
       retention.value = result.data
-      notify('Đã lưu retention policy', { tone: 'success', message: `Revision ${result.data.revision} đã được áp dụng cho các lượt mới.` })
+      notify('Đã lưu thời hạn lưu', { tone: 'success', message: 'Thiết lập mới áp dụng cho các lượt nói tiếp theo.' })
       return
     }
     retentionSaveError.value = result.meta.offline
-      ? 'Đang ngoại tuyến; retention policy chưa được thay đổi.'
+      ? 'Đang ngoại tuyến; thời hạn lưu chưa được thay đổi.'
       : result.problem.type === 'revision-conflict'
-        ? 'Retention policy đã thay đổi ở nơi khác; hãy tải lại trước khi lưu.'
-        : 'Không thể lưu retention policy; kiểm tra lại dữ liệu và thử lại.'
-    notify('Không thể lưu retention policy', { tone: 'error', message: retentionSaveError.value, assertive: true })
+        ? 'Thời hạn lưu đã thay đổi ở nơi khác; hãy tải lại trước khi lưu.'
+        : 'Không thể lưu thời hạn lưu; kiểm tra lại dữ liệu và thử lại.'
+    notify('Không thể lưu thời hạn lưu', { tone: 'error', message: retentionSaveError.value, assertive: true })
   } catch {
-    retentionSaveError.value = 'Không kết nối được Manager API; retention policy vẫn giữ nguyên.'
-    notify('Không thể lưu retention policy', { tone: 'error', message: retentionSaveError.value, assertive: true })
+    retentionSaveError.value = 'Không kết nối được máy chủ quản trị; thời hạn lưu vẫn giữ nguyên.'
+    notify('Không thể lưu thời hạn lưu', { tone: 'error', message: retentionSaveError.value, assertive: true })
   } finally {
     retentionSaving.value = false
   }
@@ -260,7 +270,7 @@ onMounted(load)
       @reset="load"
     />
     <div class="history-toolbar">
-      <div><strong>Lịch sử hội thoại</strong><span>Transcript được lưu theo retention policy; audio recording đang tắt.</span></div>
+      <div><strong>Lịch sử hội thoại</strong><span>Nội dung được lưu theo thời hạn bạn chọn; bản ghi âm đang tắt.</span></div>
       <VtButton
         size="sm"
         @click="load"
@@ -282,7 +292,7 @@ onMounted(load)
         :icon="WifiOff"
         :size="15"
       />
-      <span><strong>Dữ liệu ngoại tuyến</strong> — đang xem snapshot retention/lịch sử cũ; thay đổi sẽ bị chặn cho tới khi đồng bộ lại.</span>
+      <span><strong>Dữ liệu chưa đồng bộ</strong> — đang xem bản lưu cũ; thay đổi sẽ bị chặn cho tới khi kết nối lại.</span>
     </div>
 
     <RetentionPolicyPanel
@@ -317,7 +327,7 @@ onMounted(load)
         ref="listStateHeading"
         tabindex="-1"
       >
-        {{ loadState === 'offline' ? 'Manager API đang ngoại tuyến' : 'Không tải được lịch sử' }}
+        {{ loadState === 'offline' ? 'Máy chủ quản trị đang ngoại tuyến' : 'Không tải được lịch sử' }}
       </h2>
       <p>{{ loadError }}</p>
       <VtButton
@@ -332,7 +342,7 @@ onMounted(load)
       v-else-if="loadState === 'empty'"
       :icon="History"
       title="Chưa có hội thoại"
-      description="Các lượt nói qua Voice Server sẽ xuất hiện ở đây sau khi history ingest được bật."
+      description="Các lượt nói của robot sẽ xuất hiện ở đây sau khi có cuộc trò chuyện đầu tiên."
     />
     <div
       v-else
@@ -352,8 +362,8 @@ onMounted(load)
           @keydown.enter="openConversation(item)"
           @keydown.space.prevent="openConversation(item)"
         >
-          <header><div><strong>{{ formatTime(item.startedAt) }}</strong><span>{{ item.locale }}</span></div><VtBadge>{{ statusLabel(item.status) }}</VtBadge></header>
-          <p>{{ item.turnCount }} lượt · TTFA {{ item.aggregateTimings.last_ttfa_ms ?? '—' }} ms</p>
+          <header><div><strong>{{ formatTime(item.startedAt) }}</strong><span>{{ localeLabel(item.locale) }}</span></div><VtBadge>{{ statusLabel(item.status) }}</VtBadge></header>
+          <p>{{ item.turnCount }} lượt · Phản hồi đầu tiên {{ formatResponseTime(item.aggregateTimings.last_ttfa_ms) }}</p>
         </VtCard>
       </div>
       <VtCard
@@ -368,7 +378,7 @@ onMounted(load)
             >Chi tiết lượt nói</strong><span>{{ formatTime(selectedItem.startedAt) }} → {{ formatTime(selectedItem.endedAt) }}</span>
           </div>
           <div class="detail-actions">
-            <VtBadge>{{ selectedItem.configRevision }}</VtBadge>
+            <VtBadge>Đã lưu</VtBadge>
             <ConversationExportButton
               v-if="detailState === 'ready'"
               :loading="exporting"

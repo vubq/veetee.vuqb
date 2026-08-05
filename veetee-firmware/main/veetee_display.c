@@ -11,27 +11,73 @@
 
 #define TAG "veetee-display"
 
-static uint16_t state_color(vt_device_state_t state, int row, int height) {
-    const uint16_t idle = 0x18C3;
-    const uint16_t connecting = 0xFD20;
-    const uint16_t listening = 0x05E0;
-    const uint16_t thinking = 0xFB80;
-    const uint16_t speaking = 0x801F;
-    uint16_t color = idle;
+static uint16_t rgb565(uint8_t red, uint8_t green, uint8_t blue) {
+    return (uint16_t)(((uint16_t)(red & 0xF8U) << 8) |
+                      ((uint16_t)(green & 0xFCU) << 3) |
+                      ((uint16_t)blue >> 3));
+}
+
+static uint16_t state_color(vt_device_state_t state) {
+    uint16_t color = rgb565(64, 148, 255);
     switch (state) {
-    case VT_DEVICE_CONNECTING: color = connecting; break;
-    case VT_DEVICE_LISTENING: color = listening; break;
-    case VT_DEVICE_THINKING: color = thinking; break;
-    case VT_DEVICE_SPEAKING: color = speaking; break;
+    case VT_DEVICE_CONNECTING: color = rgb565(255, 190, 72); break;
+    case VT_DEVICE_LISTENING: color = rgb565(54, 218, 150); break;
+    case VT_DEVICE_THINKING: color = rgb565(255, 135, 72); break;
+    case VT_DEVICE_SPEAKING: color = rgb565(180, 112, 255); break;
     default: break;
     }
-    if (height > 1 && row >= height / 2) {
-        uint16_t red = (uint16_t)((color >> 11) * 3U / 4U);
-        uint16_t green = (uint16_t)(((color >> 5) & 0x3FU) * 3U / 4U);
-        uint16_t blue = (uint16_t)((color & 0x1FU) * 3U / 4U);
-        color = (uint16_t)((red << 11) | (green << 5) | blue);
-    }
     return color;
+}
+
+static bool inside_box(int column, int row, int left, int top, int right, int bottom) {
+    return column >= left && column <= right && row >= top && row <= bottom;
+}
+
+/* The LCD keeps a useful, text-free status surface even before assets/i18n are
+   loaded.  It deliberately uses simple geometry instead of a baked font so
+   locale strings stay in the signed asset/config layer. */
+static bool status_icon_pixel(vt_device_state_t state, int column, int row, int width, int height) {
+    const int center_x = width / 2;
+    const int center_y = height / 2 - 12;
+    const int radius = (width < height ? width : height) / 5;
+    const int dx = column - center_x;
+    const int dy = row - center_y;
+    const int distance = dx * dx + dy * dy;
+    const int outer = radius * radius;
+    const int inner = (radius - 5) * (radius - 5);
+    if (distance <= outer && distance >= inner) return true;
+
+    switch (state) {
+    case VT_DEVICE_IDLE:
+        return distance <= 12 * 12;
+    case VT_DEVICE_CONNECTING:
+        return (inside_box(column, row, center_x - 7, center_y - radius / 2, center_x + 7, center_y - radius / 2 + 13) ||
+                inside_box(column, row, center_x - 7, center_y + radius / 2 - 13, center_x + 7, center_y + radius / 2));
+    case VT_DEVICE_LISTENING:
+        return (inside_box(column, row, center_x - 17, center_y - 18, center_x - 9, center_y + 18) ||
+                inside_box(column, row, center_x - 4, center_y - 28, center_x + 4, center_y + 28) ||
+                inside_box(column, row, center_x + 9, center_y - 12, center_x + 17, center_y + 12));
+    case VT_DEVICE_THINKING:
+        return distance <= 7 * 7 || (column >= center_x - 27 && column <= center_x - 15 && row >= center_y - 6 && row <= center_y + 6) ||
+               (column >= center_x + 15 && column <= center_x + 27 && row >= center_y - 6 && row <= center_y + 6);
+    case VT_DEVICE_SPEAKING:
+        return (inside_box(column, row, center_x - 25, center_y - 12, center_x - 17, center_y + 12) ||
+                inside_box(column, row, center_x - 12, center_y - 26, center_x - 4, center_y + 26) ||
+                inside_box(column, row, center_x + 4, center_y - 36, center_x + 12, center_y + 36) ||
+                inside_box(column, row, center_x + 17, center_y - 19, center_x + 25, center_y + 19));
+    default:
+        return false;
+    }
+}
+
+static uint16_t display_pixel(vt_device_state_t state, int column, int row, int width, int height) {
+    const uint16_t background = rgb565(8, 16, 32);
+    const uint16_t accent = state_color(state);
+    const uint16_t icon = rgb565(236, 247, 255);
+    if (row < 8 || row >= height - 22) return accent;
+    if (status_icon_pixel(state, column, row, width, height)) return icon;
+    if (row >= height - 17 && column > width / 3 && column < (width * 2) / 3) return background;
+    return background;
 }
 
 static esp_err_t configure_backlight(const vt_display_config_t *config) {
@@ -139,8 +185,9 @@ esp_err_t vt_display_show_state(vt_display_t *display, vt_device_state_t state) 
         return ESP_ERR_INVALID_STATE;
     }
     for (int row = 0; row < display->height; ++row) {
-        uint16_t color = state_color(state, row, display->height);
-        for (int column = 0; column < display->row_width; ++column) display->row_buffer[column] = color;
+        for (int column = 0; column < display->row_width; ++column) {
+            display->row_buffer[column] = display_pixel(state, column, row, display->row_width, display->height);
+        }
         esp_err_t error = esp_lcd_panel_draw_bitmap(display->panel, 0, row, display->row_width, row + 1,
                                                      display->row_buffer);
         if (error != ESP_OK) return error;

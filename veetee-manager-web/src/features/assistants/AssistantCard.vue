@@ -21,6 +21,10 @@ function displayValue(value: string, fallback: string) {
   if (value === 'natural') return 'Tự nhiên'
   return value
 }
+
+function configurationLabel(state: AssistantCard['configurationState']) {
+  return state === 'published' ? 'Đang dùng' : state === 'needs-attention' ? 'Cần kiểm tra' : 'Có thay đổi chưa áp dụng'
+}
 </script>
 
 <template>
@@ -41,7 +45,7 @@ function displayValue(value: string, fallback: string) {
           :label="assistant.onlineDeviceCount > 0 ? `${assistant.onlineDeviceCount} thiết bị trực tuyến` : 'Không có thiết bị trực tuyến'"
         />
       </div>
-      <span class="revision">{{ assistant.configurationState === 'published' ? `Bản #${assistant.publishedRevision}` : 'Bản nháp' }}</span>
+      <span class="configuration-state">{{ configurationLabel(assistant.configurationState) }}</span>
     </header>
 
     <div class="metric-strip">
@@ -114,7 +118,7 @@ function displayValue(value: string, fallback: string) {
 .assistant-avatar { display: inline-grid; width: 40px; height: 40px; flex: none; place-items: center; border: 1px solid #d9cbf8; border-radius: 9px; background: #f2ecff; color: #6c42bf; }
 .assistant-name { min-width: 0; flex: 1; }
 .assistant-name h2 { margin: 0 0 3px; overflow: hidden; font-size: 13px; font-weight: 650; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-.revision { flex: none; border-radius: 4px; background: var(--vt-surface-muted); color: var(--vt-text-muted); padding: 3px 6px; font-size: 9px; }
+.configuration-state { flex: none; border-radius: 4px; background: var(--vt-surface-muted); color: var(--vt-text-muted); padding: 3px 6px; font-size: 9px; }
 .metric-strip { display: grid; height: 73px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 13px 13px; overflow: hidden; border: 1px solid var(--vt-border); border-radius: 7px; background: #f8fbfd; }
 .metric { min-width: 0; padding: 11px 9px; }
 .metric + .metric { border-left: 1px solid var(--vt-border); }

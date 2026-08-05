@@ -30,7 +30,7 @@ function updateRevision(value: number, isDirty: boolean) { revision.value = valu
     :assistant="shellAssistant"
     section-title="Vai trò & giọng nói"
     section-description="Prompt, tính cách và giọng nói của trợ lý"
-    :revision-label="`${dirty ? 'Chưa lưu · ' : ''}Bản nháp #${revision || '—'}`"
+    :revision-label="dirty ? 'Có thay đổi chưa lưu' : 'Đã lưu'"
   >
     <RoleConfigFeature
       :assistant-id="assistantId"

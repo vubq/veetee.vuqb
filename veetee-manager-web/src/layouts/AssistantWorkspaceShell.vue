@@ -22,6 +22,10 @@ const links = [
   { name: 'assistant-devices', label: 'Thiết bị', icon: Cpu },
   { name: 'assistant-history', label: 'Lịch sử hội thoại', icon: History },
 ]
+
+function localeLabel(locale: string) {
+  return locale === 'vi-VN' ? 'Tiếng Việt' : locale === 'en-US' ? 'Tiếng Anh' : locale
+}
 </script>
 
 <template>
@@ -50,7 +54,7 @@ const links = [
           <VtStatus
             :tone="assistant.status === 'online' ? 'online' : 'neutral'"
             :label="assistant.status === 'online' ? 'Trực tuyến' : 'Ngoại tuyến'"
-          /><span aria-hidden="true">·</span>{{ assistant.locale }}
+          /><span aria-hidden="true">·</span>{{ localeLabel(assistant.locale) }}
         </p>
       </div>
       <div
