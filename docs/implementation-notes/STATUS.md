@@ -1643,3 +1643,12 @@
   transport hardening. Acoustic voice-onset/time-to-silence, false accept/reject,
   100 repetition và duplex production promotion vẫn mở; production revision 87
   đã restore và health board/API/Web đều xanh.
+
+### Serial boot evidence after separate-lock flash (2026-08-05)
+
+- Reset mềm không erase cho image `0x15a260` xác nhận serial `ST7789 ready
+  240x280 offset=0,20 spi=2`, `startup chime played`, PTT GPIO0, AEC delay
+  `1280`, noise suppression/Opus và `WebSocket v3 ready` sau Wi-Fi profile NVS.
+- Đây chỉ là serial/host evidence. LCD có thực sự hiển thị, âm lượng/chất lượng
+  loa-mic và nút PTT vẫn cần physical acceptance trực tiếp; không đánh dấu các
+  gate đó là pass chỉ từ log.
