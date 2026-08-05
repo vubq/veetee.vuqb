@@ -170,6 +170,16 @@ config VEETEE_AEC_REFERENCE_BUFFER_MS
         Bound the 16 kHz playback-reference ring. It is flushed on abort or
         turn ownership change so stale speaker audio cannot enter a new turn.
 
+config VEETEE_AEC_REFERENCE_DELAY_MS
+    int "AEC playback-reference alignment delay (ms)"
+    range 0 500
+    default 80
+    depends on VEETEE_AEC_ENABLED
+    help
+        Minimum 16 kHz reference samples retained before the AEC consumes them.
+        Tune for the verified board I2S/DMA path; this is not an echo-quality
+        guarantee. Zero preserves the pre-alignment behavior.
+
 config VEETEE_WAKE_DURING_PLAYBACK
     bool "Allow wake detection while speaker plays"
     default n

@@ -35,6 +35,9 @@
 #ifndef CONFIG_VEETEE_AEC_REFERENCE_BUFFER_MS
 #define CONFIG_VEETEE_AEC_REFERENCE_BUFFER_MS 500
 #endif
+#ifndef CONFIG_VEETEE_AEC_REFERENCE_DELAY_MS
+#define CONFIG_VEETEE_AEC_REFERENCE_DELAY_MS 80
+#endif
 #define VT_NOISE_SAMPLE_RATE 16000
 #define VT_NOISE_FRAME_MS 10
 #define VT_NOISE_FRAME_SAMPLES (VT_NOISE_SAMPLE_RATE * VT_NOISE_FRAME_MS / 1000)
@@ -157,6 +160,7 @@ int vt_audio_init(vt_audio_t *audio, const vt_audio_config_t *config) {
         .max_playback_frame_samples = audio->output_frame_samples,
         .filter_length = CONFIG_VEETEE_AEC_FILTER_LENGTH,
         .reference_buffer_ms = CONFIG_VEETEE_AEC_REFERENCE_BUFFER_MS,
+        .reference_delay_ms = CONFIG_VEETEE_AEC_REFERENCE_DELAY_MS,
     };
     int aec_result = vt_aec_init(&audio->aec, &aec_config);
     if (aec_result != VT_AEC_OK) {
@@ -459,6 +463,11 @@ void vt_audio_reset_acoustic_reference(vt_audio_t *audio) {
 
 bool vt_audio_aec_ready(const vt_audio_t *audio) {
     return audio != NULL && vt_aec_is_ready(&audio->aec);
+}
+
+void vt_audio_get_aec_stats(vt_audio_t *audio, vt_aec_stats_t *stats) {
+    if (audio == NULL || stats == NULL) return;
+    vt_aec_get_stats(&audio->aec, stats);
 }
 
 void vt_audio_reset(vt_audio_t *audio) {

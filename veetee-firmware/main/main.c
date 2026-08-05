@@ -638,6 +638,7 @@ static void capture_task(void *context) {
     static uint8_t opus[VT_MAX_OPUS_PAYLOAD_BYTES];
 #if CONFIG_VEETEE_AUDIO_DIAGNOSTICS
     TickType_t next_level_log = 0;
+    TickType_t next_aec_log = 0;
     TickType_t next_read_error_log = 0;
     TickType_t next_partial_frame_log = 0;
 #endif
@@ -716,6 +717,17 @@ static void capture_task(void *context) {
                      vt_wake_is_ready(&app->wake) ? 1 : 0, app->capture_active ? 1 : 0,
                      (unsigned)uxTaskGetStackHighWaterMark(NULL));
             next_level_log = now + pdMS_TO_TICKS(1000);
+        }
+        if ((int32_t)(now - next_aec_log) >= 0 && vt_audio_aec_ready(&app->audio)) {
+            vt_aec_stats_t aec_stats = {0};
+            vt_audio_get_aec_stats(&app->audio, &aec_stats);
+            ESP_LOGI(TAG, "aec stats delay=%u depth=%u peak=%u produced=%u consumed=%u underrun=%u overrun=%u frames=%u resets=%u",
+                     (unsigned)aec_stats.delay_samples, (unsigned)aec_stats.depth_samples,
+                     (unsigned)aec_stats.peak_depth_samples, (unsigned)aec_stats.producer_samples,
+                     (unsigned)aec_stats.consumer_samples, (unsigned)aec_stats.underrun_count,
+                     (unsigned)aec_stats.overrun_count, (unsigned)aec_stats.processed_frames,
+                     (unsigned)aec_stats.reset_count);
+            next_aec_log = now + pdMS_TO_TICKS(1000);
         }
 #endif
 

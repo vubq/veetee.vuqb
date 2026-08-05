@@ -21,8 +21,10 @@
 
 static size_t bounded_reference_capacity(const vt_aec_config_t *config, size_t frame_samples) {
     size_t requested = (size_t)config->reference_buffer_ms * VT_AEC_SAMPLE_RATE / 1000U;
+    size_t delay = (size_t)config->reference_delay_ms * VT_AEC_SAMPLE_RATE / 1000U;
     size_t minimum = frame_samples * VT_AEC_MIN_REFERENCE_FRAMES;
-    return requested > minimum ? requested : minimum;
+    size_t retained = requested > minimum ? requested : minimum;
+    return retained <= SIZE_MAX - delay ? retained + delay : 0U;
 }
 
 static void free_buffers(vt_aec_t *aec) {
@@ -30,12 +32,12 @@ static void free_buffers(vt_aec_t *aec) {
     if (aec->aec_output != NULL) heap_caps_free(aec->aec_output);
     if (aec->reference_frame != NULL) heap_caps_free(aec->reference_frame);
     if (aec->resample_buffer != NULL) heap_caps_free(aec->resample_buffer);
-    if (aec->reference_ring != NULL) heap_caps_free(aec->reference_ring);
+    if (aec->reference.storage != NULL) heap_caps_free(aec->reference.storage);
     aec->aec_input = NULL;
     aec->aec_output = NULL;
     aec->reference_frame = NULL;
     aec->resample_buffer = NULL;
-    aec->reference_ring = NULL;
+    aec->reference.storage = NULL;
 }
 
 static void release_handle(vt_aec_t *aec) {
@@ -54,40 +56,11 @@ static void lock_give(vt_aec_t *aec) {
     if (aec->reference_lock != NULL) (void)xSemaphoreGive((SemaphoreHandle_t)aec->reference_lock);
 }
 
-static size_t resample_to_16k(vt_aec_t *aec, const int16_t *input, size_t input_count) {
-    if (input_count == 0U || aec->resample_buffer == NULL || aec->resample_capacity == 0U) return 0U;
-    if (aec->playback_sample_rate == (int)VT_AEC_SAMPLE_RATE) {
-        size_t count = input_count < aec->resample_capacity ? input_count : aec->resample_capacity;
-        memcpy(aec->resample_buffer, input, count * sizeof(*input));
-        return count;
-    }
-
-    const uint64_t target_rate = VT_AEC_SAMPLE_RATE;
-    const uint64_t source_rate = (uint64_t)aec->playback_sample_rate;
-    const uint64_t input_span = (uint64_t)input_count * target_rate;
-    uint64_t phase = aec->resample_phase;
-    size_t produced = 0U;
-    while (phase < input_span && produced < aec->resample_capacity) {
-        size_t index = (size_t)(phase / target_rate);
-        uint32_t fraction = (uint32_t)(phase % target_rate);
-        int32_t first = input[index];
-        int32_t second = index + 1U < input_count ? input[index + 1U] : input[index];
-        int32_t value = (first * (int32_t)(target_rate - fraction) + second * (int32_t)fraction) /
-                        (int32_t)target_rate;
-        if (value > INT16_MAX) value = INT16_MAX;
-        if (value < INT16_MIN) value = INT16_MIN;
-        aec->resample_buffer[produced++] = (int16_t)value;
-        phase += source_rate;
-    }
-    aec->resample_phase = phase >= input_span ? phase - input_span : 0U;
-    aec->resample_previous = input[input_count - 1U];
-    return produced;
-}
-
 int vt_aec_init(vt_aec_t *aec, const vt_aec_config_t *config) {
     if (aec == NULL || config == NULL || config->mic_sample_rate != (int)VT_AEC_SAMPLE_RATE ||
         config->playback_sample_rate <= 0 || config->max_playback_frame_samples <= 0 ||
-        config->filter_length <= 0 || config->reference_buffer_ms <= 0) {
+        config->filter_length <= 0 || config->reference_buffer_ms <= 0 ||
+        config->reference_delay_ms < 0 || config->reference_delay_ms > 500) {
         return VT_AEC_ERR_INVALID_ARG;
     }
     memset(aec, 0, sizeof(*aec));
@@ -105,6 +78,13 @@ int vt_aec_init(vt_aec_t *aec, const vt_aec_config_t *config) {
     }
 
     size_t reference_capacity = bounded_reference_capacity(config, (size_t)chunk_samples);
+    size_t reference_delay = (size_t)config->reference_delay_ms * VT_AEC_SAMPLE_RATE / 1000U;
+    if (reference_capacity == 0U || reference_delay >= reference_capacity) {
+        ESP_LOGE(TAG, "invalid reference capacity=%u delay_samples=%u", (unsigned)reference_capacity,
+                 (unsigned)reference_delay);
+        afe_aec_destroy(handle);
+        return VT_AEC_ERR_INVALID_ARG;
+    }
     size_t resample_capacity = ((size_t)config->max_playback_frame_samples * VT_AEC_SAMPLE_RATE +
                                 (size_t)config->playback_sample_rate - 1U) /
                                (size_t)config->playback_sample_rate + 2U;
@@ -137,15 +117,24 @@ int vt_aec_init(vt_aec_t *aec, const vt_aec_config_t *config) {
     aec->aec_output = output;
     aec->reference_frame = reference_frame;
     aec->resample_buffer = resample_buffer;
-    aec->reference_ring = reference_ring;
     aec->frame_samples = (size_t)chunk_samples;
     aec->resample_capacity = resample_capacity;
-    aec->reference_capacity = reference_capacity;
     aec->playback_sample_rate = config->playback_sample_rate;
+    if (vt_aec_reference_init(&aec->reference, reference_ring, reference_capacity, reference_delay) != 0 ||
+        vt_aec_resampler_init(&aec->resampler, (uint32_t)config->playback_sample_rate, VT_AEC_SAMPLE_RATE) != 0) {
+        vSemaphoreDelete(lock);
+        heap_caps_free(input);
+        heap_caps_free(output);
+        heap_caps_free(reference_frame);
+        heap_caps_free(resample_buffer);
+        heap_caps_free(reference_ring);
+        afe_aec_destroy(handle);
+        return VT_AEC_ERR_INVALID_ARG;
+    }
     aec->ready = true;
-    ESP_LOGI(TAG, "ready input=MR mic_rate=%u playback_rate=%d chunk=%u reference_samples=%u",
+    ESP_LOGI(TAG, "ready input=MR mic_rate=%u playback_rate=%d chunk=%u reference_samples=%u delay_samples=%u",
              (unsigned)VT_AEC_SAMPLE_RATE, config->playback_sample_rate,
-             (unsigned)aec->frame_samples, (unsigned)aec->reference_capacity);
+             (unsigned)aec->frame_samples, (unsigned)reference_capacity, (unsigned)reference_delay);
     return VT_AEC_OK;
 }
 
@@ -168,19 +157,12 @@ size_t vt_aec_frame_samples(const vt_aec_t *aec) {
 int vt_aec_push_playback(vt_aec_t *aec, const int16_t *samples, size_t sample_count) {
     if (!vt_aec_is_ready(aec)) return VT_AEC_ERR_UNAVAILABLE;
     if (samples == NULL || sample_count == 0U) return VT_AEC_ERR_INVALID_ARG;
-    size_t count = resample_to_16k(aec, samples, sample_count);
-    if (count == 0U || !lock_take(aec)) return count == 0U ? VT_AEC_ERR_AUDIO : VT_AEC_ERR_NO_MEM;
-    for (size_t index = 0; index < count; ++index) {
-        if (aec->reference_count == aec->reference_capacity) {
-            aec->reference_read = (aec->reference_read + 1U) % aec->reference_capacity;
-            --aec->reference_count;
-        }
-        aec->reference_ring[aec->reference_write] = aec->resample_buffer[index];
-        aec->reference_write = (aec->reference_write + 1U) % aec->reference_capacity;
-        ++aec->reference_count;
-    }
+    if (!lock_take(aec)) return VT_AEC_ERR_NO_MEM;
+    size_t count = vt_aec_resampler_process(&aec->resampler, samples, sample_count,
+                                            aec->resample_buffer, aec->resample_capacity);
+    size_t pushed = count == 0U ? 0U : vt_aec_reference_push(&aec->reference, aec->resample_buffer, count);
     lock_give(aec);
-    return VT_AEC_OK;
+    return pushed == count && count > 0U ? VT_AEC_OK : VT_AEC_ERR_AUDIO;
 }
 
 static size_t pop_reference(vt_aec_t *aec, int16_t *destination, size_t count) {
@@ -188,14 +170,8 @@ static size_t pop_reference(vt_aec_t *aec, int16_t *destination, size_t count) {
         if (destination != NULL) memset(destination, 0, count * sizeof(*destination));
         return 0U;
     }
-    size_t popped = 0U;
-    while (popped < count && aec->reference_count > 0U) {
-        destination[popped++] = aec->reference_ring[aec->reference_read];
-        aec->reference_read = (aec->reference_read + 1U) % aec->reference_capacity;
-        --aec->reference_count;
-    }
+    size_t popped = vt_aec_reference_pop(&aec->reference, destination, count);
     lock_give(aec);
-    if (popped < count) memset(destination + popped, 0, (count - popped) * sizeof(*destination));
     return popped;
 }
 
@@ -228,13 +204,18 @@ int vt_aec_process(vt_aec_t *aec, int16_t *samples, size_t sample_count) {
 void vt_aec_reset_reference(vt_aec_t *aec) {
     if (!vt_aec_is_ready(aec)) return;
     if (lock_take(aec)) {
-        aec->reference_read = 0U;
-        aec->reference_write = 0U;
-        aec->reference_count = 0U;
+        vt_aec_reference_reset(&aec->reference);
+        vt_aec_resampler_reset(&aec->resampler);
         lock_give(aec);
     }
-    aec->resample_phase = 0U;
-    aec->resample_previous = 0;
+}
+
+void vt_aec_get_stats(vt_aec_t *aec, vt_aec_stats_t *stats) {
+    if (stats == NULL) return;
+    memset(stats, 0, sizeof(*stats));
+    if (!vt_aec_is_ready(aec) || !lock_take(aec)) return;
+    vt_aec_reference_get_stats(&aec->reference, stats);
+    lock_give(aec);
 }
 
 #else
@@ -276,6 +257,11 @@ int vt_aec_process(vt_aec_t *aec, int16_t *samples, size_t sample_count) {
 
 void vt_aec_reset_reference(vt_aec_t *aec) {
     (void)aec;
+}
+
+void vt_aec_get_stats(vt_aec_t *aec, vt_aec_stats_t *stats) {
+    (void)aec;
+    if (stats != NULL) memset(stats, 0, sizeof(*stats));
 }
 
 #endif

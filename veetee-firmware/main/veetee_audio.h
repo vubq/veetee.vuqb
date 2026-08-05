@@ -56,4 +56,5 @@ void vt_audio_reset_decoder(vt_audio_t *audio);
 void vt_audio_reset_encoder(vt_audio_t *audio);
 void vt_audio_reset_acoustic_reference(vt_audio_t *audio);
 bool vt_audio_aec_ready(const vt_audio_t *audio);
+void vt_audio_get_aec_stats(vt_audio_t *audio, vt_aec_stats_t *stats);
 void vt_audio_reset(vt_audio_t *audio);

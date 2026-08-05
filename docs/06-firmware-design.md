@@ -494,6 +494,18 @@ minh DAC/acoustic playback; board có DMA-play callback MAY quảng bá marker m
 Default `ws-v3` dùng device-side AEC và không có binary timestamp. Muốn server-side
 AEC phải activate `ws-v2`; không đổi layout v3.
 
+Slice alignment hiện tách timing reference thành module thuần C
+[`veetee_aec_reference.c`](../veetee-firmware/main/veetee_aec_reference.c):
+resample playback 24 kHz → 16 kHz, giữ bounded delay gate và saturating
+producer/consumer/underflow/overflow counters. `CONFIG_VEETEE_AEC_REFERENCE_DELAY_MS`
+đến từ board/Kconfig (profile hiện tại `80 ms`), không phải literal trong AEC
+logic. Khi depth chưa vượt delay, AEC nhận zero reference và ring không bị pop
+non-delayed; abort/reset xóa depth nhưng giữ counters trong cùng boot.
+Diagnostics chỉ log số liệu khi `VEETEE_AUDIO_DIAGNOSTICS` bật; không log PCM.
+Host CTest `aec_reference` kiểm tra resample, delay, overflow, underflow và reset.
+Đây là instrumentation/alignment baseline, chưa phải echo-only hoặc
+time-to-silence acceptance.
+
 ### 8.4 Long responses
 
 Không có maximum response duration ở firmware. Firmware chỉ giữ sliding bounded

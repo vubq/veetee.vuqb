@@ -1594,3 +1594,35 @@
   E2E **11 passed**, firmware host CTest **8/8 passed**. Các gate acoustic
   echo-only/voice-onset, time-to-silence, false accept/reject, 100 repetition,
   PTT/LCD/loa physical và TTFA p95 vẫn chưa đóng.
+
+### AEC reference alignment baseline (2026-08-05)
+
+- Firmware có `veetee_aec_reference.c` thuần C cho resample 24k→16k, delay gate
+  cấu hình `CONFIG_VEETEE_AEC_REFERENCE_DELAY_MS=80` (range `0..500`) và
+  bounded ring counters. Underrun zero-fill, overrun drop-oldest; reset xóa
+  depth nhưng giữ counters trong boot. Diagnostics không ghi raw PCM.
+- Host firmware CTest **9/9 passed** (thêm `aec_reference`); ESP-IDF 6.0.2
+  build pass, binary `0x159eb0`, app còn 66%. Image đã flash/verify hash,
+  không erase NVS và không đổi Wi-Fi.
+- Spec: [`2026-08-05-aec-reference-alignment-design.md`](../superpowers/specs/2026-08-05-aec-reference-alignment-design.md).
+  Echo-only physical, false accept/reject, voice-onset/time-to-silence và
+  acoustic production promotion vẫn chưa đóng.
+
+### Bounded physical echo-only after AEC alignment (2026-08-05)
+
+- Fixture revision `9001` ngoài Git (Silero VAD, ASR fixture, TTS tone, test-only
+  Groq key pool) chạy **2/2** lượt với `deviceDuplex=true`; report
+  `/tmp/veetee-aec-echo-only-20260805.json`, serial `/tmp/veetee-aec-echo-only-stdout.log`.
+  Mỗi lượt có đủ wake/capture/TTS/drain/re-arm và thêm 5 nhịp quan sát sau re-arm.
+- Không thấy echo retrigger: serial đúng 2 `wake detected`, 2 `wake start`, 2
+  `state=speaking`, 0 `wake interrupt`; Voice metrics cuối fixture
+  `turn_admissions=2`, `turn_releases=2`, `active_turns=0`,
+  `protocol_errors=0`, `barge_in_count=0`. AEC stats có producer/consumer
+  và delay `1280` samples; underrun/overrun vẫn cần sizing study.
+- Có 6 cảnh báo `ws-client` lock timeout 500 ms trong duplex capture; không có
+  forbidden firmware marker và không làm hỏng lifecycle, nhưng gate transport
+  contention/real-ASR packet integrity vẫn mở. Đây là bounded diagnostic pass,
+  **không** phải promotion cho voice-onset, time-to-silence hoặc duplex mặc định.
+- Sau cleanup Voice Manager-source revision `87` ready, board
+  `activeConnections=1`, `activeTurns=0`, API/Web ready; không mutate
+  database/NVS/Wi-Fi/Tailscale.

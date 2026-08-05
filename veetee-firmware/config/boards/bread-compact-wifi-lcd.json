@@ -36,6 +36,13 @@
     "i2sDataBits": 32,
     "pcmBits": 16
   },
+  "aec": {
+    "enabled": true,
+    "filterLength": 4,
+    "referenceBufferMs": 500,
+    "referenceDelayMs": 80,
+    "processWake": true
+  },
   "controls": {
     "ptt": { "gpio": 0, "activeLevel": 0 }
   },

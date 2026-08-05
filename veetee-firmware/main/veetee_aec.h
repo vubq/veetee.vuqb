@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "veetee_aec_reference.h"
+
 enum {
     VT_AEC_OK = 0,
     VT_AEC_ERR_INVALID_ARG = -1,
@@ -19,6 +21,7 @@ typedef struct {
     int max_playback_frame_samples;
     int filter_length;
     int reference_buffer_ms;
+    int reference_delay_ms;
 } vt_aec_config_t;
 
 /*
@@ -33,18 +36,15 @@ typedef struct {
     int16_t *aec_output;
     int16_t *reference_frame;
     int16_t *resample_buffer;
-    int16_t *reference_ring;
     size_t frame_samples;
     size_t resample_capacity;
-    size_t reference_capacity;
-    size_t reference_read;
-    size_t reference_write;
-    size_t reference_count;
-    uint64_t resample_phase;
-    int16_t resample_previous;
     int playback_sample_rate;
+    vt_aec_reference_t reference;
+    vt_aec_resampler_t resampler;
     bool ready;
 } vt_aec_t;
+
+typedef vt_aec_reference_stats_t vt_aec_stats_t;
 
 int vt_aec_init(vt_aec_t *aec, const vt_aec_config_t *config);
 void vt_aec_deinit(vt_aec_t *aec);
@@ -59,3 +59,4 @@ int vt_aec_process(vt_aec_t *aec, int16_t *samples, size_t sample_count);
 
 /* Drop stale far-end samples after abort/turn ownership changes. */
 void vt_aec_reset_reference(vt_aec_t *aec);
+void vt_aec_get_stats(vt_aec_t *aec, vt_aec_stats_t *stats);

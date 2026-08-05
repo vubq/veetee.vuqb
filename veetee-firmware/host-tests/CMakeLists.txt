@@ -67,3 +67,10 @@ add_executable(veetee_firmware_board_hal_tests
 target_include_directories(veetee_firmware_board_hal_tests PRIVATE ../main)
 target_compile_options(veetee_firmware_board_hal_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
 add_test(NAME board_hal COMMAND veetee_firmware_board_hal_tests)
+
+add_executable(veetee_firmware_aec_reference_tests
+    test_aec_reference.c
+    ../main/veetee_aec_reference.c)
+target_include_directories(veetee_firmware_aec_reference_tests PRIVATE ../main)
+target_compile_options(veetee_firmware_aec_reference_tests PRIVATE -Wall -Wextra -Werror -Wconversion -Wpedantic)
+add_test(NAME aec_reference COMMAND veetee_firmware_aec_reference_tests)
