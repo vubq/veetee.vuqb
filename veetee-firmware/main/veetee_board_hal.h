@@ -81,3 +81,11 @@ size_t vt_board_hal_tool_count(const vt_board_hal_t *hal);
 const vt_mcp_tool_t *vt_board_hal_tool_at(
     const vt_board_hal_t *hal,
     size_t index);
+
+/* Copy enabled descriptors into caller-owned contiguous storage for
+ * vt_mcp_registry_init()/owner-task setup. No callback is invoked. */
+vt_board_hal_result_t vt_board_hal_copy_tools(
+    const vt_board_hal_t *hal,
+    vt_mcp_tool_t *tools,
+    size_t capacity,
+    size_t *tool_count);

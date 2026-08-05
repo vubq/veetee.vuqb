@@ -125,3 +125,22 @@ const vt_mcp_tool_t *vt_board_hal_tool_at(
     }
     return NULL;
 }
+
+vt_board_hal_result_t vt_board_hal_copy_tools(
+    const vt_board_hal_t *hal,
+    vt_mcp_tool_t *tools,
+    size_t capacity,
+    size_t *tool_count) {
+    if (hal == NULL || tool_count == NULL || (capacity > 0U && tools == NULL)) {
+        return VT_BOARD_HAL_ERR_ARGUMENT;
+    }
+    const size_t required = vt_board_hal_tool_count(hal);
+    *tool_count = required;
+    if (capacity < required) return VT_BOARD_HAL_ERR_CAPACITY;
+    size_t output_index = 0U;
+    for (size_t index = 0U; index < hal->capability_count; ++index) {
+        const vt_board_capability_t *capability = &hal->capabilities[index];
+        if (capability->enabled) tools[output_index++] = *capability->tool;
+    }
+    return VT_BOARD_HAL_OK;
+}

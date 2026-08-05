@@ -61,6 +61,13 @@ static void test_activation_filters_disabled_tools(void) {
     assert(strcmp(vt_board_hal_capability_at(&hal, 0U)->owner_id, "app_main") == 0);
     assert(vt_board_hal_find_capability(&hal, "led") != NULL);
     assert(!vt_board_hal_find_capability(&hal, "led")->enabled);
+    vt_mcp_tool_t copied[1] = {0};
+    size_t copied_count = 0U;
+    assert(vt_board_hal_copy_tools(&hal, copied, 1U, &copied_count) == VT_BOARD_HAL_OK);
+    assert(copied_count == 1U);
+    assert(strcmp(copied[0].name, STATUS_TOOL.name) == 0);
+    assert(vt_board_hal_copy_tools(&hal, copied, 0U, &copied_count) == VT_BOARD_HAL_ERR_CAPACITY);
+    assert(copied_count == 1U);
 }
 
 static void test_invalid_manifest_does_not_replace_active_snapshot(void) {
