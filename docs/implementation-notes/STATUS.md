@@ -1533,3 +1533,21 @@
   reset, erase NVS, đổi Wi-Fi/route/Tailscale hay lưu raw audio/transcript/key.
   PTT/LCD/loa xác nhận vật lý, acoustic AEC/time-to-silence, false
   accept/reject, 100-repetition và TTFA p95 vẫn chưa đóng.
+
+### Acoustic duplex direct voice-onset probe (2026-08-05)
+
+- Fixture `/tmp` revision `900` bật `bargeIn.deviceDuplex=true`, dùng pool 4
+  Groq key test-only, history/presence tắt. Audio thật qua loa xác nhận
+  `acoustic duplex capture enabled while server is speaking` → `state=listening`
+  → `acoustic barge-in committed; capture kept for new auto turn`; report
+  `/tmp/veetee-acoustic-duplex-current-20260805.json`.
+- Sau commit đầu, residual echo/feedback tạo loop: `barge_in_count=10`,
+  `turn_admissions=11`, `turn_releases=10`, `active_turns=1`; fixture đã dừng
+  ngay để không phát lặp. Đây là **fail của quality/promotion gate**, không phải
+  crash; cần AEC reference alignment + echo-only corpus + rearm/loop guard
+  config-driven trước khi bật acoustic duplex production.
+- Đã restore Voice Manager-source revision `87`, reset board bằng
+  `esptool chip-id --after hard-reset` (không flash/erase/NVS). Sau cleanup
+  Voice/API/Web ready, board `activeConnections=1`, `activeTurns=0`,
+  `protocol_errors=0`. M0/M1 physical PTT/LCD/loa, acoustic time-to-silence,
+  false accept/reject và 100-repetition vẫn mở.
