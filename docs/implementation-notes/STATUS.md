@@ -15,6 +15,9 @@
   truyền DSN. Lint/build/OpenAPI export/check pass.
 - Manager Web hiện **97/97 unit** và **15/15 Chromium E2E**; typecheck/lint/build
   pass. Route-level code splitting giảm entry JS từ khoảng 516 kB xuống 172 kB.
+- QA cloud Browser Use không chạy trong lượt này vì `browser-harness` yêu cầu
+  `browser-harness auth login`; không tự mượn credential hoặc mở local Chrome.
+  Host Playwright/Chromium E2E nêu trên là bằng chứng UI hiện có.
 - Firmware host CTest **9/9** và ESP-IDF 6.0.2 build pass; không flash/reset board
   trong lượt này vì không cần thiết cho host hardening. Không đổi Wi-Fi/NVS,
   NetworkManager, route, firewall hoặc Tailscale.
