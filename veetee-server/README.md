@@ -16,6 +16,8 @@ python3 -m venv .venv
 ./.venv/bin/pip install -e '.[local-asr-cuda]'
 # Silero VAD ONNX (modelPath phải được provision trong provider snapshot):
 ./.venv/bin/pip install -e '.[local-vad]'
+# MQTT control carrier (M3; không tự bật transport và không thay WS v3):
+./.venv/bin/pip install -e '.[mqtt]'
 VEETEE_CONFIG_SOURCE=fixture \
 VEETEE_CONFIG_FIXTURE_FILE=config/fixtures/m0.json \
 VEETEE_GROQ_SECRET_FILE=../secrets/groq.keys \
@@ -97,7 +99,10 @@ Health:
 
 `veetee_server.mqtt_udp` hiện chỉ cung cấp parser/crypto/reorder primitives cho
 profile M3. Nó không mở MQTT broker, UDP socket hoặc tự chuyển transport; direct
-WebSocket v3 vẫn là default. Chạy test core bằng `uv run pytest -q` trong
+WebSocket v3 vẫn là default. `veetee_server.mqtt_carrier` là adapter MQTT control
+tùy chọn dùng `aiomqtt`; nó chỉ connect/subscribe/publish payload đã validate và
+trả `(topic, payload)` cho `MqttUdpSession`, không tự decode JSON, mở UDP socket
+hay thay transport runtime. Chạy test core bằng `uv run pytest -q` trong
 checkout này. Gateway, stream barrier và transport promotion chỉ được bật sau
 golden/loss/soak evidence tương ứng.
 
