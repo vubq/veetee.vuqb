@@ -3,7 +3,7 @@ import { BrainCircuit, Database, ShieldAlert } from '@lucide/vue'
 import { computed, nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
-import { PROVIDER_KINDS, type ModelMemoryWorkspace, type ProviderKind, type RevisionConflictProblem, type UpdateProviderSelectionInput, type Versioned } from '@/domain'
+import { PROVIDER_KINDS, type ModelMemoryWorkspace, type ModelType, type ProviderKind, type RevisionConflictProblem, type UpdateProviderSelectionInput, type Versioned } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import FormSection from '@/ui/patterns/FormSection.vue'
 import PreviewScenarioToolbar from '@/ui/patterns/PreviewScenarioToolbar.vue'
@@ -18,6 +18,7 @@ import VtSwitch from '@/ui/primitives/VtSwitch.vue'
 import { notify } from '@/ui/primitives/notifications'
 
 import RevisionConflictDialog from '@/features/assistants/RevisionConflictDialog.vue'
+import { localizedModelName, localizedProviderName } from './model-registry-labels'
 
 const props = defineProps<{ assistantId: string }>()
 const emit = defineEmits<{ revision: [revision: number] }>()
@@ -38,7 +39,7 @@ function cloneWorkspace(workspace: ModelMemoryWorkspace): ModelMemoryWorkspace {
   return {
     assistantId: workspace.assistantId,
     selections: workspace.selections.map((selection) => ({ ...selection })),
-    availableConfigs: workspace.availableConfigs.map((config) => ({ ...config, supportedLocales: [...config.supportedLocales] })),
+    availableConfigs: workspace.availableConfigs.map((config) => ({ ...config, supportedLocales: [...config.supportedLocales], ...(config.model ? { model: { ...config.model } } : {}) })),
     memory: { ...workspace.memory },
     memoryItems: workspace.memoryItems.map((item) => ({ ...item })),
   }
@@ -61,6 +62,10 @@ function memoryKindLabel(kind: string) {
   return kind === 'preference' ? 'Sở thích' : kind === 'fact' ? 'Thông tin' : kind === 'instruction' ? 'Chỉ dẫn' : 'Ghi nhớ'
 }
 
+function modelTypeForKind(kind: ProviderKind): ModelType {
+  return kind === 'intent' ? 'Intent' : kind === 'memory' ? 'Memory' : kind.toUpperCase() as Exclude<ModelType, 'Plugin' | 'RAG'>
+}
+
 function selectionValue(kind: ProviderKind) {
   const selection = resource.value?.value.selections.find((item) => item.kind === kind)
   return selection?.mode === 'selected' ? selection.providerConfigId : '__disabled__'
@@ -74,8 +79,8 @@ function optionsFor(kind: ProviderKind): VtSelectOption[] {
   const configs = resource.value?.value.availableConfigs.filter((item) => item.kind === kind) ?? []
   const options: VtSelectOption[] = configs.map((config) => ({
     value: config.id,
-    label: config.name,
-    description: `Hỗ trợ ${config.supportedLocales.map(localeLabel).join(', ')}`,
+    label: config.model ? localizedModelName({ modelType: modelTypeForKind(kind), modelCode: config.model.code, modelName: config.model.name }) : config.name,
+    description: `${config.name} · ${config.model?.code ?? localizedProviderName({ modelType: modelTypeForKind(kind), providerCode: config.model?.providerCode ?? config.providerName, name: config.providerName })} · hỗ trợ ${config.supportedLocales.map(localeLabel).join(', ')}`,
     disabled: config.availability !== 'ready',
   }))
   if (kind === 'intent' || kind === 'memory') options.unshift({ value: '__disabled__', label: 'Tắt', description: 'Không dùng dịch vụ cho loại này' })
@@ -85,6 +90,16 @@ function optionsFor(kind: ProviderKind): VtSelectOption[] {
 function configFor(kind: ProviderKind) {
   const selected = selectionValue(kind)
   return resource.value?.value.availableConfigs.find((config) => config.id === selected)
+}
+
+function modelFor(kind: ProviderKind) {
+  return configFor(kind)?.model
+}
+
+function modelLabel(kind: ProviderKind): string {
+  const model = modelFor(kind)
+  if (!model) return ''
+  return localizedModelName({ modelType: modelTypeForKind(kind), modelCode: model.code, modelName: model.name })
 }
 
 function selectionStatus(kind: ProviderKind): 'ready' | 'disabled' | 'unavailable' | 'missing' {
@@ -266,6 +281,33 @@ onMounted(load)
             :disabled="mutatingKind === kind"
             @update:model-value="changeProvider(kind, $event)"
           />
+          <div
+            v-if="modelFor(kind)"
+            class="provider-model-meta"
+          >
+            <span class="provider-model-label">Model đang dùng</span>
+            <RouterLink
+              v-if="kind === 'tts'"
+              class="provider-model-link"
+              :to="{ path: '/providers/tts/voices', query: { modelId: modelFor(kind)?.id } }"
+              :title="`${modelLabel(kind)} (${modelFor(kind)?.code})`"
+            >
+              {{ modelLabel(kind) }} · {{ modelFor(kind)?.code }}
+            </RouterLink>
+            <span
+              v-else
+              class="provider-model-value"
+              :title="`${modelLabel(kind)} (${modelFor(kind)?.code})`"
+            >
+              {{ modelLabel(kind) }} · {{ modelFor(kind)?.code }}
+            </span>
+            <VtBadge
+              v-if="modelFor(kind)?.isDefault"
+              tone="primary"
+            >
+              Mặc định
+            </VtBadge>
+          </div>
           <p
             v-if="selectionStatus(kind) === 'unavailable'"
             class="provider-error"
@@ -363,6 +405,11 @@ onMounted(load)
 .provider-error { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 0; color: var(--vt-danger); font-size: 9px; line-height: 1.45; }
 .provider-disabled-hint { margin: 8px 0 0; color: var(--vt-text-muted); font-size: 9px; line-height: 1.45; }
 .provider-disabled-hint a { color: var(--vt-primary); font-weight: 600; text-underline-offset: 2px; }
+.provider-model-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 8px; color: var(--vt-text-muted); font-size: 9px; }
+.provider-model-label { flex: none; color: var(--vt-text-muted); }
+.provider-model-value, .provider-model-link { min-width: 0; overflow: hidden; color: var(--vt-text-soft); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.provider-model-link { color: var(--vt-primary); text-decoration: none; text-underline-offset: 2px; }
+.provider-model-link:hover { text-decoration: underline; }
 .memory-list { display: grid; gap: 8px; }
 .memory-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); padding: 9px 10px; }
 .memory-item.disabled { background: var(--vt-surface-muted); }

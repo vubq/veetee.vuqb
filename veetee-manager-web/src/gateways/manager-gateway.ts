@@ -40,6 +40,9 @@ import type {
   ModelProviderRecord,
   ModelType,
   ModelProviderField,
+  ModelTtsVoice,
+  ModelTtsVoiceInput,
+  ModelTtsVoicePage,
   RetentionPolicy,
   RetentionPolicyInput,
   RetentionExpiredProblem,
@@ -141,6 +144,10 @@ export interface AssistantGateway {
   deleteModelConfig(id: string, expectedEtag?: string): Promise<GatewayResult<void, ModelControlProblem>>
   setModelEnabled(id: string, enabled: boolean): Promise<GatewayResult<ModelConfigRecord, ModelControlProblem>>
   setDefaultModel(id: string): Promise<GatewayResult<ModelConfigRecord, ModelControlProblem>>
+  listModelTtsVoices(modelId: string, query?: { name?: string; page?: number; limit?: number }): Promise<GatewayResult<ModelTtsVoicePage, ModelControlProblem>>
+  createModelTtsVoice(modelId: string, input: ModelTtsVoiceInput): Promise<GatewayResult<ModelTtsVoice, ModelControlProblem>>
+  updateModelTtsVoice(modelId: string, voiceId: string, input: Partial<ModelTtsVoiceInput>, expectedEtag?: string): Promise<GatewayResult<ModelTtsVoice, ModelControlProblem>>
+  deleteModelTtsVoice(modelId: string, voiceId: string, expectedEtag?: string): Promise<GatewayResult<void, ModelControlProblem>>
 }
 
 export interface ProviderGateway {

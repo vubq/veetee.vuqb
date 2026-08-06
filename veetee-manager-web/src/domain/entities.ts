@@ -215,6 +215,47 @@ export interface ProviderConfigSummary {
   providerName: string
   availability: ProviderAvailability
   supportedLocales: string[]
+  model?: {
+    id: string
+    code: string
+    name: string
+    providerCode: string
+    isDefault: boolean
+    isEnabled: boolean
+  }
+}
+
+export interface ModelTtsVoice {
+  id: string
+  ttsModelId: string
+  name: string
+  ttsVoice: string
+  languages: string
+  voiceDemo: string | null
+  remark: string | null
+  referenceAudio: string | null
+  referenceText: string | null
+  sort: number
+  etag: ETag
+  updatedAt: IsoDateTime
+}
+
+export interface ModelTtsVoiceInput {
+  name: string
+  ttsVoice: string
+  languages: string
+  voiceDemo?: string | null
+  remark?: string | null
+  referenceAudio?: string | null
+  referenceText?: string | null
+  sort?: number
+}
+
+export interface ModelTtsVoicePage {
+  items: ModelTtsVoice[]
+  total: number
+  page: number
+  limit: number
 }
 
 export interface ProviderInstallationView {

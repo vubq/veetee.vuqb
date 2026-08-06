@@ -1,28 +1,48 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@lucide/vue'
 
 import { requireInjection } from '@/app/requireInjection'
-import type { ProviderConfigRecord } from '@/domain'
+import type { ModelConfigRecord, ProviderConfigRecord } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import VoiceCatalogPanel from '@/features/providers/VoiceCatalogPanel.vue'
 import AiServicesNav from '@/features/providers/AiServicesNav.vue'
 import VtButton from '@/ui/primitives/VtButton.vue'
 import VtCard from '@/ui/primitives/VtCard.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
+import VtSelect from '@/ui/primitives/VtSelect.vue'
+import type { VtSelectOption } from '@/ui/primitives/VtSelect.vue'
+import { localizedModelName } from '@/features/providers/model-registry-labels'
 
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
+const route = useRoute()
+const router = useRouter()
 const configs = ref<ProviderConfigRecord[]>([])
+const models = ref<ModelConfigRecord[]>([])
+const modelId = ref('')
 const loading = ref(true)
 const error = ref('')
+
+const modelOptions = computed<VtSelectOption[]>(() => models.value.map((model) => ({ value: model.id, label: localizedModelName(model), description: `${model.modelCode} · ${model.providerCode}`, disabled: !model.isEnabled })))
+const selectedModel = computed(() => models.value.find((model) => model.id === modelId.value))
 
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    const result = await gateway.listProviderConfigs('tts')
-    if (result.ok) configs.value = result.data
-    else error.value = 'Không tải được cấu hình giọng nói. Hãy thử lại sau.'
+    const [configResult, modelResult] = await Promise.all([
+      gateway.listProviderConfigs('tts'),
+      gateway.listModelConfigs({ modelType: 'TTS', page: 1, limit: 100 }),
+    ])
+    if (configResult.ok && modelResult.ok) {
+      configs.value = configResult.data
+      models.value = modelResult.data.items
+      const requested = typeof route.query.modelId === 'string' ? route.query.modelId : ''
+      modelId.value = models.value.some((model) => model.id === requested)
+        ? requested
+        : models.value.find((model) => model.isDefault)?.id ?? models.value[0]?.id ?? ''
+    } else error.value = 'Không tải được cấu hình hoặc catalog TTS. Hãy thử lại sau.'
   } catch {
     error.value = 'Không kết nối được máy chủ quản trị. Hãy thử lại sau.'
   } finally {
@@ -31,6 +51,12 @@ async function load() {
 }
 
 onMounted(() => { void load() })
+watch(() => route.query.modelId, (value) => {
+  if (typeof value === 'string' && models.value.some((model) => model.id === value)) modelId.value = value
+})
+watch(modelId, (value) => {
+  if (value && route.query.modelId !== value) void router.replace({ query: { ...route.query, modelId: value } })
+})
 </script>
 
 <template>
@@ -57,10 +83,23 @@ onMounted(() => { void load() })
         </p>
         <h1>Thư viện giọng đọc</h1>
         <p class="lede">
-          Chọn giọng có sẵn hoặc thêm một voice profile riêng cho từng cấu hình TTS.
+          Chọn đúng model TTS rồi tìm kiếm, nghe thử và quản lý các voice preset của model đó.
         </p>
       </div>
     </header>
+    <VtCard
+      v-if="!loading && !error && models.length"
+      class="model-selector-card"
+    >
+      <VtSelect
+        v-model="modelId"
+        label="Model TTS đang quản lý"
+        :options="modelOptions"
+      />
+      <p class="model-selector-help">
+        Danh sách bên dưới thuộc đúng model này; thay đổi ở đây không đổi provider runtime của trợ lý cho đến khi bạn áp dụng cấu hình.
+      </p>
+    </VtCard>
     <VtCard
       v-if="loading"
       class="state-card"
@@ -84,6 +123,9 @@ onMounted(() => { void load() })
     <VoiceCatalogPanel
       v-else
       :configs="configs"
+      :models="models"
+      :model-id="modelId"
+      :model="selectedModel"
       :gateway="gateway"
     />
   </main>
@@ -99,4 +141,7 @@ onMounted(() => { void load() })
 h1 { margin: 0; color: var(--vt-text); font-size: 22px; letter-spacing: -.02em; }
 .lede { max-width: 620px; margin: 6px 0 0; color: var(--vt-text-muted); font-size: 11px; line-height: 1.5; }
 .state-card { display: grid; justify-items: center; gap: 8px; color: var(--vt-text-muted); padding: 30px; text-align: center; }
+.model-selector-card { display: grid; grid-template-columns: minmax(240px, 420px) minmax(0, 1fr); align-items: end; gap: 14px; }
+.model-selector-help { margin: 0 0 3px; color: var(--vt-text-muted); font-size: 10px; line-height: 1.5; }
+@media (max-width: 680px) { .model-selector-card { grid-template-columns: 1fr; align-items: start; } }
 </style>

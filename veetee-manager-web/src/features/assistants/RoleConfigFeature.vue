@@ -4,7 +4,7 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
 import { useUnsavedChangesGuard } from '@/app/useUnsavedChangesGuard'
-import type { ProviderInstallationView, RevisionConflictProblem, RoleConfig, RoleConfigDraft, Versioned, VoiceProfile } from '@/domain'
+import type { ModelTtsVoice, ProviderConfigSummary, ProviderInstallationView, RevisionConflictProblem, RoleConfig, RoleConfigDraft, Versioned, VoiceProfile } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import FormSection from '@/ui/patterns/FormSection.vue'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
@@ -204,7 +204,12 @@ const bargeInCooldownError = computed(() => {
   return value === undefined || !Number.isInteger(value) || value < 0 || value > 5000
 })
 
-const voiceOptions = computed<VtSelectOption[]>(() => voices.value.map((voice) => ({ value: voice.id, label: voice.name, description: `${voice.providerName} · ${voice.description}`, disabled: !voice.available })))
+const voiceOptions = computed<VtSelectOption[]>(() => {
+  const options = voices.value.map((voice) => ({ value: voice.voiceCode || voice.id, label: voice.name, description: `${voice.providerName} · ${voice.description}`, disabled: !voice.available }))
+  const currentId = draft.value?.speech.voiceId
+  if (currentId && !options.some((option) => option.value === currentId)) options.unshift({ value: currentId, label: `Giọng hiện tại · ${currentId}`, description: 'Chưa có trong catalog model TTS đang chọn', disabled: true })
+  return options
+})
 const localeOptions = computed(() => deriveLocaleOptions(installations.value, draft.value?.locale))
 const personalityOptions: VtSelectOption[] = [
   ...personalityPresets.map(({ value, label, description }) => ({ value, label, description })),
@@ -242,16 +247,17 @@ async function load() {
       return
     }
     const locale = configResult.data.value.locale
-    const [voicesResult, installationsResult] = await Promise.all([
+    const [voicesResult, installationsResult, modelMemoryResult] = await Promise.all([
       gateway.listVoices(locale),
       gateway.listProviderInstallations(),
+      typeof gateway.getModelMemory === 'function' ? gateway.getModelMemory(props.assistantId) : Promise.resolve(undefined),
     ])
     if (generation !== loadGeneration) return
-    if (!voicesResult.ok || !installationsResult.ok) {
-      const offline = voicesResult.meta.offline || installationsResult.meta.offline
+    if (!voicesResult.ok || !installationsResult.ok || modelMemoryResult && !modelMemoryResult.ok) {
+      const offline = voicesResult.meta.offline || installationsResult.meta.offline || Boolean(modelMemoryResult && modelMemoryResult.meta.offline)
       loadState.value = offline ? 'offline' : 'error'
-      loadError.value = !voicesResult.ok && !installationsResult.ok
-        ? 'Không tải được danh sách giọng nói và dịch vụ hỗ trợ.'
+      loadError.value = (!voicesResult.ok && !installationsResult.ok) || Boolean(modelMemoryResult && !modelMemoryResult.ok)
+        ? 'Không tải được danh sách giọng nói, model hoặc dịch vụ hỗ trợ.'
         : !voicesResult.ok
           ? 'Không tải được danh sách giọng nói; biểu mẫu tạm thời bị khóa để tránh chọn giọng chưa đồng bộ.'
           : 'Không tải được danh sách dịch vụ; biểu mẫu tạm thời bị khóa để tránh chọn ngôn ngữ chưa đồng bộ.'
@@ -260,7 +266,17 @@ async function load() {
     }
     resource.value = configResult.data
     draft.value = toDraft(configResult.data.value)
-    voices.value = voicesResult.data.items
+    const selectedTts = modelMemoryResult?.ok ? modelMemoryResult.data.value.selections.find((item) => item.kind === 'tts' && item.mode === 'selected') : undefined
+    const selectedTtsConfig = selectedTts?.providerConfigId && modelMemoryResult?.ok ? modelMemoryResult.data.value.availableConfigs.find((item) => item.id === selectedTts.providerConfigId) : undefined
+    if (selectedTtsConfig?.model?.id) {
+      const catalogResult = await gateway.listModelTtsVoices(selectedTtsConfig.model.id, { name: '', page: 1, limit: 100 })
+      if (catalogResult.ok) {
+        const catalogVoices = catalogResult.data.items.map((voice) => modelVoiceToProfile(voice, selectedTtsConfig.model?.name ?? selectedTtsConfig.providerName))
+        voices.value = mergeVoiceSources(catalogVoices, voicesResult.data.items, selectedTtsConfig)
+      }
+      else voices.value = voicesResult.data.items
+    } else voices.value = voicesResult.data.items
+    synchronizeVoiceSelection()
     installations.value = installationsResult.data
     emit('revision', configResult.data.revision, false)
     loadState.value = 'ready'
@@ -278,13 +294,30 @@ async function loadVoices(locale: string) {
   const generation = ++voiceGeneration
   voiceLoading.value = true
   try {
-    const result = await gateway.listVoices(locale)
+    const memoryResult = typeof gateway.getModelMemory === 'function' ? await gateway.getModelMemory(props.assistantId) : undefined
+    const selectedTts = memoryResult?.ok ? memoryResult.data.value.selections.find((item) => item.kind === 'tts' && item.mode === 'selected') : undefined
+    const selectedConfig = selectedTts?.providerConfigId && memoryResult?.ok ? memoryResult.data.value.availableConfigs.find((item) => item.id === selectedTts.providerConfigId) : undefined
+    const [result, runtimeResult] = selectedConfig?.model?.id
+      ? await Promise.all([
+        gateway.listModelTtsVoices(selectedConfig.model.id, { name: '', page: 1, limit: 100 }),
+        gateway.listVoices(locale),
+      ])
+      : [await gateway.listVoices(locale), undefined]
     if (generation !== voiceGeneration) return
     if (!result.ok) {
       notify('Không thể tải giọng theo ngôn ngữ', { tone: 'error', message: result.meta.offline ? 'Máy chủ quản trị đang ngoại tuyến.' : 'Dịch vụ giọng nói chưa sẵn sàng.', assertive: true })
       return
     }
-    voices.value = result.data.items
+    voices.value = selectedConfig?.model?.id
+      ? mergeVoiceSources(
+        (result.data as { items: ModelTtsVoice[] }).items
+          .filter((voice) => voice.languages.split(',').some((item) => item.trim() === locale || item.trim() === '*'))
+          .map((voice) => modelVoiceToProfile(voice, selectedConfig.model?.name ?? selectedConfig.providerName)),
+        runtimeResult?.ok ? runtimeResult.data.items : [],
+        selectedConfig,
+      )
+      : (result.data as { items: VoiceProfile[] }).items
+    synchronizeVoiceSelection()
   } catch {
     if (generation === voiceGeneration) notify('Không thể tải giọng theo ngôn ngữ', { tone: 'error', message: 'Không kết nối được máy chủ quản trị.', assertive: true })
   } finally {
@@ -333,7 +366,7 @@ async function save() {
       props.assistantId,
       {
         ...draft.value,
-        speech: { ...draft.value.speech },
+        speech: { ...draft.value.speech, voiceId: canonicalVoiceCode(draft.value.speech.voiceId) },
         admission: { ...draft.value.admission },
         autoTurn: { ...draft.value.autoTurn, noSpeechAlert: { ...draft.value.autoTurn.noSpeechAlert } },
         ...(draft.value.conversation ? { conversation: clonePolicy(draft.value.conversation) } : {}),
@@ -416,6 +449,59 @@ async function copyAndReload() {
 }
 
 onMounted(load)
+
+function modelVoiceToProfile(voice: ModelTtsVoice, providerName: string): VoiceProfile {
+  return {
+    id: voice.id,
+    name: voice.name,
+    providerName,
+    locale: voice.languages.split(',')[0]?.trim() || '*',
+    description: voice.remark ?? '',
+    previewDurationMs: 0,
+    available: true,
+    managed: true,
+    voiceCode: voice.ttsVoice,
+    enabled: true,
+    sort: voice.sort,
+    demoUrl: voice.voiceDemo,
+    etag: voice.etag,
+    updatedAt: voice.updatedAt,
+  }
+}
+
+function mergeVoiceSources(catalogVoices: VoiceProfile[], runtimeVoices: VoiceProfile[], selectedConfig: ProviderConfigSummary): VoiceProfile[] {
+  const selectedProvider = normalizeVoiceProvider(selectedConfig.providerName)
+  const compatibleRuntimeVoices = runtimeVoices.filter((voice) => {
+    if (voice.providerConfigId) return voice.providerConfigId === selectedConfig.id
+    const provider = normalizeVoiceProvider(voice.providerName)
+    return provider === selectedProvider || provider.startsWith(`${selectedProvider} `) || selectedProvider.startsWith(`${provider} `)
+  })
+  const merged = new Map<string, VoiceProfile>()
+  for (const voice of compatibleRuntimeVoices) merged.set(voice.voiceCode || voice.id, voice)
+  for (const voice of catalogVoices) merged.set(voice.voiceCode || voice.id, voice)
+  return [...merged.values()].sort((left, right) => (left.sort ?? 0) - (right.sort ?? 0) || left.name.localeCompare(right.name, 'vi'))
+}
+
+function normalizeVoiceProvider(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim()
+    .toLocaleLowerCase('vi')
+}
+
+function canonicalVoiceCode(value: string, catalog = voices.value): string {
+  const current = value.trim()
+  if (!current) return current
+  const match = catalog.find((voice) => voice.voiceCode === current || voice.id === current || voice.name === current)
+  return match?.voiceCode ?? current
+}
+
+function synchronizeVoiceSelection() {
+  if (!draft.value) return
+  const next = canonicalVoiceCode(draft.value.speech.voiceId)
+  if (next && next !== draft.value.speech.voiceId) draft.value.speech.voiceId = next
+}
 </script>
 
 <template>

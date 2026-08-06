@@ -107,6 +107,7 @@ function createProviderConfigs(): ProviderConfigSummary[] {
       providerName: 'Silero VAD',
       availability: 'ready',
       supportedLocales: ['*'],
+      model: { id: 'VAD_SileroVAD', code: 'SileroVAD', name: 'Silero VAD', providerCode: 'silero', isDefault: true, isEnabled: true },
     },
     {
       id: PROVIDER_CONFIG_IDS.asr,
@@ -115,6 +116,7 @@ function createProviderConfigs(): ProviderConfigSummary[] {
       providerName: 'PhoWhisper',
       availability: 'ready',
       supportedLocales: ['vi-VN'],
+      model: { id: 'ASR_PhoWhisper', code: 'PhoWhisper-small', name: 'PhoWhisper-small tiếng Việt', providerCode: 'phowhisper', isDefault: true, isEnabled: true },
     },
     {
       id: PROVIDER_CONFIG_IDS.llm,
@@ -123,6 +125,7 @@ function createProviderConfigs(): ProviderConfigSummary[] {
       providerName: 'Groq',
       availability: 'ready',
       supportedLocales: ['vi-VN', 'en-US'],
+      model: { id: 'LLM_Groq', code: 'llama-3.3-70b-versatile', name: 'Groq · Llama 3.3 70B', providerCode: 'groq', isDefault: true, isEnabled: true },
     },
     {
       id: PROVIDER_CONFIG_IDS.tts,
@@ -131,6 +134,7 @@ function createProviderConfigs(): ProviderConfigSummary[] {
       providerName: 'VieNeu',
       availability: 'ready',
       supportedLocales: ['vi-VN'],
+      model: { id: 'TTS_VieNeu', code: 'VieNeu-v3-turbo', name: 'VieNeu v3 Turbo tiếng Việt', providerCode: 'vieneu', isDefault: true, isEnabled: true },
     },
     {
       id: PROVIDER_CONFIG_IDS.intent,
@@ -139,6 +143,7 @@ function createProviderConfigs(): ProviderConfigSummary[] {
       providerName: 'Veetee',
       availability: 'ready',
       supportedLocales: ['vi-VN'],
+      model: { id: 'Intent_function_call', code: 'function_call', name: 'Gọi công cụ', providerCode: 'function_call', isDefault: false, isEnabled: true },
     },
     {
       id: PROVIDER_CONFIG_IDS.memory,
@@ -147,6 +152,7 @@ function createProviderConfigs(): ProviderConfigSummary[] {
       providerName: 'Veetee',
       availability: 'ready',
       supportedLocales: ['*'],
+      model: { id: 'Memory_mem_local_short', code: 'mem_local_short', name: 'Bộ nhớ cục bộ', providerCode: 'mem_local_short', isDefault: true, isEnabled: true },
     },
   ]
 }

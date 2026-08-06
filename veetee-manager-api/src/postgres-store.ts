@@ -51,6 +51,9 @@ import {
   type ModelConfigQuery,
   type ModelProvider,
   type ModelProviderInput,
+  type ModelTtsVoice,
+  type ModelTtsVoiceInput,
+  type ModelTtsVoicePage,
   type ModelRegistrySeed,
   type ModelType,
   type PairingChallenge,
@@ -73,7 +76,7 @@ import {
   validateVoiceValue,
   validateProviderSelectionShape,
 } from './store.js'
-import { cloneModelConfig, cloneModelProvider, modelEtag, newModelConfig, newModelProvider, normalizeModelConfigInput, normalizeModelProviderInput } from './model-registry.js'
+import { cloneModelConfig, cloneModelProvider, cloneModelTtsVoice, modelEtag, newModelConfig, newModelProvider, newModelTtsVoice, normalizeModelConfigInput, normalizeModelProviderInput } from './model-registry.js'
 
 type JsonObject = Record<string, unknown>
 type AssistantRow = typeof assistantTable.$inferSelect
@@ -90,6 +93,7 @@ type ConversationTurnRow = typeof conversationTurnTable.$inferSelect
 type RetentionDeleteJobRow = typeof retentionDeleteJobTable.$inferSelect
 type ModelProviderRow = typeof modelProviderTable.$inferSelect
 type ModelConfigRow = typeof modelConfigTable.$inferSelect
+type ModelTtsVoiceRow = typeof ttsVoiceTable.$inferSelect
 type AssistantSummary = Pick<Assistant, 'deviceCount' | 'onlineDeviceCount' | 'lastConversationAt'>
 
 export interface PostgresStoreOptions {
@@ -244,6 +248,62 @@ export class PostgresStore implements Store {
 
   async setDefaultModel(ownerId: string, id: string): Promise<ModelConfig> {
     return this.updateModelConfig(ownerId, id, { isDefault: true, isEnabled: true })
+  }
+
+  async listModelTtsVoices(ownerId: string, modelId: string, query: { name?: string; page?: number; limit?: number } = {}): Promise<ModelTtsVoicePage> {
+    const model = await this.getModelConfig(ownerId, modelId)
+    if (!model || model.modelType !== 'TTS') throw problem('NOT_FOUND', 'TTS model not found', 404)
+    const rows = await this.handle.db.select().from(ttsVoiceTable).where(eq(ttsVoiceTable.ttsModelId, modelId)).orderBy(asc(ttsVoiceTable.sort), asc(ttsVoiceTable.name))
+    const term = query.name?.trim().toLocaleLowerCase()
+    const filtered = rows.filter((row) => !term || `${row.name ?? ''} ${row.ttsVoice ?? ''} ${row.languages ?? ''} ${row.remark ?? ''}`.toLocaleLowerCase().includes(term))
+    const page = Math.max(1, Math.trunc(query.page ?? 1))
+    const limit = Math.min(100, Math.max(1, Math.trunc(query.limit ?? 10)))
+    return { items: filtered.slice((page - 1) * limit, page * limit).map((row) => cloneModelTtsVoice(this.mapModelTtsVoice(row))), total: filtered.length, page, limit }
+  }
+
+  async createModelTtsVoice(ownerId: string, input: ModelTtsVoiceInput): Promise<ModelTtsVoice> {
+    const model = await this.getModelConfig(ownerId, input.ttsModelId)
+    if (!model || model.modelType !== 'TTS') throw problem('NOT_FOUND', 'TTS model not found', 404)
+    const item = newModelTtsVoice(input)
+    if (!item.name || !item.ttsVoice || !item.languages) throw problem('CONFIG_INVALID', 'Voice code, name and language are required', 422)
+    const duplicate = await this.handle.db.select({ id: ttsVoiceTable.id }).from(ttsVoiceTable).where(and(eq(ttsVoiceTable.ttsModelId, model.id), eq(ttsVoiceTable.ttsVoice, item.ttsVoice))).limit(1)
+    if (duplicate.length) throw problem('NAME_CONFLICT', 'Voice code already exists for this TTS model', 409)
+    try {
+      const now = new Date()
+      await this.handle.db.insert(ttsVoiceTable).values({ id: item.id, ttsModelId: item.ttsModelId, name: item.name, ttsVoice: item.ttsVoice, languages: item.languages, voiceDemo: item.voiceDemo, remark: item.remark, referenceAudio: item.referenceAudio, referenceText: item.referenceText, sort: item.sort, creator: 1, createDate: now, updater: 1, updateDate: now })
+    } catch (error) { if (isUniqueViolation(error)) throw problem('NAME_CONFLICT', 'TTS voice already exists', 409); throw error }
+    const inserted = await this.findModelTtsVoice(item.id)
+    if (!inserted) throw new Error('TTS voice insert returned no row')
+    return cloneModelTtsVoice(this.mapModelTtsVoice(inserted))
+  }
+
+  async updateModelTtsVoice(ownerId: string, id: string, input: Partial<ModelTtsVoiceInput>, ifMatch?: string): Promise<ModelTtsVoice> {
+    const currentRow = await this.findModelTtsVoice(id)
+    if (!currentRow) throw problem('NOT_FOUND', 'TTS voice not found', 404)
+    const current = this.mapModelTtsVoice(currentRow)
+    const model = await this.getModelConfig(ownerId, current.ttsModelId)
+    if (!model || model.modelType !== 'TTS') throw problem('NOT_FOUND', 'TTS model not found', 404)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'TTS voice changed', 409)
+    if (input.ttsModelId && input.ttsModelId !== current.ttsModelId) throw problem('CONFIG_INVALID', 'TTS voice cannot move between models', 422)
+    const next = newModelTtsVoice({ ...current, ...input, id: current.id, ttsModelId: current.ttsModelId })
+    if (!next.name || !next.ttsVoice || !next.languages) throw problem('CONFIG_INVALID', 'Voice code, name and language are required', 422)
+    const duplicate = await this.handle.db.select({ id: ttsVoiceTable.id }).from(ttsVoiceTable).where(and(eq(ttsVoiceTable.ttsModelId, current.ttsModelId), eq(ttsVoiceTable.ttsVoice, next.ttsVoice), ne(ttsVoiceTable.id, id))).limit(1)
+    if (duplicate.length) throw problem('NAME_CONFLICT', 'Voice code already exists for this TTS model', 409)
+    const now = new Date()
+    const updated = await this.handle.db.update(ttsVoiceTable).set({ name: next.name, ttsVoice: next.ttsVoice, languages: next.languages, voiceDemo: next.voiceDemo, remark: next.remark, referenceAudio: next.referenceAudio, referenceText: next.referenceText, sort: next.sort, updater: 1, updateDate: now }).where(eq(ttsVoiceTable.id, id)).returning()
+    const row = updated[0]
+    if (!row) throw problem('REVISION_CONFLICT', 'TTS voice changed', 409)
+    return cloneModelTtsVoice(this.mapModelTtsVoice(row))
+  }
+
+  async deleteModelTtsVoice(ownerId: string, id: string, ifMatch?: string): Promise<void> {
+    const currentRow = await this.findModelTtsVoice(id)
+    if (!currentRow) throw problem('NOT_FOUND', 'TTS voice not found', 404)
+    const current = this.mapModelTtsVoice(currentRow)
+    const model = await this.getModelConfig(ownerId, current.ttsModelId)
+    if (!model || model.modelType !== 'TTS') throw problem('NOT_FOUND', 'TTS model not found', 404)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'TTS voice changed', 409)
+    await this.handle.db.delete(ttsVoiceTable).where(eq(ttsVoiceTable.id, id))
   }
 
   async listProviderConfigs(ownerId: string, kind?: ProviderKind): Promise<ProviderConfig[]> {
@@ -1042,6 +1102,11 @@ export class PostgresStore implements Store {
     return row
   }
 
+  private async findModelTtsVoice(id: string): Promise<ModelTtsVoiceRow | undefined> {
+    const [row] = await this.handle.db.select().from(ttsVoiceTable).where(eq(ttsVoiceTable.id, id)).limit(1)
+    return row
+  }
+
   private async assertModelProvider(ownerId: string, modelType: ModelType, providerCode: string): Promise<void> {
     void ownerId
     const [row] = await this.handle.db.select({ id: modelProviderTable.id }).from(modelProviderTable).where(and(eq(modelProviderTable.modelType, modelType), eq(modelProviderTable.providerCode, providerCode))).limit(1)
@@ -1172,6 +1237,24 @@ export class PostgresStore implements Store {
     return { id: row.id, ownerId: 'local-owner', modelType: (row.modelType ?? 'LLM') as ModelType, modelCode: row.modelCode ?? row.id, modelName: row.modelName ?? row.modelCode ?? row.id, providerCode: typeof configJson.type === 'string' ? configJson.type : '', isDefault: row.isDefault === 1, isEnabled: row.isEnabled === 1, configJson, docLink: row.docLink, remark: row.remark, sort: row.sort ?? 0, revision: 1, etag: modelEtag(source), updatedAt: updatedAt.toISOString(), creator: row.creator ?? null, createDate: row.createDate?.toISOString() ?? null, updater: row.updater ?? null, updateDate: row.updateDate?.toISOString() ?? null }
   }
 
+  private mapModelTtsVoice(row: ModelTtsVoiceRow): ModelTtsVoice {
+    const updatedAt = row.updateDate ?? row.createDate ?? new Date(0)
+    const value = {
+      id: row.id,
+      ttsModelId: row.ttsModelId ?? '',
+      name: row.name ?? '',
+      ttsVoice: row.ttsVoice ?? '',
+      languages: row.languages ?? '',
+      voiceDemo: row.voiceDemo ?? null,
+      remark: row.remark ?? null,
+      referenceAudio: row.referenceAudio ?? null,
+      referenceText: row.referenceText ?? null,
+      sort: row.sort ?? 0,
+      updatedAt: updatedAt.toISOString(),
+    }
+    return { ...value, etag: modelEtag(value) }
+  }
+
   private mapVoiceProfile(row: VoiceProfileRow): VoiceProfile {
     return {
       id: row.id, ownerId: row.ownerId, providerConfigId: row.providerConfigId, name: row.name,
@@ -1218,11 +1301,39 @@ export class PostgresStore implements Store {
       return providerConfigId ? { kind, mode: 'selected' as const, providerConfigId } : { kind, mode: 'disabled' as const }
     })
     const configs = await this.listProviderConfigs(current.ownerId)
+    const modelCatalog = await this.listModelConfigs(current.ownerId, { page: 1, limit: 100 })
     const availableConfigs = configs.map((item) => {
       const installation = this.installations.find((candidate) => candidate.id === item.installationId)
-      return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayName ?? installation?.displayNameKey ?? item.installationId, availability: item.enabled ? 'ready' as const : 'disabled' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] }
+      const kind = installation?.kind ?? 'memory'
+      const model = this.modelForProvider(kind, installation, item.config, modelCatalog.items)
+      return {
+        id: item.id,
+        kind,
+        name: item.name,
+        providerName: installation?.displayName ?? installation?.displayNameKey ?? item.installationId,
+        availability: !item.enabled ? 'disabled' as const : model && !model.isEnabled ? 'unavailable' as const : 'ready' as const,
+        supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'],
+        ...(model ? { model } : {}),
+      }
     })
     return { assistantId: current.id, selections, availableConfigs, memory: { enabled: current.role.memoryEnabled !== false, itemCount: 0 }, memoryItems: [] }
+  }
+
+  private modelForProvider(kind: ProviderKind, installation: ProviderInstallation | undefined, config: Record<string, unknown>, models: ModelConfig[]) {
+    const modelType = kind.toUpperCase() as ModelType
+    const candidates = models.filter((model) => model.modelType === modelType)
+    if (!candidates.length) return undefined
+    const tokens = [installation?.id, installation?.manifest.providerFamily, typeof config.type === 'string' ? config.type : undefined]
+      .filter((value): value is string => Boolean(value)).join(' ').toLocaleLowerCase()
+    const configuredModel = [config.model, config.model_name, config.modelName, config.modelCode, config.backboneRepo].find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    const exact = configuredModel ? candidates.find((model) => model.modelCode.toLocaleLowerCase() === configuredModel.toLocaleLowerCase()) : undefined
+    const tokenMatch = candidates.find((model) => tokens.includes(model.providerCode.toLocaleLowerCase()) || tokens.includes(model.modelCode.toLocaleLowerCase()))
+    // A provider without an explicit model must not be presented as the
+    // category default.  That old fallback made fixture providers claim the
+    // production Groq/PhoWhisper/VieNeu model in assistant configuration.
+    const selected = exact ?? tokenMatch
+    if (!selected) return undefined
+    return { id: selected.id, code: selected.modelCode, name: selected.modelName, providerCode: selected.providerCode, isDefault: selected.isDefault, isEnabled: selected.isEnabled }
   }
 }
 

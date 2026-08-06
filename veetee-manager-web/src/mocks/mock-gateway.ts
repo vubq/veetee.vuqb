@@ -45,6 +45,9 @@ import type {
   ModelProviderField,
   ModelProviderRecord,
   ModelType,
+  ModelTtsVoice,
+  ModelTtsVoiceInput,
+  ModelTtsVoicePage,
   RetentionPolicy,
   RetentionPolicyInput,
   RetentionExpiredProblem,
@@ -456,6 +459,46 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
 
   async setModelEnabled(id: string, enabled: boolean): Promise<GatewayResult<ModelConfigRecord, ValidationProblem>> {
     return this.updateModelConfig(id, { isEnabled: enabled })
+  }
+
+  async listModelTtsVoices(modelId: string, query: { name?: string; page?: number; limit?: number } = {}): Promise<GatewayResult<ModelTtsVoicePage, ValidationProblem>> {
+    const request = await this.begin('read')
+    const model = this.state.modelConfigs.find((item) => item.id === modelId && item.modelType === 'TTS')
+    if (!model) return this.failure(this.validationProblem([{ field: 'modelId', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    const term = normalizeSearch(query.name ?? '')
+    const all = this.state.modelTtsVoices.filter((voice) => voice.ttsModelId === modelId && (!term || normalizeSearch(`${voice.name} ${voice.ttsVoice} ${voice.languages} ${voice.remark ?? ''}`).includes(term))).sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, 'vi'))
+    const page = Math.max(1, query.page ?? 1)
+    const limit = Math.min(100, Math.max(1, query.limit ?? 10))
+    return this.success({ items: clone(all.slice((page - 1) * limit, page * limit)), total: all.length, page, limit }, request)
+  }
+
+  async createModelTtsVoice(modelId: string, input: ModelTtsVoiceInput): Promise<GatewayResult<ModelTtsVoice, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const model = this.state.modelConfigs.find((item) => item.id === modelId && item.modelType === 'TTS')
+    if (!model || !input.name.trim() || !input.ttsVoice.trim() || !input.languages.trim()) return this.failure(this.validationProblem([{ field: 'voice', code: 'INVALID', messageKey: 'problem.validation' }], request.requestId)!, request)
+    if (this.state.modelTtsVoices.some((voice) => voice.ttsModelId === modelId && voice.ttsVoice.toLowerCase() === input.ttsVoice.trim().toLowerCase())) return this.failure(this.validationProblem([{ field: 'ttsVoice', code: 'DUPLICATE', messageKey: 'problem.validation' }], request.requestId)!, request)
+    const value: ModelTtsVoice = { id: `voice-${Date.now()}`, ttsModelId: modelId, name: input.name.trim(), ttsVoice: input.ttsVoice.trim(), languages: input.languages.trim(), voiceDemo: input.voiceDemo ?? null, remark: input.remark ?? null, referenceAudio: input.referenceAudio ?? null, referenceText: input.referenceText ?? null, sort: input.sort ?? 0, etag: `"preview-model-voice-${Date.now()}"`, updatedAt: this.now() }
+    this.state.modelTtsVoices.push(value)
+    return this.success(clone(value), request)
+  }
+
+  async updateModelTtsVoice(modelId: string, voiceId: string, input: Partial<ModelTtsVoiceInput>, expectedEtag?: string): Promise<GatewayResult<ModelTtsVoice, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const current = this.state.modelTtsVoices.find((voice) => voice.id === voiceId && voice.ttsModelId === modelId)
+    if (!current) return this.failure(this.validationProblem([{ field: 'voiceId', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    if (expectedEtag && current.etag !== expectedEtag) return this.failure(this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)!, request)
+    const next: ModelTtsVoice = { ...current, ...input, name: input.name?.trim() ?? current.name, ttsVoice: input.ttsVoice?.trim() ?? current.ttsVoice, languages: input.languages?.trim() ?? current.languages, voiceDemo: input.voiceDemo === undefined ? current.voiceDemo : input.voiceDemo, remark: input.remark === undefined ? current.remark : input.remark, referenceAudio: input.referenceAudio === undefined ? current.referenceAudio : input.referenceAudio, referenceText: input.referenceText === undefined ? current.referenceText : input.referenceText, sort: input.sort ?? current.sort, etag: `"preview-model-voice-${Date.now()}"`, updatedAt: this.now() }
+    this.state.modelTtsVoices = this.state.modelTtsVoices.map((voice) => voice.id === voiceId ? next : voice)
+    return this.success(clone(next), request)
+  }
+
+  async deleteModelTtsVoice(modelId: string, voiceId: string, expectedEtag?: string): Promise<GatewayResult<void, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const current = this.state.modelTtsVoices.find((voice) => voice.id === voiceId && voice.ttsModelId === modelId)
+    if (!current) return this.failure(this.validationProblem([{ field: 'voiceId', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    if (expectedEtag && current.etag !== expectedEtag) return this.failure(this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)!, request)
+    this.state.modelTtsVoices = this.state.modelTtsVoices.filter((voice) => voice.id !== voiceId)
+    return this.success(undefined, request)
   }
 
   async setDefaultModel(id: string): Promise<GatewayResult<ModelConfigRecord, ValidationProblem>> {

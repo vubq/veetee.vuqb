@@ -1,4 +1,4 @@
-import type { ModelConfigRecord, ModelProviderField, ModelProviderRecord, ModelType } from '@/domain'
+import type { ModelConfigRecord, ModelProviderField, ModelProviderRecord, ModelTtsVoice, ModelType } from '@/domain'
 
 import registrySeed from './model-registry.seed.json'
 
@@ -30,13 +30,25 @@ interface RegistrySeed {
     remark?: string | null
     sort?: number
   }>
+  voices?: Array<{
+    id: string
+    ttsModelId: string
+    name: string
+    ttsVoice: string
+    languages: string
+    voiceDemo?: string | null
+    remark?: string | null
+    referenceAudio?: string | null
+    referenceText?: string | null
+    sort?: number
+  }>
 }
 
 const now = '2026-08-06T09:00:00.000Z'
 const etag = (id: string, revision = 1) => `"model-${id}-${revision}"`
 const source = registrySeed as unknown as RegistrySeed
 
-export function createModelRegistryFixtures(): { providers: ModelProviderRecord[]; configs: ModelConfigRecord[] } {
+export function createModelRegistryFixtures(): { providers: ModelProviderRecord[]; configs: ModelConfigRecord[]; voices: ModelTtsVoice[] } {
   const providers = source.providers.map((item) => ({
     id: item.id,
     ownerId: 'local-owner',
@@ -68,5 +80,20 @@ export function createModelRegistryFixtures(): { providers: ModelProviderRecord[
     updatedAt: now,
   }))
 
-  return { providers, configs }
+  const voices = (source.voices ?? []).map((item) => ({
+    id: item.id,
+    ttsModelId: item.ttsModelId,
+    name: item.name,
+    ttsVoice: item.ttsVoice,
+    languages: item.languages,
+    voiceDemo: item.voiceDemo ?? null,
+    remark: item.remark ?? null,
+    referenceAudio: item.referenceAudio ?? null,
+    referenceText: item.referenceText ?? null,
+    sort: item.sort ?? 0,
+    etag: etag(item.id),
+    updatedAt: now,
+  }))
+
+  return { providers, configs, voices }
 }

@@ -8,7 +8,7 @@ import swagger from '@fastify/swagger'
 import argon2 from 'argon2'
 import { publicBaseUrl, readEnvironment, type Environment } from './config.js'
 import { EncryptedFileSecretStore, type SecretValueStore } from './secret-store.js'
-import { InMemoryStore, loadInitialSnapshot, parseCatalog, parseModelRegistry, type ConversationDetail, type ConversationTurnInput, type ModelConfigInput, type ModelProviderInput, type ModelType, type ProviderKind, type Store } from './store.js'
+import { InMemoryStore, loadInitialSnapshot, parseCatalog, parseModelRegistry, type ConversationDetail, type ConversationTurnInput, type ModelConfigInput, type ModelProviderInput, type ModelTtsVoiceInput, type ModelType, type ProviderKind, type Store } from './store.js'
 import { LoginThrottle, normalizeLoginIdentity } from './auth-throttle.js'
 
 type OwnerRequest = FastifyRequest & { ownerId?: string; sessionToken?: string; csrfToken?: string; sessionExpiresAt?: string }
@@ -290,7 +290,7 @@ const modelMemoryResponseSchema = {
       { type: 'object', additionalProperties: false, required: ['kind', 'mode', 'providerConfigId'], properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, mode: { const: 'selected' }, providerConfigId: { type: 'string' } } },
       { type: 'object', additionalProperties: false, required: ['kind', 'mode'], properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, mode: { const: 'disabled' } } },
     ] } },
-    availableConfigs: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'kind', 'name', 'providerName', 'availability', 'supportedLocales'], properties: { id: { type: 'string' }, kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, name: { type: 'string' }, providerName: { type: 'string' }, availability: { type: 'string', enum: ['ready', 'unavailable', 'disabled'] }, supportedLocales: { type: 'array', items: { type: 'string' } } } } },
+    availableConfigs: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'kind', 'name', 'providerName', 'availability', 'supportedLocales'], properties: { id: { type: 'string' }, kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, name: { type: 'string' }, providerName: { type: 'string' }, availability: { type: 'string', enum: ['ready', 'unavailable', 'disabled'] }, supportedLocales: { type: 'array', items: { type: 'string' } }, model: { type: 'object', additionalProperties: false, required: ['id', 'code', 'name', 'providerCode', 'isDefault', 'isEnabled'], properties: { id: { type: 'string' }, code: { type: 'string' }, name: { type: 'string' }, providerCode: { type: 'string' }, isDefault: { type: 'boolean' }, isEnabled: { type: 'boolean' } } } } } },
     memory: { type: 'object', additionalProperties: false, required: ['enabled', 'itemCount'], properties: { enabled: { type: 'boolean' }, itemCount: { type: 'integer' } } },
     memoryItems: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'kind', 'content', 'enabled', 'updatedAt'], properties: { id: { type: 'string' }, kind: { type: 'string', enum: ['preference', 'fact', 'instruction'] }, content: { type: 'string' }, enabled: { type: 'boolean' }, updatedAt: { type: 'string' } } } },
   },
@@ -306,6 +306,21 @@ const voiceBodySchema = {
   type: 'object', additionalProperties: false, required: ['providerConfigId', 'name', 'locale', 'voiceCode'],
   properties: {
     providerConfigId: { type: 'string', minLength: 1, maxLength: 128 }, name: { type: 'string', minLength: 1, maxLength: 120 }, locale: { type: 'string', minLength: 2, maxLength: 35 }, voiceCode: { type: 'string', minLength: 1, maxLength: 160 }, description: { type: 'string', maxLength: 512 }, demoUrl: { type: ['string', 'null'], maxLength: 2048 }, enabled: { type: 'boolean' }, sort: { type: 'integer', minimum: 0, maximum: 100000 },
+  },
+} as const
+const modelTtsVoiceResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'ttsModelId', 'name', 'ttsVoice', 'languages', 'voiceDemo', 'remark', 'referenceAudio', 'referenceText', 'sort', 'etag', 'updatedAt'],
+  properties: {
+    id: { type: 'string' }, ttsModelId: { type: 'string' }, name: { type: 'string' }, ttsVoice: { type: 'string' }, languages: { type: 'string' },
+    voiceDemo: { type: ['string', 'null'] }, remark: { type: ['string', 'null'] }, referenceAudio: { type: ['string', 'null'] }, referenceText: { type: ['string', 'null'] },
+    sort: { type: 'integer' }, etag: { type: 'string' }, updatedAt: { type: 'string' },
+  },
+} as const
+const modelTtsVoiceBodySchema = {
+  type: 'object', additionalProperties: false, required: ['name', 'ttsVoice', 'languages'],
+  properties: {
+    name: { type: 'string', minLength: 1, maxLength: 120 }, ttsVoice: { type: 'string', minLength: 1, maxLength: 160 }, languages: { type: 'string', minLength: 1, maxLength: 160 },
+    voiceDemo: { type: ['string', 'null'], maxLength: 2048 }, remark: { type: ['string', 'null'], maxLength: 1000 }, referenceAudio: { type: ['string', 'null'], maxLength: 2048 }, referenceText: { type: ['string', 'null'], maxLength: 4000 }, sort: { type: 'integer', minimum: 0, maximum: 100000 },
   },
 } as const
 const deviceResponseSchema = {
@@ -521,7 +536,7 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
 
   await app.register(sensible)
   await app.register(cookie)
-  await app.register(cors, { origin: allowedOrigins, credentials: true })
+  await app.register(cors, { origin: allowedOrigins, credentials: true, exposedHeaders: ['ETag', 'X-Veetee-Revision'] })
   await app.register(swagger, {
     openapi: {
       openapi: '3.1.0',
@@ -773,6 +788,26 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     try { const value = await store.setDefaultModel(owner(request), request.params.id); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
   })
 
+  // Model-scoped TTS voice catalog.  This is the canonical voice-management
+  // surface; the legacy runtime voice-profile endpoint below remains available
+  // for assistant aliases and does not leak into this catalog.
+  app.get<{ Params: { id: string }; Querystring: { voiceName?: string; page?: number; limit?: number } }>('/api/v1/models/:id/voices', { schema: {
+    params: resourceIdParamsSchema,
+    querystring: { type: 'object', additionalProperties: false, properties: { voiceName: { type: 'string', maxLength: 160 }, page: { type: 'integer', minimum: 1 }, limit: { type: 'integer', minimum: 1, maximum: 100 } } },
+    response: { 200: { type: 'object', additionalProperties: false, required: ['items', 'total', 'page', 'limit'], properties: { items: { type: 'array', items: modelTtsVoiceResponseSchema }, total: { type: 'integer' }, page: { type: 'integer' }, limit: { type: 'integer' } } } },
+  } }, async (request, reply) => {
+    try { return await store.listModelTtsVoices(owner(request), request.params.id, { name: request.query.voiceName, page: request.query.page, limit: request.query.limit }) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.post<{ Params: { id: string }; Body: Omit<ModelTtsVoiceInput, 'ttsModelId' | 'id'> }>('/api/v1/models/:id/voices', { schema: { params: resourceIdParamsSchema, body: modelTtsVoiceBodySchema, response: { 201: modelTtsVoiceResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.createModelTtsVoice(owner(request), { ...request.body, ttsModelId: request.params.id }); return reply.code(201).header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.patch<{ Params: { id: string; voiceId: string }; Body: Partial<Omit<ModelTtsVoiceInput, 'ttsModelId' | 'id'>> }>('/api/v1/models/:id/voices/:voiceId', { schema: { params: { type: 'object', additionalProperties: false, required: ['id', 'voiceId'], properties: { id: { type: 'string', minLength: 1, maxLength: 128 }, voiceId: { type: 'string', minLength: 1, maxLength: 128 } } }, body: { type: 'object', additionalProperties: false, properties: modelTtsVoiceBodySchema.properties }, response: { 200: modelTtsVoiceResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.updateModelTtsVoice(owner(request), request.params.voiceId, request.body, typeof request.headers['if-match'] === 'string' ? request.headers['if-match'] : undefined); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.delete<{ Params: { id: string; voiceId: string } }>('/api/v1/models/:id/voices/:voiceId', { schema: { params: { type: 'object', additionalProperties: false, required: ['id', 'voiceId'], properties: { id: { type: 'string', minLength: 1, maxLength: 128 }, voiceId: { type: 'string', minLength: 1, maxLength: 128 } } }, response: { 204: { type: 'null' } } } }, async (request, reply) => {
+    try { await store.deleteModelTtsVoice(owner(request), request.params.voiceId, typeof request.headers['if-match'] === 'string' ? request.headers['if-match'] : undefined); return reply.code(204).send() } catch (error) { return sendProblem(reply, error) }
+  })
+
   /* Source-compatible aliases. The Veetee client uses the explicit REST
      resources above; these additive routes keep integrations built around the
      reference manager API working without changing the runtime protocol. */
@@ -922,29 +957,29 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
   app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/role-config', { schema: { params: resourceIdParamsSchema, response: { 200: roleResponseSchema } } }, async (request, reply) => {
     const item = await store.getAssistant(owner(request), request.params.id)
     if (!item) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Assistant not found')
-    return reply.header('ETag', item.etag).send(item.role)
+    return reply.header('ETag', item.etag).header('X-Veetee-Revision', String(item.draftRevision)).send(item.role)
   })
   app.patch<{ Params: { id: string }; Body: Record<string, unknown> }>('/api/v1/assistants/:id/role-config', { schema: { params: resourceIdParamsSchema, body: roleBodySchema, response: { 200: roleResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
-    try { const item = await store.updateRole(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', item.etag).send(item.role) } catch (error) { return sendProblem(reply, error) }
+    try { const item = await store.updateRole(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', item.etag).header('X-Veetee-Revision', String(item.draftRevision)).send(item.role) } catch (error) { return sendProblem(reply, error) }
   })
   app.get<{ Params: { id: string } }>('/api/v1/assistants/:id/model-memory', { schema: { params: resourceIdParamsSchema, response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
     try {
       const item = await store.getAssistant(owner(request), request.params.id)
       if (!item) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Assistant not found')
-      return reply.header('ETag', item.etag).send(await store.getModelMemory(owner(request), request.params.id))
+      return reply.header('ETag', item.etag).header('X-Veetee-Revision', String(item.draftRevision)).send(await store.getModelMemory(owner(request), request.params.id))
     } catch (error) { return sendProblem(reply, error) }
   })
   app.patch<{ Params: { id: string }; Body: { kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string } }>('/api/v1/assistants/:id/model-memory/provider', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, required: ['kind', 'mode'], properties: { kind: { type: 'string', enum: ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] }, mode: { type: 'string', enum: ['selected', 'disabled'] }, providerConfigId: { type: 'string', minLength: 1, maxLength: 128 } } }, response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
-    try { const value = await store.updateProviderSelection(owner(request), request.params.id, request.body, ifMatch); const assistant = await store.getAssistant(owner(request), request.params.id); return reply.header('ETag', assistant?.etag ?? '').send(value) } catch (error) { return sendProblem(reply, error) }
+    try { const value = await store.updateProviderSelection(owner(request), request.params.id, request.body, ifMatch); const assistant = await store.getAssistant(owner(request), request.params.id); return reply.header('ETag', assistant?.etag ?? '').header('X-Veetee-Revision', String(assistant?.draftRevision ?? 1)).send(value) } catch (error) { return sendProblem(reply, error) }
   })
   app.patch<{ Params: { id: string }; Body: { enabled: boolean } }>('/api/v1/assistants/:id/model-memory/memory', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, required: ['enabled'], properties: { enabled: { type: 'boolean' } } }, response: { 200: modelMemoryResponseSchema } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
-    try { const value = await store.setMemoryEnabled(owner(request), request.params.id, request.body.enabled, ifMatch); const assistant = await store.getAssistant(owner(request), request.params.id); return reply.header('ETag', assistant?.etag ?? '').send(value) } catch (error) { return sendProblem(reply, error) }
+    try { const value = await store.setMemoryEnabled(owner(request), request.params.id, request.body.enabled, ifMatch); const assistant = await store.getAssistant(owner(request), request.params.id); return reply.header('ETag', assistant?.etag ?? '').header('X-Veetee-Revision', String(assistant?.draftRevision ?? 1)).send(value) } catch (error) { return sendProblem(reply, error) }
   })
   app.post<{ Params: { id: string } }>('/api/v1/assistants/:id/publish', { schema: { params: resourceIdParamsSchema, response: { 200: runtimePublicationResponseSchema } } }, async (request, reply) => {
     try { const publication = await store.publish(owner(request), request.params.id, typeof request.headers['if-match'] === 'string' ? request.headers['if-match'] : undefined); return reply.header('ETag', publication.etag).send(publication) } catch (error) { return sendProblem(reply, error) }

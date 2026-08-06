@@ -135,6 +135,14 @@ test('provider unavailable không fallback và conflict giữ draft', async ({ p
   await expect(prompt).toHaveValue(localDraft)
 })
 
+test('trợ lý hiển thị model catalog và mở đúng thư viện voice của TTS', async ({ page }) => {
+  await page.goto(`/assistants/${assistantId}/config/model-memory`)
+  await expect(page.getByText('Groq · Llama 3.3 70B', { exact: true })).toBeVisible()
+  await expect(page.getByText('VieNeu v3 Turbo tiếng Việt · VieNeu-v3-turbo', { exact: true })).toBeVisible()
+  const ttsLink = page.getByRole('link', { name: /VieNeu v3 Turbo tiếng Việt/ })
+  await expect(ttsLink).toHaveAttribute('href', /modelId=TTS_VieNeu/)
+})
+
 test('provider registry sinh form từ schema và lưu revision', async ({ page }) => {
   await page.goto('/providers/llm')
   await expect(page.getByRole('heading', { name: 'Bộ não trả lời' })).toBeVisible()
@@ -203,6 +211,39 @@ test('model catalog CRUD giữ được tìm kiếm và thao tác sau phân tran
   await page.getByRole('dialog', { name: 'Xóa model?' }).getByRole('button', { name: 'Xóa model' }).click()
   await expect(page.getByText('Đã xóa model', { exact: true })).toBeVisible()
   await expect(page.getByText('Mô hình đã sửa', { exact: true })).toHaveCount(0)
+})
+
+test('TTS voice catalog gắn đúng model và hỗ trợ search, thêm, sửa, xóa', async ({ page }) => {
+  await page.goto('/providers/tts/voices?modelId=TTS_VieNeu')
+  await expect(page.getByRole('heading', { name: /VieNeu v3 Turbo tiếng Việt/ })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Model TTS đang quản lý' })).toContainText('VieNeu v3 Turbo tiếng Việt')
+  await expect(page.getByText('Minh Đức', { exact: true })).toBeVisible()
+
+  const search = page.getByRole('textbox', { name: 'Tìm giọng' })
+  await search.fill('Minh')
+  await page.getByRole('button', { name: 'Tìm', exact: true }).click()
+  await expect(page.getByText('Minh Đức', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Xóa lọc' }).click()
+
+  await page.getByRole('button', { name: 'Thêm giọng' }).first().click()
+  await page.getByRole('textbox', { name: 'Tên hiển thị' }).fill('Giọng E2E')
+  await page.getByRole('textbox', { name: 'Mã giọng' }).fill('e2e_voice')
+  await page.getByRole('textbox', { name: 'Ngôn ngữ' }).fill('vi-VN')
+  await page.getByRole('button', { name: 'Thêm giọng', exact: true }).last().click()
+  await expect(page.getByText('Đã thêm giọng', { exact: true })).toBeVisible()
+  await expect(page.getByText('Giọng E2E', { exact: true })).toBeVisible()
+
+  await page.locator('.voice-row').filter({ hasText: 'Giọng E2E' }).getByRole('button', { name: 'Sửa' }).click()
+  await page.getByRole('textbox', { name: 'Tên hiển thị' }).fill('Giọng E2E đã sửa')
+  await page.getByRole('button', { name: 'Lưu thay đổi' }).click()
+  await expect(page.getByText('Đã cập nhật giọng', { exact: true })).toBeVisible()
+  await expect(page.getByText('Giọng E2E đã sửa', { exact: true })).toBeVisible()
+
+  await page.locator('.voice-row').filter({ hasText: 'Giọng E2E đã sửa' }).getByRole('button', { name: 'Xóa' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Xóa voice preset?' })
+  await dialog.getByRole('button', { name: 'Xóa voice' }).click()
+  await expect(page.getByText('Đã xóa giọng', { exact: true })).toBeVisible()
+  await expect(page.getByText('Giọng E2E đã sửa', { exact: true })).toHaveCount(0)
 })
 
 test('provider schema CRUD và inspector giữ đúng trường động', async ({ page }) => {

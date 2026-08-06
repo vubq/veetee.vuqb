@@ -21,7 +21,6 @@ import SecretReferencePanel from './SecretReferencePanel.vue'
 import ProviderConfigList from './ProviderConfigList.vue'
 import ProviderInstallationCatalog from './ProviderInstallationCatalog.vue'
 import ProviderEditorShell from './ProviderEditorShell.vue'
-import VoiceCatalogPanel from './VoiceCatalogPanel.vue'
 import UnsavedChangesDialog from '@/ui/patterns/UnsavedChangesDialog.vue'
 import { cloneConfig } from './schema-config'
 import { normalizeProviderDraft } from './provider-editor'
@@ -541,11 +540,21 @@ function toggleSecretReference(id: string, checked: boolean) {
           @update:selected-ids="selectedSecretRefs = $event"
           @changed="load"
         />
-        <VoiceCatalogPanel
+        <VtCard
           v-if="props.showVoiceCatalog && activeKind === 'tts'"
-          :configs="configsForKind"
-          :gateway="gateway"
-        />
+          class="voice-catalog-link-card"
+        >
+          <div>
+            <h3>Thư viện giọng theo model</h3>
+            <p>Chọn một model TTS cụ thể để tìm kiếm, nghe thử, thêm hoặc xóa voice preset.</p>
+          </div>
+          <RouterLink
+            class="voice-catalog-link"
+            to="/providers/tts/voices"
+          >
+            Mở thư viện giọng
+          </RouterLink>
+        </VtCard>
       </div>
     </div>
     <VtCard
@@ -643,6 +652,10 @@ h2 { margin-bottom: 6px; font-size: 14px; }
 .actions { display: flex; justify-content: flex-end; border-top: 1px solid var(--vt-border); padding-top: 12px; }
 .dialog-warning { margin: 0; color: var(--vt-text-muted); font-size: 11px; line-height: 1.5; }
 .provider-state, .empty-card { color: var(--vt-text-muted); padding: 24px; text-align: center; }
+.voice-catalog-link-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-color: var(--vt-border-strong); background: var(--vt-surface-subtle); padding: 12px; }
+.voice-catalog-link-card h3 { margin: 0; color: var(--vt-text); font-size: 12px; }
+.voice-catalog-link-card p { margin: 4px 0 0; color: var(--vt-text-muted); font-size: 10px; }
+.voice-catalog-link { flex: none; color: var(--vt-primary); font-size: 10px; font-weight: 650; text-underline-offset: 3px; }
 .provider-state h2, .empty-card h2 { color: var(--vt-text); font-size: 14px; }
 .provider-state p, .empty-card p { margin: 7px auto 13px; max-width: 460px; font-size: 11px; line-height: 1.5; }
 .provider-state-error { display: grid; justify-items: center; gap: 4px; }

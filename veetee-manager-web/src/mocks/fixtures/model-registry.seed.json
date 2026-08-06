@@ -6,21 +6,21 @@
       "id": "SYSTEM_VAD_SileroVAD",
       "modelType": "VAD",
       "providerCode": "silero",
-      "name": "SileroVAD语音活动检测",
+      "name": "Silero VAD — phát hiện hoạt động giọng nói",
       "fields": [
         {
           "key": "threshold",
-          "label": "检测阈值",
+          "label": "ngưỡng phát hiện",
           "type": "number"
         },
         {
           "key": "model_dir",
-          "label": "模型目录",
+          "label": "thư mục model",
           "type": "string"
         },
         {
           "key": "min_silence_duration_ms",
-          "label": "最小静音时长",
+          "label": "thời lượng im lặng tối thiểu",
           "type": "number"
         }
       ],
@@ -30,16 +30,16 @@
       "id": "SYSTEM_ASR_FunASR",
       "modelType": "ASR",
       "providerCode": "fun_local",
-      "name": "FunASR语音识别",
+      "name": "FunASR — nhận dạng giọng nói",
       "fields": [
         {
           "key": "model_dir",
-          "label": "模型目录",
+          "label": "thư mục model",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -66,16 +66,16 @@
       "id": "SYSTEM_ASR_SherpaASR",
       "modelType": "ASR",
       "providerCode": "sherpa_onnx_local",
-      "name": "SherpaASR语音识别",
+      "name": "Sherpa ASR — nhận dạng giọng nói",
       "fields": [
         {
           "key": "model_dir",
-          "label": "模型目录",
+          "label": "thư mục model",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -85,26 +85,26 @@
       "id": "SYSTEM_ASR_DoubaoASR",
       "modelType": "ASR",
       "providerCode": "doubao",
-      "name": "火山引擎语音识别",
+      "name": "Volcengine — nhận dạng giọng nói",
       "fields": [
         {
           "key": "appid",
-          "label": "应用ID",
+          "label": "ID ứng dụng",
           "type": "string"
         },
         {
           "key": "access_token",
-          "label": "访问令牌",
+          "label": "access token",
           "type": "string"
         },
         {
           "key": "cluster",
-          "label": "集群",
+          "label": "cluster",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -114,46 +114,46 @@
       "id": "SYSTEM_LLM_openai",
       "modelType": "LLM",
       "providerCode": "openai",
-      "name": "OpenAI接口",
+      "name": "OpenAI API",
       "fields": [
         {
           "key": "base_url",
-          "label": "基础URL",
+          "label": "Base URL",
           "type": "string"
         },
         {
           "key": "model_name",
-          "label": "模型名称",
+          "label": "tên model",
           "type": "string"
         },
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         },
         {
           "key": "temperature",
-          "label": "温度",
+          "label": "temperature",
           "type": "number"
         },
         {
           "key": "max_tokens",
-          "label": "最大令牌数",
+          "label": "số token tối đa",
           "type": "number"
         },
         {
           "key": "top_p",
-          "label": "top_p值",
+          "label": "top_p",
           "type": "number"
         },
         {
           "key": "top_k",
-          "label": "top_k值",
+          "label": "top_k",
           "type": "number"
         },
         {
           "key": "frequency_penalty",
-          "label": "频率惩罚",
+          "label": "phạt tần suất",
           "type": "number"
         }
       ],
@@ -179,31 +179,31 @@
       "id": "SYSTEM_LLM_AliBL",
       "modelType": "LLM",
       "providerCode": "AliBL",
-      "name": "阿里百炼接口",
+      "name": "Alibaba Model Studio API",
       "fields": [
         {
           "key": "base_url",
-          "label": "基础URL",
+          "label": "Base URL",
           "type": "string"
         },
         {
           "key": "app_id",
-          "label": "应用ID",
+          "label": "ID ứng dụng",
           "type": "string"
         },
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         },
         {
           "key": "is_no_prompt",
-          "label": "是否不使用本地prompt",
+          "label": "Không dùng prompt local",
           "type": "boolean"
         },
         {
           "key": "ali_memory_id",
-          "label": "记忆ID",
+          "label": "ID ghi nhớ",
           "type": "string"
         }
       ],
@@ -213,16 +213,16 @@
       "id": "SYSTEM_LLM_ollama",
       "modelType": "LLM",
       "providerCode": "ollama",
-      "name": "Ollama接口",
+      "name": "Ollama API",
       "fields": [
         {
           "key": "model_name",
-          "label": "模型名称",
+          "label": "tên model",
           "type": "string"
         },
         {
           "key": "base_url",
-          "label": "服务地址",
+          "label": "địa chỉ dịch vụ",
           "type": "string"
         }
       ],
@@ -232,21 +232,21 @@
       "id": "SYSTEM_LLM_dify",
       "modelType": "LLM",
       "providerCode": "dify",
-      "name": "Dify接口",
+      "name": "Dify API",
       "fields": [
         {
           "key": "base_url",
-          "label": "基础URL",
+          "label": "Base URL",
           "type": "string"
         },
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         },
         {
           "key": "mode",
-          "label": "对话模式",
+          "label": "chế độ hội thoại",
           "type": "string"
         }
       ],
@@ -256,26 +256,26 @@
       "id": "SYSTEM_LLM_gemini",
       "modelType": "LLM",
       "providerCode": "gemini",
-      "name": "Gemini接口",
+      "name": "Gemini API",
       "fields": [
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         },
         {
           "key": "model_name",
-          "label": "模型名称",
+          "label": "tên model",
           "type": "string"
         },
         {
           "key": "http_proxy",
-          "label": "HTTP代理",
+          "label": "Proxy HTTP",
           "type": "string"
         },
         {
           "key": "https_proxy",
-          "label": "HTTPS代理",
+          "label": "Proxy HTTPS",
           "type": "string"
         }
       ],
@@ -285,21 +285,21 @@
       "id": "SYSTEM_LLM_coze",
       "modelType": "LLM",
       "providerCode": "coze",
-      "name": "Coze接口",
+      "name": "Coze API",
       "fields": [
         {
           "key": "bot_id",
-          "label": "机器人ID",
+          "label": "ID robot",
           "type": "string"
         },
         {
           "key": "user_id",
-          "label": "用户ID",
+          "label": "ID người dùng",
           "type": "string"
         },
         {
           "key": "personal_access_token",
-          "label": "个人访问令牌",
+          "label": "personal access token",
           "type": "string"
         }
       ],
@@ -309,21 +309,21 @@
       "id": "SYSTEM_LLM_fastgpt",
       "modelType": "LLM",
       "providerCode": "fastgpt",
-      "name": "FastGPT接口",
+      "name": "FastGPT API",
       "fields": [
         {
           "key": "base_url",
-          "label": "基础URL",
+          "label": "Base URL",
           "type": "string"
         },
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         },
         {
           "key": "variables",
-          "label": "变量",
+          "label": "biến cấu hình",
           "type": "dict",
           "dict_name": "variables"
         }
@@ -334,16 +334,16 @@
       "id": "SYSTEM_LLM_xinference",
       "modelType": "LLM",
       "providerCode": "xinference",
-      "name": "Xinference接口",
+      "name": "Xinference API",
       "fields": [
         {
           "key": "model_name",
-          "label": "模型名称",
+          "label": "tên model",
           "type": "string"
         },
         {
           "key": "base_url",
-          "label": "服务地址",
+          "label": "địa chỉ dịch vụ",
           "type": "string"
         }
       ],
@@ -357,12 +357,12 @@
       "fields": [
         {
           "key": "voice",
-          "label": "音色",
+          "label": "giọng đọc",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -389,41 +389,41 @@
       "id": "SYSTEM_TTS_doubao",
       "modelType": "TTS",
       "providerCode": "doubao",
-      "name": "火山引擎TTS",
+      "name": "Volcengine — TTS",
       "fields": [
         {
           "key": "api_url",
-          "label": "API地址",
+          "label": "địa chỉ API",
           "type": "string"
         },
         {
           "key": "voice",
-          "label": "音色",
+          "label": "giọng đọc",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "authorization",
-          "label": "授权",
+          "label": "ủy quyền",
           "type": "string"
         },
         {
           "key": "appid",
-          "label": "应用ID",
+          "label": "ID ứng dụng",
           "type": "string"
         },
         {
           "key": "access_token",
-          "label": "访问令牌",
+          "label": "access token",
           "type": "string"
         },
         {
           "key": "cluster",
-          "label": "集群",
+          "label": "cluster",
           "type": "string"
         }
       ],
@@ -433,31 +433,31 @@
       "id": "SYSTEM_TTS_siliconflow",
       "modelType": "TTS",
       "providerCode": "siliconflow",
-      "name": "硅基流动TTS",
+      "name": "SiliconFlow — TTS",
       "fields": [
         {
           "key": "model",
-          "label": "模型",
+          "label": "model",
           "type": "string"
         },
         {
           "key": "voice",
-          "label": "音色",
+          "label": "giọng đọc",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "access_token",
-          "label": "访问令牌",
+          "label": "access token",
           "type": "string"
         },
         {
           "key": "response_format",
-          "label": "响应格式",
+          "label": "định dạng response",
           "type": "string"
         }
       ],
@@ -471,22 +471,22 @@
       "fields": [
         {
           "key": "voice",
-          "label": "音色",
+          "label": "giọng đọc",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "access_token",
-          "label": "访问令牌",
+          "label": "access token",
           "type": "string"
         },
         {
           "key": "response_format",
-          "label": "响应格式",
+          "label": "định dạng response",
           "type": "string"
         }
       ],
@@ -500,94 +500,94 @@
       "fields": [
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "response_format",
-          "label": "响应格式",
+          "label": "định dạng response",
           "type": "string"
         },
         {
           "key": "reference_id",
-          "label": "参考ID",
+          "label": "ID tham chiếu",
           "type": "string"
         },
         {
           "key": "reference_audio",
-          "label": "参考音频",
+          "label": "audio tham chiếu",
           "type": "dict",
           "dict_name": "reference_audio"
         },
         {
           "key": "reference_text",
-          "label": "参考文本",
+          "label": "văn bản tham chiếu",
           "type": "dict",
           "dict_name": "reference_text"
         },
         {
           "key": "normalize",
-          "label": "是否标准化",
+          "label": "có bật",
           "type": "boolean"
         },
         {
           "key": "max_new_tokens",
-          "label": "最大新令牌数",
+          "label": "số token mới tối đa",
           "type": "number"
         },
         {
           "key": "chunk_length",
-          "label": "块长度",
+          "label": "độ dài chunk",
           "type": "number"
         },
         {
           "key": "top_p",
-          "label": "top_p值",
+          "label": "top_p",
           "type": "number"
         },
         {
           "key": "repetition_penalty",
-          "label": "重复惩罚",
+          "label": "phạt lặp",
           "type": "number"
         },
         {
           "key": "temperature",
-          "label": "温度",
+          "label": "temperature",
           "type": "number"
         },
         {
           "key": "streaming",
-          "label": "是否流式",
+          "label": "có dùng streaming",
           "type": "boolean"
         },
         {
           "key": "use_memory_cache",
-          "label": "是否使用内存缓存",
+          "label": "có dùng cache bộ nhớ",
           "type": "string"
         },
         {
           "key": "seed",
-          "label": "种子",
+          "label": "seed",
           "type": "number"
         },
         {
           "key": "channels",
-          "label": "通道数",
+          "label": "số kênh",
           "type": "number"
         },
         {
           "key": "rate",
-          "label": "采样率",
+          "label": "sample rate",
           "type": "number"
         },
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         },
         {
           "key": "api_url",
-          "label": "API地址",
+          "label": "địa chỉ API",
           "type": "string"
         }
       ],
@@ -601,102 +601,102 @@
       "fields": [
         {
           "key": "url",
-          "label": "服务地址",
+          "label": "địa chỉ dịch vụ",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "text_lang",
-          "label": "文本语言",
+          "label": "ngôn ngữ văn bản",
           "type": "string"
         },
         {
           "key": "ref_audio_path",
-          "label": "参考音频路径",
+          "label": "đường dẫn audio tham chiếu",
           "type": "string"
         },
         {
           "key": "prompt_text",
-          "label": "提示文本",
+          "label": "văn bản prompt",
           "type": "string"
         },
         {
           "key": "prompt_lang",
-          "label": "提示语言",
+          "label": "ngôn ngữ prompt",
           "type": "string"
         },
         {
           "key": "top_k",
-          "label": "top_k值",
+          "label": "top_k",
           "type": "number"
         },
         {
           "key": "top_p",
-          "label": "top_p值",
+          "label": "top_p",
           "type": "number"
         },
         {
           "key": "temperature",
-          "label": "温度",
+          "label": "temperature",
           "type": "number"
         },
         {
           "key": "text_split_method",
-          "label": "文本分割方法",
+          "label": "cách tách văn bản",
           "type": "string"
         },
         {
           "key": "batch_size",
-          "label": "批处理大小",
+          "label": "kích thước batch",
           "type": "number"
         },
         {
           "key": "batch_threshold",
-          "label": "批处理阈值",
+          "label": "ngưỡng batch",
           "type": "number"
         },
         {
           "key": "split_bucket",
-          "label": "是否分桶",
+          "label": "có chia bucket",
           "type": "boolean"
         },
         {
           "key": "return_fragment",
-          "label": "是否返回片段",
+          "label": "có trả về đoạn",
           "type": "boolean"
         },
         {
           "key": "speed_factor",
-          "label": "速度因子",
+          "label": "hệ số tốc độ",
           "type": "number"
         },
         {
           "key": "streaming_mode",
-          "label": "是否流式模式",
+          "label": "có dùng streaming",
           "type": "boolean"
         },
         {
           "key": "seed",
-          "label": "种子",
+          "label": "seed",
           "type": "number"
         },
         {
           "key": "parallel_infer",
-          "label": "是否并行推理",
+          "label": "có suy luận song song",
           "type": "boolean"
         },
         {
           "key": "repetition_penalty",
-          "label": "重复惩罚",
+          "label": "phạt lặp",
           "type": "number"
         },
         {
           "key": "aux_ref_audio_paths",
-          "label": "辅助参考音频路径",
+          "label": "đường dẫn audio tham chiếu phụ",
           "type": "dict",
           "dict_name": "aux_ref_audio_paths"
         }
@@ -711,73 +711,73 @@
       "fields": [
         {
           "key": "url",
-          "label": "服务地址",
+          "label": "địa chỉ dịch vụ",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "text_language",
-          "label": "文本语言",
+          "label": "ngôn ngữ văn bản",
           "type": "string"
         },
         {
           "key": "refer_wav_path",
-          "label": "参考音频路径",
+          "label": "đường dẫn audio tham chiếu",
           "type": "string"
         },
         {
           "key": "prompt_language",
-          "label": "提示语言",
+          "label": "ngôn ngữ prompt",
           "type": "string"
         },
         {
           "key": "prompt_text",
-          "label": "提示文本",
+          "label": "văn bản prompt",
           "type": "string"
         },
         {
           "key": "top_k",
-          "label": "top_k值",
+          "label": "top_k",
           "type": "number"
         },
         {
           "key": "top_p",
-          "label": "top_p值",
+          "label": "top_p",
           "type": "number"
         },
         {
           "key": "temperature",
-          "label": "温度",
+          "label": "temperature",
           "type": "number"
         },
         {
           "key": "cut_punc",
-          "label": "切分标点",
+          "label": "dấu câu tách đoạn",
           "type": "string"
         },
         {
           "key": "speed",
-          "label": "速度",
+          "label": "tốc độ",
           "type": "number"
         },
         {
           "key": "inp_refs",
-          "label": "输入参考",
+          "label": "tham chiếu đầu vào",
           "type": "dict",
           "dict_name": "inp_refs"
         },
         {
           "key": "sample_steps",
-          "label": "采样步数",
+          "label": "số bước sampling",
           "type": "number"
         },
         {
           "key": "if_sr",
-          "label": "是否使用SR",
+          "label": "có dùng SR",
           "type": "boolean"
         }
       ],
@@ -787,36 +787,36 @@
       "id": "SYSTEM_TTS_aliyun",
       "modelType": "TTS",
       "providerCode": "aliyun",
-      "name": "阿里云TTS",
+      "name": "Alibaba Cloud — TTS",
       "fields": [
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "appkey",
-          "label": "应用密钥",
+          "label": "khóa ứng dụng",
           "type": "string"
         },
         {
           "key": "token",
-          "label": "访问令牌",
+          "label": "access token",
           "type": "string"
         },
         {
           "key": "voice",
-          "label": "音色",
+          "label": "giọng đọc",
           "type": "string"
         },
         {
           "key": "access_key_id",
-          "label": "访问密钥ID",
+          "label": "ID access key",
           "type": "string"
         },
         {
           "key": "access_key_secret",
-          "label": "访问密钥密码",
+          "label": "mật khẩu access key",
           "type": "string"
         }
       ],
@@ -830,32 +830,32 @@
       "fields": [
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         },
         {
           "key": "api_url",
-          "label": "API地址",
+          "label": "địa chỉ API",
           "type": "string"
         },
         {
           "key": "model",
-          "label": "模型",
+          "label": "model",
           "type": "string"
         },
         {
           "key": "voice",
-          "label": "音色",
+          "label": "giọng đọc",
           "type": "string"
         },
         {
           "key": "speed",
-          "label": "速度",
+          "label": "tốc độ",
           "type": "number"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -865,33 +865,33 @@
       "id": "SYSTEM_TTS_custom",
       "modelType": "TTS",
       "providerCode": "custom",
-      "name": "自定义TTS",
+      "name": "TTS tùy chỉnh",
       "fields": [
         {
           "key": "url",
-          "label": "服务地址",
+          "label": "địa chỉ dịch vụ",
           "type": "string"
         },
         {
           "key": "params",
-          "label": "请求参数",
+          "label": "tham số request",
           "type": "dict",
           "dict_name": "params"
         },
         {
           "key": "headers",
-          "label": "请求头",
+          "label": "HTTP headers",
           "type": "dict",
           "dict_name": "headers"
         },
         {
           "key": "format",
-          "label": "音频格式",
+          "label": "định dạng audio",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -901,11 +901,11 @@
       "id": "SYSTEM_Memory_mem0ai",
       "modelType": "Memory",
       "providerCode": "mem0ai",
-      "name": "Mem0AI记忆",
+      "name": "Mem0AI — ghi nhớ",
       "fields": [
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         }
       ],
@@ -915,7 +915,7 @@
       "id": "SYSTEM_Memory_nomem",
       "modelType": "Memory",
       "providerCode": "nomem",
-      "name": "无记忆",
+      "name": "Không dùng bộ nhớ",
       "fields": [],
       "sort": 2
     },
@@ -923,7 +923,7 @@
       "id": "SYSTEM_Memory_mem_local_short",
       "modelType": "Memory",
       "providerCode": "mem_local_short",
-      "name": "本地短记忆",
+      "name": "Ghi nhớ ngắn hạn local",
       "fields": [],
       "sort": 3
     },
@@ -931,7 +931,7 @@
       "id": "SYSTEM_Intent_nointent",
       "modelType": "Intent",
       "providerCode": "nointent",
-      "name": "无意图识别",
+      "name": "Không dùng nhận diện ý định",
       "fields": [],
       "sort": 1
     },
@@ -939,11 +939,11 @@
       "id": "SYSTEM_Intent_intent_llm",
       "modelType": "Intent",
       "providerCode": "intent_llm",
-      "name": "LLM意图识别",
+      "name": "Nhận diện ý định bằng LLM",
       "fields": [
         {
           "key": "llm",
-          "label": "LLM模型",
+          "label": "Model LLM",
           "type": "string"
         }
       ],
@@ -953,11 +953,11 @@
       "id": "SYSTEM_Intent_function_call",
       "modelType": "Intent",
       "providerCode": "function_call",
-      "name": "函数调用意图识别",
+      "name": "Nhận diện ý định gọi hàm",
       "fields": [
         {
           "key": "functions",
-          "label": "函数列表",
+          "label": "danh sách hàm",
           "type": "dict",
           "dict_name": "functions"
         }
@@ -968,11 +968,11 @@
       "id": "SYSTEM_ASR_TencentASR",
       "modelType": "ASR",
       "providerCode": "tencent",
-      "name": "腾讯语音识别",
+      "name": "Tencent — nhận dạng giọng nói",
       "fields": [
         {
           "key": "appid",
-          "label": "应用ID",
+          "label": "ID ứng dụng",
           "type": "string"
         },
         {
@@ -987,7 +987,7 @@
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -997,11 +997,11 @@
       "id": "SYSTEM_TTS_TencentTTS",
       "modelType": "TTS",
       "providerCode": "tencent",
-      "name": "腾讯语音合成",
+      "name": "Tencent — TTS",
       "fields": [
         {
           "key": "appid",
-          "label": "应用ID",
+          "label": "ID ứng dụng",
           "type": "string"
         },
         {
@@ -1016,17 +1016,17 @@
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "region",
-          "label": "区域",
+          "label": "khu vực",
           "type": "string"
         },
         {
           "key": "voice",
-          "label": "音色ID",
+          "label": "ID giọng đọc",
           "type": "string"
         }
       ],
@@ -1036,16 +1036,16 @@
       "id": "SYSTEM_ASR_FunASRServer",
       "modelType": "ASR",
       "providerCode": "fun_server",
-      "name": "FunASR服务语音识别",
+      "name": "FunASR Server — nhận dạng giọng nói",
       "fields": [
         {
           "key": "host",
-          "label": "服务地址",
+          "label": "địa chỉ dịch vụ",
           "type": "string"
         },
         {
           "key": "port",
-          "label": "端口号",
+          "label": "cổng",
           "type": "number"
         }
       ],
@@ -1055,16 +1055,16 @@
       "id": "SYSTEM_ASR_AliyunASR",
       "modelType": "ASR",
       "providerCode": "aliyun",
-      "name": "阿里云语音识别",
+      "name": "Alibaba Cloud — nhận dạng giọng nói",
       "fields": [
         {
           "key": "appkey",
-          "label": "应用AppKey",
+          "label": "AppKey ứng dụng",
           "type": "string"
         },
         {
           "key": "token",
-          "label": "临时Token",
+          "label": "temporary token",
           "type": "string"
         },
         {
@@ -1079,7 +1079,7 @@
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -1089,11 +1089,11 @@
       "id": "SYSTEM_ASR_BaiduASR",
       "modelType": "ASR",
       "providerCode": "baidu",
-      "name": "百度语音识别",
+      "name": "Baidu — nhận dạng giọng nói",
       "fields": [
         {
           "key": "app_id",
-          "label": "应用AppID",
+          "label": "AppID ứng dụng",
           "type": "string"
         },
         {
@@ -1108,12 +1108,12 @@
         },
         {
           "key": "dev_pid",
-          "label": "语言参数",
+          "label": "tham số ngôn ngữ",
           "type": "number"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -1123,31 +1123,31 @@
       "id": "SYSTEM_TTS_HSDSTTS",
       "modelType": "TTS",
       "providerCode": "huoshan_double_stream",
-      "name": "火山双流式语音合成",
+      "name": "Volcengine — TTS streaming hai chiều",
       "fields": [
         {
           "key": "ws_url",
-          "label": "WebSocket地址",
+          "label": "địa chỉ WebSocket",
           "type": "string"
         },
         {
           "key": "appid",
-          "label": "应用ID",
+          "label": "ID ứng dụng",
           "type": "string"
         },
         {
           "key": "access_token",
-          "label": "访问令牌",
+          "label": "access token",
           "type": "string"
         },
         {
           "key": "resource_id",
-          "label": "资源ID",
+          "label": "ID tài nguyên",
           "type": "string"
         },
         {
           "key": "speaker",
-          "label": "默认音色",
+          "label": "giọng đọc mặc định",
           "type": "string"
         }
       ],
@@ -1157,24 +1157,24 @@
       "id": "SYSTEM_PLUGIN_WEATHER",
       "modelType": "Plugin",
       "providerCode": "get_weather",
-      "name": "天气查询",
+      "name": "tra cứu thời tiết",
       "fields": [
         {
           "key": "api_key",
           "type": "string",
-          "label": "天气插件 API 密钥",
+          "label": "API key plugin thời tiết",
           "default": ""
         },
         {
           "key": "default_location",
           "type": "string",
-          "label": "默认查询城市",
+          "label": "thành phố tra cứu mặc định",
           "default": ""
         },
         {
           "key": "api_host",
           "type": "string",
-          "label": "开发者 API Host",
+          "label": "API Host dành cho developer",
           "default": ""
         }
       ],
@@ -1184,7 +1184,7 @@
       "id": "SYSTEM_PLUGIN_MUSIC",
       "modelType": "Plugin",
       "providerCode": "play_music",
-      "name": "服务器音乐播放",
+      "name": "Máy chủ — phát nhạc",
       "fields": [],
       "sort": 20
     },
@@ -1192,30 +1192,30 @@
       "id": "SYSTEM_PLUGIN_NEWS_CHINANEWS",
       "modelType": "Plugin",
       "providerCode": "get_news_from_chinanews",
-      "name": "中新网新闻",
+      "name": "Tin tức Trung Quốc",
       "fields": [
         {
           "key": "default_rss_url",
           "type": "string",
-          "label": "默认 RSS 源",
+          "label": "Nguồn RSS mặc định",
           "default": ""
         },
         {
           "key": "society_rss_url",
           "type": "string",
-          "label": "社会新闻 RSS 地址",
+          "label": "Địa chỉ RSS tin xã hội",
           "default": "https://www.chinanews.com.cn/rss/society.xml"
         },
         {
           "key": "world_rss_url",
           "type": "string",
-          "label": "国际新闻 RSS 地址",
+          "label": "Địa chỉ RSS tin quốc tế",
           "default": "https://www.chinanews.com.cn/rss/world.xml"
         },
         {
           "key": "finance_rss_url",
           "type": "string",
-          "label": "财经新闻 RSS 地址",
+          "label": "Địa chỉ RSS tin tài chính",
           "default": "https://www.chinanews.com.cn/rss/finance.xml"
         }
       ],
@@ -1225,19 +1225,19 @@
       "id": "SYSTEM_PLUGIN_NEWS_NEWSNOW",
       "modelType": "Plugin",
       "providerCode": "get_news_from_newsnow",
-      "name": "newsnow新闻聚合",
+      "name": "newsnow — tổng hợp tin tức",
       "fields": [
         {
           "key": "url",
           "type": "string",
-          "label": "接口地址",
+          "label": "Địa chỉ API",
           "default": "https://newsnow.busiyi.world/api/s?id="
         },
         {
           "key": "news_sources",
           "type": "string",
-          "label": "新闻源配置",
-          "default": "澎湃新闻;百度热搜;财联社"
+          "label": "cấu hình nguồn tin",
+          "default": "Tin tức Pengpai;Tìm kiếm nóng Baidu;Tin tức tài chính"
         }
       ],
       "sort": 40
@@ -1246,24 +1246,24 @@
       "id": "SYSTEM_PLUGIN_HA_GET_STATE",
       "modelType": "Plugin",
       "providerCode": "hass_get_state",
-      "name": "HomeAssistant设备状态查询",
+      "name": "Home Assistant — tra cứu trạng thái thiết bị",
       "fields": [
         {
           "key": "base_url",
           "type": "string",
-          "label": "HA 服务器地址",
+          "label": "HA máy chủ",
           "default": ""
         },
         {
           "key": "api_key",
           "type": "string",
-          "label": "HA API 访问令牌",
+          "label": "HA API access token",
           "default": ""
         },
         {
           "key": "devices",
           "type": "array",
-          "label": "设备列表（名称,实体ID;…）",
+          "label": "Danh sách thiết bị (tên, ID thực thể; …)",
           "default": []
         }
       ],
@@ -1273,7 +1273,7 @@
       "id": "SYSTEM_PLUGIN_HA_SET_STATE",
       "modelType": "Plugin",
       "providerCode": "hass_set_state",
-      "name": "HomeAssistant设备状态修改",
+      "name": "Home Assistant — thay đổi trạng thái thiết bị",
       "fields": [],
       "sort": 60
     },
@@ -1281,7 +1281,7 @@
       "id": "SYSTEM_PLUGIN_HA_PLAY_MUSIC",
       "modelType": "Plugin",
       "providerCode": "hass_play_music",
-      "name": "HomeAssistant音乐播放",
+      "name": "Home Assistant — phát nhạc",
       "fields": [],
       "sort": 70
     },
@@ -1289,21 +1289,21 @@
       "id": "SYSTEM_VLLM_openai",
       "modelType": "VLLM",
       "providerCode": "openai",
-      "name": "OpenAI接口",
+      "name": "OpenAI API",
       "fields": [
         {
           "key": "base_url",
-          "label": "基础URL",
+          "label": "Base URL",
           "type": "string"
         },
         {
           "key": "model_name",
-          "label": "模型名称",
+          "label": "tên model",
           "type": "string"
         },
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         }
       ],
@@ -1313,27 +1313,27 @@
       "id": "SYSTEM_ASR_OpenaiASR",
       "modelType": "ASR",
       "providerCode": "openai",
-      "name": "OpenAI语音识别",
+      "name": "OpenAI — nhận dạng giọng nói",
       "fields": [
         {
           "key": "base_url",
           "type": "string",
-          "label": "基础URL"
+          "label": "Base URL"
         },
         {
           "key": "model_name",
           "type": "string",
-          "label": "模型名称"
+          "label": "tên model"
         },
         {
           "key": "api_key",
           "type": "string",
-          "label": "API密钥"
+          "label": "API key"
         },
         {
           "key": "output_dir",
           "type": "string",
-          "label": "输出目录"
+          "label": "thư mục đầu ra"
         }
       ],
       "sort": 9
@@ -1342,16 +1342,16 @@
       "id": "SYSTEM_ASR_AliyunStreamASR",
       "modelType": "ASR",
       "providerCode": "aliyun_stream",
-      "name": "阿里云语音识别(流式)",
+      "name": "Alibaba Cloud — nhận dạng streaming",
       "fields": [
         {
           "key": "appkey",
-          "label": "应用AppKey",
+          "label": "AppKey ứng dụng",
           "type": "string"
         },
         {
           "key": "token",
-          "label": "临时Token",
+          "label": "temporary token",
           "type": "string"
         },
         {
@@ -1366,17 +1366,17 @@
         },
         {
           "key": "host",
-          "label": "服务地址",
+          "label": "địa chỉ dịch vụ",
           "type": "string"
         },
         {
           "key": "max_sentence_silence",
-          "label": "断句检测时间",
+          "label": "thời gian phát hiện ngắt câu",
           "type": "number"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -1386,16 +1386,16 @@
       "id": "SYSTEM_TTS_AliyunStreamTTS",
       "modelType": "TTS",
       "providerCode": "aliyun_stream",
-      "name": "阿里云语音合成(流式)",
+      "name": "Alibaba Cloud — streaming TTS",
       "fields": [
         {
           "key": "appkey",
-          "label": "应用AppKey",
+          "label": "AppKey ứng dụng",
           "type": "string"
         },
         {
           "key": "token",
-          "label": "临时Token",
+          "label": "temporary token",
           "type": "string"
         },
         {
@@ -1410,42 +1410,42 @@
         },
         {
           "key": "host",
-          "label": "服务地址",
+          "label": "địa chỉ dịch vụ",
           "type": "string"
         },
         {
           "key": "voice",
-          "label": "默认音色",
+          "label": "giọng đọc mặc định",
           "type": "string"
         },
         {
           "key": "format",
-          "label": "音频格式",
+          "label": "định dạng audio",
           "type": "string"
         },
         {
           "key": "sample_rate",
-          "label": "采样率",
+          "label": "sample rate",
           "type": "number"
         },
         {
           "key": "volume",
-          "label": "音量",
+          "label": "âm lượng",
           "type": "number"
         },
         {
           "key": "speech_rate",
-          "label": "语速",
+          "label": "tốc độ nói",
           "type": "number"
         },
         {
           "key": "pitch_rate",
-          "label": "音调",
+          "label": "cao độ",
           "type": "number"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -1455,26 +1455,26 @@
       "id": "SYSTEM_TTS_IndexStreamTTS",
       "modelType": "TTS",
       "providerCode": "index_stream",
-      "name": "Index-TTS-vLLM流式语音合成",
+      "name": "Index-TTS-vLLM — streaming",
       "fields": [
         {
           "key": "api_url",
-          "label": "API服务地址",
+          "label": "địa chỉ API",
           "type": "string"
         },
         {
           "key": "voice",
-          "label": "默认音色",
+          "label": "giọng đọc mặc định",
           "type": "string"
         },
         {
           "key": "audio_format",
-          "label": "音频格式",
+          "label": "định dạng audio",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -1488,7 +1488,7 @@
       "fields": [
         {
           "key": "protocol",
-          "label": "协议类型",
+          "label": "loại giao thức",
           "type": "string",
           "options": [
             "websocket",
@@ -1497,32 +1497,32 @@
         },
         {
           "key": "url",
-          "label": "服务地址",
+          "label": "địa chỉ dịch vụ",
           "type": "string"
         },
         {
           "key": "spk_id",
-          "label": "音色",
+          "label": "giọng đọc",
           "type": "int"
         },
         {
           "key": "sample_rate",
-          "label": "采样率",
+          "label": "sample rate",
           "type": "float"
         },
         {
           "key": "speed",
-          "label": "语速",
+          "label": "tốc độ nói",
           "type": "float"
         },
         {
           "key": "volume",
-          "label": "音量",
+          "label": "âm lượng",
           "type": "float"
         },
         {
           "key": "save_path",
-          "label": "保存路径",
+          "label": "đường dẫn lưu",
           "type": "string"
         }
       ],
@@ -1532,17 +1532,17 @@
       "id": "SYSTEM_ASR_VoskASR",
       "modelType": "ASR",
       "providerCode": "vosk",
-      "name": "VOSK离线语音识别",
+      "name": "Vosk — nhận dạng offline",
       "fields": [
         {
           "key": "model_path",
           "type": "string",
-          "label": "模型路径"
+          "label": "đường dẫn model"
         },
         {
           "key": "output_dir",
           "type": "string",
-          "label": "输出目录"
+          "label": "thư mục đầu ra"
         }
       ],
       "sort": 11
@@ -1551,54 +1551,54 @@
       "id": "SYSTEM_TTS_MinimaxStreamTTS",
       "modelType": "TTS",
       "providerCode": "minimax_httpstream",
-      "name": "Minimax流式语音合成",
+      "name": "Minimax — streaming TTS",
       "fields": [
         {
           "key": "group_id",
-          "label": "组ID",
+          "label": "ID nhóm",
           "type": "string"
         },
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         },
         {
           "key": "model",
-          "label": "模型",
+          "label": "model",
           "type": "string"
         },
         {
           "key": "voice_id",
-          "label": "音色ID",
+          "label": "ID giọng đọc",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "voice_setting",
-          "label": "音色设置",
+          "label": "cài đặt giọng đọc",
           "type": "dict",
           "dict_name": "voice_setting"
         },
         {
           "key": "pronunciation_dict",
-          "label": "发音字典",
+          "label": "từ điển phát âm",
           "type": "dict",
           "dict_name": "pronunciation_dict"
         },
         {
           "key": "audio_setting",
-          "label": "音频设置",
+          "label": "cài đặt audio",
           "type": "dict",
           "dict_name": "audio_setting"
         },
         {
           "key": "timber_weights",
-          "label": "音色权重",
+          "label": "trọng số giọng đọc",
           "type": "string"
         }
       ],
@@ -1608,26 +1608,26 @@
       "id": "SYSTEM_ASR_Qwen3Flash",
       "modelType": "ASR",
       "providerCode": "qwen3_asr_flash",
-      "name": "Qwen3-ASR-Flash语音识别",
+      "name": "Qwen3 ASR Flash — nhận dạng giọng nói",
       "fields": [
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "password"
         },
         {
           "key": "base_url",
-          "label": "服务地址",
+          "label": "địa chỉ dịch vụ",
           "type": "string"
         },
         {
           "key": "model_name",
-          "label": "模型名称",
+          "label": "tên model",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -1637,52 +1637,52 @@
       "id": "SYSTEM_TTS_AliBLStreamTTS",
       "modelType": "TTS",
       "providerCode": "alibl_stream",
-      "name": "阿里百炼流式语音合成",
+      "name": "Alibaba Model Studio — streaming TTS",
       "fields": [
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "model",
-          "label": "模型",
+          "label": "model",
           "type": "string"
         },
         {
           "key": "voice",
-          "label": "音色",
+          "label": "giọng đọc",
           "type": "string"
         },
         {
           "key": "format",
-          "label": "音频格式",
+          "label": "định dạng audio",
           "type": "string"
         },
         {
           "key": "sample_rate",
-          "label": "采样率",
+          "label": "sample rate",
           "type": "number"
         },
         {
           "key": "volume",
           "type": "number",
-          "label": "音量"
+          "label": "âm lượng"
         },
         {
           "key": "rate",
           "type": "number",
-          "label": "语速"
+          "label": "tốc độ nói"
         },
         {
           "key": "pitch",
           "type": "number",
-          "label": "音调"
+          "label": "cao độ"
         }
       ],
       "sort": 19
@@ -1691,7 +1691,7 @@
       "id": "SYSTEM_TTS_XunFeiStreamTTS",
       "modelType": "TTS",
       "providerCode": "xunfei_stream",
-      "name": "讯飞流式语音合成",
+      "name": "iFlytek — streaming TTS",
       "fields": [
         {
           "key": "app_id",
@@ -1705,63 +1705,63 @@
         },
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "voice",
-          "label": "音色",
+          "label": "giọng đọc",
           "type": "string"
         },
         {
           "key": "format",
-          "label": "音频格式",
+          "label": "định dạng audio",
           "type": "string"
         },
         {
           "key": "sample_rate",
-          "label": "采样率",
+          "label": "sample rate",
           "type": "number"
         },
         {
           "key": "volume",
           "type": "number",
-          "label": "音量"
+          "label": "âm lượng"
         },
         {
           "key": "speed",
           "type": "number",
-          "label": "语速"
+          "label": "tốc độ nói"
         },
         {
           "key": "pitch",
           "type": "number",
-          "label": "音调"
+          "label": "cao độ"
         },
         {
           "key": "oral_level",
           "type": "number",
-          "label": "口语化等级"
+          "label": "mức độ khẩu ngữ"
         },
         {
           "key": "spark_assist",
           "type": "number",
-          "label": "是否口语化"
+          "label": "có dùng khẩu ngữ"
         },
         {
           "key": "stop_split",
           "type": "number",
-          "label": "服务端拆句"
+          "label": "tách câu ở server"
         },
         {
           "key": "remain",
           "type": "number",
-          "label": "保留书面语"
+          "label": "giữ văn phong viết"
         }
       ],
       "sort": 20
@@ -1770,11 +1770,11 @@
       "id": "SYSTEM_ASR_XunfeiStream",
       "modelType": "ASR",
       "providerCode": "xunfei_stream",
-      "name": "讯飞流式语音识别",
+      "name": "iFlytek — nhận dạng streaming",
       "fields": [
         {
           "key": "app_id",
-          "label": "应用ID",
+          "label": "ID ứng dụng",
           "type": "string"
         },
         {
@@ -1789,27 +1789,27 @@
         },
         {
           "key": "domain",
-          "label": "识别领域",
+          "label": "lĩnh vực nhận dạng",
           "type": "string"
         },
         {
           "key": "language",
-          "label": "识别语言",
+          "label": "ngôn ngữ nhận dạng",
           "type": "string"
         },
         {
           "key": "accent",
-          "label": "方言",
+          "label": "phương ngữ",
           "type": "string"
         },
         {
           "key": "dwa",
-          "label": "动态修正",
+          "label": "sửa động",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -1824,12 +1824,12 @@
         {
           "key": "base_url",
           "type": "string",
-          "label": "服务地址"
+          "label": "địa chỉ dịch vụ"
         },
         {
           "key": "api_key",
           "type": "string",
-          "label": "API密钥"
+          "label": "API key"
         }
       ],
       "sort": 1
@@ -1838,31 +1838,31 @@
       "id": "SYSTEM_ASR_AliyunBLStream",
       "modelType": "ASR",
       "providerCode": "aliyunbl_stream",
-      "name": "阿里百炼Paraformer实时语音识别",
+      "name": "Alibaba Model Studio Paraformer — nhận dạng streaming",
       "fields": [
         {
           "key": "api_key",
-          "label": "API密钥",
+          "label": "API key",
           "type": "password"
         },
         {
           "key": "model",
-          "label": "模型名称",
+          "label": "tên model",
           "type": "string"
         },
         {
           "key": "format",
-          "label": "音频格式",
+          "label": "định dạng audio",
           "type": "string"
         },
         {
           "key": "sample_rate",
-          "label": "采样率",
+          "label": "sample rate",
           "type": "number"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         }
       ],
@@ -1872,51 +1872,51 @@
       "id": "SYSTEM_ASR_DoubaoStreamASR",
       "modelType": "ASR",
       "providerCode": "doubao_stream",
-      "name": "火山引擎语音识别(流式)",
+      "name": "Volcengine — nhận dạng streaming",
       "fields": [
         {
           "key": "appid",
-          "label": "应用ID",
+          "label": "ID ứng dụng",
           "type": "string"
         },
         {
           "key": "access_token",
-          "label": "访问令牌",
+          "label": "access token",
           "type": "string"
         },
         {
           "key": "cluster",
-          "label": "集群",
+          "label": "cluster",
           "type": "string"
         },
         {
           "key": "boosting_table_name",
-          "label": "热词文件名称",
+          "label": "tên file từ nóng",
           "type": "string"
         },
         {
           "key": "correct_table_name",
-          "label": "替换词文件名称",
+          "label": "tên file từ thay thế",
           "type": "string"
         },
         {
           "key": "output_dir",
-          "label": "输出目录",
+          "label": "thư mục đầu ra",
           "type": "string"
         },
         {
           "key": "end_window_size",
-          "label": "静音判定时长(ms)",
+          "label": "Thời lượng xác định im lặng (ms)",
           "type": "number"
         },
         {
           "key": "enable_multilingual",
-          "label": "是否开启多语种识别模式",
+          "label": "Bật chế độ nhận dạng đa ngôn ngữ",
           "type": "boolean"
         },
         {
           "key": "language",
-          "label": "指定语言编码",
+          "label": "mã ngôn ngữ chỉ định",
           "type": "string"
         }
       ],
@@ -1926,61 +1926,61 @@
       "id": "SYSTEM_Memory_powermem",
       "modelType": "Memory",
       "providerCode": "powermem",
-      "name": "PowerMem记忆",
+      "name": "PowerMem — ghi nhớ",
       "fields": [
         {
           "key": "enable_user_profile",
-          "label": "启用用户画像",
+          "label": "bật hồ sơ người dùng",
           "type": "boolean"
         },
         {
           "key": "llm_provider",
-          "label": "LLM提供商",
+          "label": "Provider LLM",
           "type": "string"
         },
         {
           "key": "llm_api_key",
-          "label": "LLM API密钥",
+          "label": "LLM API key",
           "type": "string"
         },
         {
           "key": "llm_model",
-          "label": "LLM模型",
+          "label": "Model LLM",
           "type": "string"
         },
         {
           "key": "openai_base_url",
-          "label": "OpenAI基础URL",
+          "label": "OpenAI Base URL",
           "type": "string"
         },
         {
           "key": "embedding_provider",
-          "label": "Embedding提供商",
+          "label": "Embedding provider",
           "type": "string"
         },
         {
           "key": "embedding_api_key",
-          "label": "Embedding API密钥",
+          "label": "Embedding API key",
           "type": "string"
         },
         {
           "key": "embedding_model",
-          "label": "Embedding模型",
+          "label": "Embedding model",
           "type": "string"
         },
         {
           "key": "embedding_openai_base_url",
-          "label": "Embedding OpenAI基础URL",
+          "label": "Embedding OpenAI Base URL",
           "type": "string"
         },
         {
           "key": "embedding_dims",
-          "label": "Embedding维度",
+          "label": "số chiều Embedding",
           "type": "integer"
         },
         {
           "key": "vector_store",
-          "label": "向量存储配置(JSON)",
+          "label": "cấu hình kho vector (JSON)",
           "type": "dict"
         }
       ],
@@ -1990,7 +1990,7 @@
       "id": "SYSTEM_Memory_mem_report_only",
       "modelType": "Memory",
       "providerCode": "mem_report_only",
-      "name": "仅上报聊天记录",
+      "name": "Chỉ ghi lại lịch sử trò chuyện",
       "fields": [],
       "sort": 4
     },
@@ -1998,24 +1998,24 @@
       "id": "SYSTEM_PLUGIN_WEB_SEARCH",
       "modelType": "Plugin",
       "providerCode": "web_search",
-      "name": "联网搜索",
+      "name": "tìm kiếm web",
       "fields": [
         {
           "key": "provider",
           "type": "string",
-          "label": "搜索源：metaso / tavily",
+          "label": "Nguồn tìm kiếm: metaso / tavily",
           "default": "metaso"
         },
         {
           "key": "description",
           "type": "string",
-          "label": "工具描述",
-          "default": "联网搜索工具。当用户明确需要联网搜索问题时使用此工具。"
+          "label": "mô tả công cụ",
+          "default": "Công cụ tìm kiếm web. Dùng khi người dùng yêu cầu tìm kiếm web."
         },
         {
           "key": "max_results",
           "type": "string",
-          "label": "返回数量",
+          "label": "số lượng trả về",
           "default": "5"
         },
         {
@@ -2031,7 +2031,7 @@
       "id": "SYSTEM_PLUGIN_CALL_DEVICE",
       "modelType": "Plugin",
       "providerCode": "call_device",
-      "name": "设备呼叫设备",
+      "name": "thiết bị gọi thiết bị",
       "fields": [],
       "sort": 85
     }
@@ -2042,7 +2042,7 @@
       "modelType": "VAD",
       "providerCode": "silero",
       "modelCode": "SileroVAD",
-      "modelName": "语音活动检测",
+      "modelName": "Phát hiện hoạt động giọng nói",
       "isDefault": true,
       "isEnabled": true,
       "configJson": {
@@ -2060,7 +2060,7 @@
       "modelType": "ASR",
       "providerCode": "fun_local",
       "modelCode": "FunASR",
-      "modelName": "FunASR语音识别",
+      "modelName": "FunASR — nhận dạng giọng nói",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2102,7 +2102,7 @@
       "modelType": "ASR",
       "providerCode": "sherpa_onnx_local",
       "modelCode": "SherpaASR",
-      "modelName": "Sherpa语音识别",
+      "modelName": "Sherpa ASR — nhận dạng giọng nói",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2119,7 +2119,7 @@
       "modelType": "ASR",
       "providerCode": "doubao",
       "modelCode": "DoubaoASR",
-      "modelName": "豆包语音识别",
+      "modelName": "Doubao — nhận dạng giọng nói",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2138,7 +2138,7 @@
       "modelType": "ASR",
       "providerCode": "tencent",
       "modelCode": "TencentASR",
-      "modelName": "腾讯语音识别",
+      "modelName": "Tencent — nhận dạng giọng nói",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2157,7 +2157,7 @@
       "modelType": "LLM",
       "providerCode": "openai",
       "modelCode": "ChatGLMLLM",
-      "modelName": "智谱AI",
+      "modelName": "Zhipu AI",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2197,7 +2197,7 @@
       "modelType": "LLM",
       "providerCode": "ollama",
       "modelCode": "OllamaLLM",
-      "modelName": "Ollama本地模型",
+      "modelName": "Ollama — model local",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2214,7 +2214,7 @@
       "modelType": "LLM",
       "providerCode": "openai",
       "modelCode": "AliLLM",
-      "modelName": "通义千问",
+      "modelName": "Qwen",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2237,7 +2237,7 @@
       "modelType": "LLM",
       "providerCode": "AliBL",
       "modelCode": "AliAppLLM",
-      "modelName": "通义百炼",
+      "modelName": "Alibaba Model Studio",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2257,7 +2257,7 @@
       "modelType": "LLM",
       "providerCode": "openai",
       "modelCode": "DoubaoLLM",
-      "modelName": "豆包大模型",
+      "modelName": "Doubao — mô hình ngôn ngữ",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2311,7 +2311,7 @@
       "modelType": "LLM",
       "providerCode": "gemini",
       "modelCode": "GeminiLLM",
-      "modelName": "谷歌Gemini",
+      "modelName": "Google Gemini",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2387,7 +2387,7 @@
       "modelType": "LLM",
       "providerCode": "xinference",
       "modelCode": "XinferenceLLM",
-      "modelName": "Xinference大模型",
+      "modelName": "Xinference — model lớn",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2404,7 +2404,7 @@
       "modelType": "LLM",
       "providerCode": "xinference",
       "modelCode": "XinferenceSmallLLM",
-      "modelName": "Xinference小模型",
+      "modelName": "Xinference — model nhỏ",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2421,7 +2421,7 @@
       "modelType": "TTS",
       "providerCode": "edge",
       "modelCode": "EdgeTTS",
-      "modelName": "Edge语音合成",
+      "modelName": "Edge TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2461,7 +2461,7 @@
       "modelType": "TTS",
       "providerCode": "doubao",
       "modelCode": "DoubaoTTS",
-      "modelName": "豆包语音合成",
+      "modelName": "Doubao — TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2483,7 +2483,7 @@
       "modelType": "TTS",
       "providerCode": "siliconflow",
       "modelCode": "CosyVoiceSiliconflow",
-      "modelName": "硅基流动语音合成",
+      "modelName": "SiliconFlow — TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2503,7 +2503,7 @@
       "modelType": "TTS",
       "providerCode": "cozecn",
       "modelCode": "CozeCnTTS",
-      "modelName": "Coze中文语音合成",
+      "modelName": "Coze — TTS tiếng Trung",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2522,7 +2522,7 @@
       "modelType": "TTS",
       "providerCode": "fishspeech",
       "modelCode": "FishSpeech",
-      "modelName": "FishSpeech语音合成",
+      "modelName": "FishSpeech — TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2534,7 +2534,7 @@
           "/tmp/test.wav"
         ],
         "reference_text": [
-          "你弄来这些吟词宴曲来看，还是这些混话来欺负我。"
+          "，."
         ],
         "normalize": true,
         "max_new_tokens": 1024,
@@ -2623,7 +2623,7 @@
       "modelType": "TTS",
       "providerCode": "aliyun",
       "modelCode": "AliyunTTS",
-      "modelName": "阿里云语音合成",
+      "modelName": "Alibaba Cloud — TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2644,7 +2644,7 @@
       "modelType": "TTS",
       "providerCode": "doubao",
       "modelCode": "TTS302AI",
-      "modelName": "302AI语音合成",
+      "modelName": "302AI — TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2664,7 +2664,7 @@
       "modelType": "TTS",
       "providerCode": "openai",
       "modelCode": "OpenAITTS",
-      "modelName": "OpenAI语音合成",
+      "modelName": "OpenAI — TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2685,7 +2685,7 @@
       "modelType": "TTS",
       "providerCode": "custom",
       "modelCode": "CustomTTS",
-      "modelName": "自定义语音合成",
+      "modelName": "TTS tùy chỉnh",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2705,7 +2705,7 @@
       "modelType": "TTS",
       "providerCode": "tencent",
       "modelCode": "TencentTTS",
-      "modelName": "腾讯语音合成",
+      "modelName": "Tencent — TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2726,7 +2726,7 @@
       "modelType": "Memory",
       "providerCode": "nomem",
       "modelCode": "nomem",
-      "modelName": "无记忆",
+      "modelName": "Không dùng bộ nhớ",
       "isDefault": true,
       "isEnabled": true,
       "configJson": {
@@ -2741,7 +2741,7 @@
       "modelType": "Memory",
       "providerCode": "mem_local_short",
       "modelCode": "mem_local_short",
-      "modelName": "本地短期记忆",
+      "modelName": "Ghi nhớ ngắn hạn local",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2756,7 +2756,7 @@
       "modelType": "Memory",
       "providerCode": "mem0ai",
       "modelCode": "mem0ai",
-      "modelName": "Mem0AI记忆",
+      "modelName": "Mem0AI — ghi nhớ",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2772,7 +2772,7 @@
       "modelType": "Intent",
       "providerCode": "nointent",
       "modelCode": "nointent",
-      "modelName": "无意图识别",
+      "modelName": "Không dùng nhận diện ý định",
       "isDefault": true,
       "isEnabled": false,
       "configJson": {
@@ -2787,7 +2787,7 @@
       "modelType": "Intent",
       "providerCode": "intent_llm",
       "modelCode": "intent_llm",
-      "modelName": "LLM意图识别",
+      "modelName": "Nhận diện ý định bằng LLM",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2803,7 +2803,7 @@
       "modelType": "Intent",
       "providerCode": "function_call",
       "modelCode": "function_call",
-      "modelName": "函数调用意图识别",
+      "modelName": "Nhận diện ý định gọi hàm",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2819,7 +2819,7 @@
       "modelType": "LLM",
       "providerCode": "openai",
       "modelCode": "VolcesAiGatewayTTS",
-      "modelName": "火山引擎边缘大模型网关",
+      "modelName": "Volcengine — gateway mô hình",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2837,7 +2837,7 @@
       "modelType": "TTS",
       "providerCode": "openai",
       "modelCode": "VolcesAiGatewayTTS",
-      "modelName": "火山引擎边缘大模型网关",
+      "modelName": "Volcengine — gateway mô hình",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2858,7 +2858,7 @@
       "modelType": "ASR",
       "providerCode": "fun_server",
       "modelCode": "FunASRServer",
-      "modelName": "FunASR服务语音识别",
+      "modelName": "FunASR Server — nhận dạng giọng nói",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2875,7 +2875,7 @@
       "modelType": "ASR",
       "providerCode": "aliyun",
       "modelCode": "AliyunASR",
-      "modelName": "阿里云语音识别",
+      "modelName": "Alibaba Cloud — nhận dạng giọng nói",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2895,7 +2895,7 @@
       "modelType": "ASR",
       "providerCode": "baidu",
       "modelCode": "BaiduASR",
-      "modelName": "百度语音识别",
+      "modelName": "Baidu — nhận dạng giọng nói",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2915,7 +2915,7 @@
       "modelType": "TTS",
       "providerCode": "huoshan_double_stream",
       "modelCode": "HuoshanDoubleStreamTTS",
-      "modelName": "火山双流式语音合成",
+      "modelName": "Volcengine — TTS streaming hai chiều",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2935,7 +2935,7 @@
       "modelType": "VLLM",
       "providerCode": "openai",
       "modelCode": "ChatGLMVLLM",
-      "modelName": "智谱视觉AI",
+      "modelName": "Zhipu AI — thị giác",
       "isDefault": true,
       "isEnabled": true,
       "configJson": {
@@ -2953,7 +2953,7 @@
       "modelType": "ASR",
       "providerCode": "doubao_stream",
       "modelCode": "DoubaoStreamASR",
-      "modelName": "豆包语音识别(流式)",
+      "modelName": "Doubao — nhận dạng streaming",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2972,7 +2972,7 @@
       "modelType": "VLLM",
       "providerCode": "openai",
       "modelCode": "QwenVLVLLM",
-      "modelName": "千问视觉模型",
+      "modelName": "Qwen — model thị giác",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -2990,7 +2990,7 @@
       "modelType": "ASR",
       "providerCode": "openai",
       "modelCode": "OpenaiASR",
-      "modelName": "OpenAI语音识别",
+      "modelName": "OpenAI — nhận dạng giọng nói",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3009,7 +3009,7 @@
       "modelType": "ASR",
       "providerCode": "openai",
       "modelCode": "GroqASR",
-      "modelName": "Groq语音识别",
+      "modelName": "Groq — nhận dạng giọng nói",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3028,7 +3028,7 @@
       "modelType": "ASR",
       "providerCode": "aliyun_stream",
       "modelCode": "AliyunStreamASR",
-      "modelName": "阿里云语音识别(流式)",
+      "modelName": "Alibaba Cloud — nhận dạng streaming",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3050,7 +3050,7 @@
       "modelType": "TTS",
       "providerCode": "aliyun_stream",
       "modelCode": "AliyunStreamTTS",
-      "modelName": "阿里云语音合成(流式)",
+      "modelName": "Alibaba Cloud — streaming TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3077,7 +3077,7 @@
       "modelType": "TTS",
       "providerCode": "index_stream",
       "modelCode": "IndexStreamTTS",
-      "modelName": "Index-TTS-vLLM流式语音合成",
+      "modelName": "Index-TTS-vLLM — streaming",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3118,7 +3118,7 @@
       "modelType": "ASR",
       "providerCode": "vosk",
       "modelCode": "VoskASR",
-      "modelName": "VOSK离线语音识别",
+      "modelName": "Vosk — nhận dạng offline",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3135,7 +3135,7 @@
       "modelType": "TTS",
       "providerCode": "minimax_httpstream",
       "modelCode": "MinimaxStreamTTS",
-      "modelName": "Minimax流式语音合成",
+      "modelName": "Minimax — streaming TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3153,8 +3153,8 @@
         },
         "pronunciation_dict": {
           "tone": [
-            "处理/(chu3)(li3)",
-            "危险/dangerous"
+            "xử lý/(xu3)(ly3)",
+            "nguy hiểm/danger"
           ]
         },
         "audio_setting": {
@@ -3173,7 +3173,7 @@
       "modelType": "ASR",
       "providerCode": "qwen3_asr_flash",
       "modelCode": "Qwen3-ASR-Flash",
-      "modelName": "通义千问语音识别服务",
+      "modelName": "Qwen — dịch vụ nhận dạng giọng nói",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3186,7 +3186,7 @@
         "enable_itn": true
       },
       "docLink": "https://help.aliyun.com/zh/bailian/",
-      "remark": "支持多语言识别、歌唱识别、噪声拒识功能",
+      "remark": "Hỗ trợ nhận dạng đa ngôn ngữ, giọng hát và từ chối nhiễu",
       "sort": 20
     },
     {
@@ -3194,7 +3194,7 @@
       "modelType": "TTS",
       "providerCode": "alibl_stream",
       "modelCode": "AliBLStreamTTS",
-      "modelName": "阿里百炼流式语音合成",
+      "modelName": "Alibaba Model Studio — streaming TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3218,7 +3218,7 @@
       "modelType": "TTS",
       "providerCode": "xunfei_stream",
       "modelCode": "XunFeiStreamTTS",
-      "modelName": "讯飞流式语音合成",
+      "modelName": "iFlytek — streaming TTS",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3246,8 +3246,8 @@
       "id": "ASR_XunfeiStream",
       "modelType": "ASR",
       "providerCode": "xunfei_stream",
-      "modelCode": "讯飞流式语音识别",
-      "modelName": "讯飞流式语音识别服务",
+      "modelCode": "iFlytek — nhận dạng streaming",
+      "modelName": "iFlytek — dịch vụ nhận dạng streaming",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3262,15 +3262,15 @@
         "output_dir": "tmp/"
       },
       "docLink": "https://www.xfyun.cn/doc/spark/spark_zh_iat.html",
-      "remark": "支持实时流式语音识别，适用于中文普通话及多种方言识别",
+      "remark": "Hỗ trợ nhận dạng giọng nói streaming theo thời gian thực",
       "sort": 21
     },
     {
       "id": "LLM_XunfeiSparkLLM",
       "modelType": "LLM",
       "providerCode": "openai",
-      "modelCode": "讯飞星火认知大模型",
-      "modelName": "讯飞星火认知大模型",
+      "modelCode": "iFlytek — mô hình ngôn ngữ",
+      "modelName": "iFlytek — mô hình ngôn ngữ",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3284,7 +3284,7 @@
         "frequency_penalty": 0
       },
       "docLink": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
-      "remark": "讯飞星火认知大模型，支持多轮对话、文本生成等功能",
+      "remark": "iFlytek — mô hình ngôn ngữ hỗ trợ hội thoại nhiều lượt và sinh văn bản",
       "sort": 14
     },
     {
@@ -3301,7 +3301,7 @@
         "api_key": ""
       },
       "docLink": "https://github.com/infiniflow/ragflow/blob/main/README_zh.md",
-      "remark": "RAGFlow配置说明： 一、快速部署教程（docker部署） 1.$ sysctl vm.max_map_count 2.$ sysctl -w vm.max_map_count=262144 3.$ git clone https://github.com/infiniflow/ragflow.git 4.docker compose -f docker-compose.yml up -d 5.$ docker logs -f docker-ragflow-cpu-1 6.注冊登录后，点击右上角头像，获得RAGFlow的API KEY和API服务器地址。使用RAGFlow前请在Model Provider中添加模型和设置默认模型。 二、如果您希望关掉注册功能 1.停止服务 docker compose down 2. sed -i ''s/REGISTER_ENABLED=1/REGISTER_ENABLED=0/g'' .env 3.cat .env | grep -i register 4.看到REGISTER_ENABLED=0 重启服务即可。",
+      "remark": "Tích hợp kho kiến thức RAGFlow tùy chọn. Hãy cung cấp Base URL và API key của dịch vụ trước khi bật.",
       "sort": 1
     },
     {
@@ -3309,7 +3309,7 @@
       "modelType": "ASR",
       "providerCode": "aliyunbl_stream",
       "modelCode": "AliyunBLStream",
-      "modelName": "阿里百炼Paraformer实时语音识别",
+      "modelName": "Alibaba Model Studio Paraformer — nhận dạng streaming",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3327,7 +3327,7 @@
         "output_dir": "tmp/"
       },
       "docLink": "https://help.aliyun.com/zh/model-studio/websocket-for-paraformer-real-time-service",
-      "remark": "支持多语言、热词定制、语义断句等高级功能",
+      "remark": "Hỗ trợ đa ngôn ngữ, từ nóng và tự động ngắt câu",
       "sort": 21
     },
     {
@@ -3335,7 +3335,7 @@
       "modelType": "Memory",
       "providerCode": "powermem",
       "modelCode": "powermem",
-      "modelName": "PowerMem记忆",
+      "modelName": "PowerMem — ghi nhớ",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3364,14 +3364,14 @@
       "modelType": "Memory",
       "providerCode": "mem_report_only",
       "modelCode": "mem_report_only",
-      "modelName": "仅上报聊天记录",
+      "modelName": "Chỉ ghi lại lịch sử trò chuyện",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
         "type": "mem_report_only"
       },
       "docLink": null,
-      "remark": "仅上报聊天记录，不总结记忆",
+      "remark": "Chỉ ghi lại lịch sử trò chuyện, không tạo bản ghi nhớ",
       "sort": 3
     },
     {
@@ -3379,7 +3379,7 @@
       "modelType": "TTS",
       "providerCode": "huoshan_double_stream",
       "modelCode": "HuoshanDoubleStreamTTSV2",
-      "modelName": "豆包语音合成模型2.0",
+      "modelName": "Doubao — TTS 2.0",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {
@@ -3412,7 +3412,7 @@
       "modelType": "ASR",
       "providerCode": "doubao_stream",
       "modelCode": "DoubaoStreamASRV2",
-      "modelName": "豆包语音识别模型2.0",
+      "modelName": "Doubao — nhận dạng streaming 2.0",
       "isDefault": false,
       "isEnabled": true,
       "configJson": {

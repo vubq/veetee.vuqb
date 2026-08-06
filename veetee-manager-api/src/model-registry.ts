@@ -113,6 +113,35 @@ export interface ModelTtsVoiceSeed {
   sort?: number
 }
 
+/**
+ * Editable voice row belonging to one catalog TTS model.  This mirrors the
+ * source manager's model-scoped voice table while keeping it separate from
+ * runtime voice aliases stored in `voice_profile`.
+ */
+export interface ModelTtsVoice {
+  id: string
+  ttsModelId: string
+  name: string
+  ttsVoice: string
+  languages: string
+  voiceDemo: string | null
+  remark: string | null
+  referenceAudio: string | null
+  referenceText: string | null
+  sort: number
+  etag: string
+  updatedAt: string
+}
+
+export type ModelTtsVoiceInput = Omit<ModelTtsVoice, 'id' | 'etag' | 'updatedAt'> & { id?: string }
+
+export interface ModelTtsVoicePage {
+  items: ModelTtsVoice[]
+  total: number
+  page: number
+  limit: number
+}
+
 export function modelEtag(value: unknown): string {
   return `"${createHash('sha256').update(JSON.stringify(value)).digest('hex')}"`
 }
@@ -131,6 +160,28 @@ export function cloneModelProvider(value: ModelProvider): ModelProvider {
 
 export function cloneModelConfig(value: ModelConfig): ModelConfig {
   return structuredClone(value)
+}
+
+export function cloneModelTtsVoice(value: ModelTtsVoice): ModelTtsVoice {
+  return structuredClone(value)
+}
+
+export function newModelTtsVoice(input: ModelTtsVoiceInput, updatedAt = new Date().toISOString()): ModelTtsVoice {
+  const id = input.id?.trim() || `TTS_VOICE_${createHash('sha256').update(`${input.ttsModelId}:${input.ttsVoice}:${input.name}`).digest('hex').slice(0, 20)}`
+  const value = {
+    id,
+    ttsModelId: input.ttsModelId.trim(),
+    name: input.name.trim(),
+    ttsVoice: input.ttsVoice.trim(),
+    languages: input.languages.trim(),
+    voiceDemo: input.voiceDemo?.trim() || null,
+    remark: input.remark?.trim() || null,
+    referenceAudio: input.referenceAudio?.trim() || null,
+    referenceText: input.referenceText?.trim() || null,
+    sort: Math.max(0, Math.trunc(input.sort ?? 0)),
+    updatedAt,
+  }
+  return { ...value, etag: modelEtag(value) }
 }
 
 export function normalizeModelProviderInput(input: ModelProviderInput): ModelProviderInput {
@@ -171,9 +222,9 @@ export function normalizeModelConfigInput(input: ModelConfigInput): ModelConfigI
   const modelName = input.modelName.trim()
   if (!providerCode || !modelCode || !modelName) throw new Error('model provider, code and name are required')
   // The reference control plane treats model_code as a display/configuration
-  // identifier rather than a filesystem slug. Keep Unicode names (the seed
-  // contains Chinese model codes) while rejecting controls and oversized
-  // values; the internal row id is sanitized separately by modelConfigId().
+  // identifier rather than a filesystem slug. Keep Unicode names from legacy
+  // imports while rejecting controls and oversized values; the internal row id
+  // is sanitized separately by modelConfigId().
   if (modelCode.length > 160 || /[\u0000-\u001f\u007f]/u.test(modelCode)) throw new Error('modelCode is invalid')
   if (typeof input.configJson !== 'object' || input.configJson === null || Array.isArray(input.configJson)) throw new Error('configJson must be an object')
   return {

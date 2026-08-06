@@ -7,10 +7,10 @@ import { containsCjk, localizedFieldLabel, localizedModelName, localizedProvider
 describe('Vietnamese model registry presentation', () => {
   it('localizes historical CJK names without changing identifiers', () => {
     const provider: ModelProviderRecord = {
-      id: 'SYSTEM_ASR_doubao', ownerId: 'local-owner', modelType: 'ASR', providerCode: 'doubao', name: '火山引擎语音识别', fields: [], sort: 1, revision: 1, etag: 'etag', updatedAt: 'now',
+      id: 'SYSTEM_ASR_doubao', ownerId: 'local-owner', modelType: 'ASR', providerCode: 'doubao', name: '\u{706b}\u{5c71}\u{5f15}\u{64ce}\u{8bed}\u{97f3}\u{8bc6}\u{522b}', fields: [], sort: 1, revision: 1, etag: 'etag', updatedAt: 'now',
     }
     const model: ModelConfigRecord = {
-      id: 'ASR_DoubaoASR', ownerId: 'local-owner', modelType: 'ASR', providerCode: 'doubao', modelCode: 'DoubaoASR', modelName: '豆包语音识别', isDefault: false, isEnabled: true, configJson: {}, docLink: null, remark: null, sort: 1, revision: 1, etag: 'etag', updatedAt: 'now',
+      id: 'ASR_DoubaoASR', ownerId: 'local-owner', modelType: 'ASR', providerCode: 'doubao', modelCode: 'DoubaoASR', modelName: '\u{8c46}\u{5305}\u{8bed}\u{97f3}\u{8bc6}\u{522b}', isDefault: false, isEnabled: true, configJson: {}, docLink: null, remark: null, sort: 1, revision: 1, etag: 'etag', updatedAt: 'now',
     }
 
     expect(containsCjk(localizedProviderName(provider))).toBe(false)
@@ -19,7 +19,7 @@ describe('Vietnamese model registry presentation', () => {
   })
 
   it('uses Vietnamese labels for schema fields while preserving keys', () => {
-    const field: ModelProviderField = { key: 'base_url', label: '基础URL', type: 'string' }
+    const field: ModelProviderField = { key: 'base_url', label: '\u{57fa}\u{7840}URL', type: 'string' }
     expect(localizedFieldLabel(field)).toBe('URL cơ sở')
     expect(field.key).toBe('base_url')
   })

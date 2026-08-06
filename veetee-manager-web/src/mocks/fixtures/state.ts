@@ -10,6 +10,7 @@ import type {
   VoiceProfile,
   ModelConfigRecord,
   ModelProviderRecord,
+  ModelTtsVoice,
 } from '@/domain'
 
 import {
@@ -30,6 +31,7 @@ export interface MockState {
   providerConfigs: ProviderConfigRecord[]
   modelProviders: ModelProviderRecord[]
   modelConfigs: ModelConfigRecord[]
+  modelTtsVoices: ModelTtsVoice[]
   secretReferences: SecretReference[]
   devices: DeviceCard[]
   nextAssistantSequence: number
@@ -48,6 +50,7 @@ export function createInitialMockState(): MockState {
     providerConfigs: providerRegistry.configs,
     modelProviders: modelRegistry.providers,
     modelConfigs: modelRegistry.configs,
+    modelTtsVoices: modelRegistry.voices,
     secretReferences: [{
       id: 'secret-preview-groq',
       name: 'Groq test key',

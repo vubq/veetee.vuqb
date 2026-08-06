@@ -42,6 +42,9 @@ import type {
   ModelProviderField,
   ModelProviderRecord,
   ModelType,
+  ModelTtsVoice,
+  ModelTtsVoiceInput,
+  ModelTtsVoicePage,
 } from '@/domain'
 import type { paths } from '@/api/generated'
 import type { GatewayDependencies, ManagerGateway, PreviewControlGateway, RetentionMutationProblem, SecretMutationProblem } from './manager-gateway'
@@ -66,6 +69,7 @@ type ProviderConfigResource = paths['/api/v1/provider-configs']['get']['response
 type ProviderProbeResource = paths['/api/v1/provider-configs/{id}/probe']['post']['responses'][200]['content']['application/json']
 type VoiceResource = paths['/api/v1/voices']['get']['responses'][200]['content']['application/json']['items'][number]
 type ModelMemoryResource = paths['/api/v1/assistants/{id}/model-memory']['get']['responses'][200]['content']['application/json']
+type ModelTtsVoiceResource = paths['/api/v1/models/{id}/voices']['get']['responses'][200]['content']['application/json']['items'][number]
 type DeviceResource = paths['/api/v1/assistants/{id}/devices']['get']['responses'][200]['content']['application/json']['items'][number]
 type DiscoverableDeviceResource = paths['/api/v1/devices/discoverable']['get']['responses'][200]['content']['application/json']['items'][number]
 type RetentionResource = paths['/api/v1/retention-policy']['get']['responses'][200]['content']['application/json']
@@ -117,7 +121,7 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   async getRoleConfig(assistantId: string): Promise<GatewayResult<Versioned<RoleConfig>, never>> {
     const result = await this.execute(() => this.client.GET('/api/v1/assistants/{id}/role-config', { params: { path: { id: assistantId } } }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
-    return this.success({ value: roleConfig(assistantId, result.data), revision: 1, etag: this.etag(result.response) })
+    return this.success({ value: roleConfig(assistantId, result.data), revision: responseRevision(result.response), etag: this.etag(result.response) })
   }
 
   async saveRoleConfig(assistantId: string, draft: RoleConfigDraft, expectedEtag: string): Promise<GatewayResult<Versioned<RoleConfig>, never>> {
@@ -149,7 +153,7 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
       body: payload,
     }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
-    return this.success({ value: roleConfig(assistantId, result.data), revision: 1, etag: this.etag(result.response, expectedEtag) })
+    return this.success({ value: roleConfig(assistantId, result.data), revision: responseRevision(result.response), etag: this.etag(result.response, expectedEtag) })
   }
 
   async publishAssistant(assistantId: string, expectedEtag: string): Promise<GatewayResult<{ revision: number }, never>> {
@@ -231,6 +235,30 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     const result = await this.execute(() => this.client.PATCH('/api/v1/models/configs/{id}/default', { params: { path: { id } } }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
     return this.success(modelConfig(result.data))
+  }
+
+  async listModelTtsVoices(modelId: string, query: { name?: string; page?: number; limit?: number } = {}): Promise<GatewayResult<ModelTtsVoicePage, never>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/models/{id}/voices', { params: { path: { id: modelId }, query: { voiceName: query.name, page: query.page, limit: query.limit } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ items: result.data.items.map(modelTtsVoice), total: result.data.total, page: result.data.page, limit: result.data.limit })
+  }
+
+  async createModelTtsVoice(modelId: string, input: ModelTtsVoiceInput): Promise<GatewayResult<ModelTtsVoice, never>> {
+    const result = await this.execute(() => this.client.POST('/api/v1/models/{id}/voices', { params: { path: { id: modelId } }, body: input }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(modelTtsVoice(result.data))
+  }
+
+  async updateModelTtsVoice(modelId: string, voiceId: string, input: Partial<ModelTtsVoiceInput>, expectedEtag?: string): Promise<GatewayResult<ModelTtsVoice, never>> {
+    const result = await this.execute(() => this.client.PATCH('/api/v1/models/{id}/voices/{voiceId}', { params: { path: { id: modelId, voiceId } }, headers: expectedEtag ? { 'If-Match': expectedEtag } : undefined, body: input }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(modelTtsVoice(result.data))
+  }
+
+  async deleteModelTtsVoice(modelId: string, voiceId: string, expectedEtag?: string): Promise<GatewayResult<void, never>> {
+    const result = await this.execute(() => this.client.DELETE('/api/v1/models/{id}/voices/{voiceId}', { params: { path: { id: modelId, voiceId } }, headers: expectedEtag ? { 'If-Match': expectedEtag } : undefined }))
+    if (!result.response.ok) return this.failure(result)
+    return this.success(undefined)
   }
 
   async listProviderConfigs(kind?: ProviderKind): Promise<GatewayResult<ProviderConfigRecord[], never>> {
@@ -348,7 +376,7 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
   async getModelMemory(assistantId: string): Promise<GatewayResult<Versioned<ModelMemoryWorkspace>, never>> {
     const result = await this.execute(() => this.client.GET('/api/v1/assistants/{id}/model-memory', { params: { path: { id: assistantId } } }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
-    return this.success({ value: modelMemory(result.data), revision: 1, etag: this.etag(result.response) })
+    return this.success({ value: modelMemory(result.data), revision: responseRevision(result.response), etag: this.etag(result.response) })
   }
 
   async updateProviderSelection(assistantId: string, input: UpdateProviderSelectionInput, expectedEtag: string): Promise<GatewayResult<Versioned<ModelMemoryWorkspace>, never>> {
@@ -359,7 +387,7 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
       body: payload,
     }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
-    return this.success({ value: modelMemory(result.data), revision: 1, etag: this.etag(result.response, expectedEtag) })
+    return this.success({ value: modelMemory(result.data), revision: responseRevision(result.response), etag: this.etag(result.response, expectedEtag) })
   }
 
   async setMemoryEnabled(assistantId: string, enabled: boolean, expectedEtag: string): Promise<GatewayResult<Versioned<ModelMemoryWorkspace>, never>> {
@@ -370,7 +398,7 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
       body: payload,
     }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
-    return this.success({ value: modelMemory(result.data), revision: 1, etag: this.etag(result.response, expectedEtag) })
+    return this.success({ value: modelMemory(result.data), revision: responseRevision(result.response), etag: this.etag(result.response, expectedEtag) })
   }
 
   async listDevices(assistantId: string): Promise<GatewayResult<Page<DeviceCard>, never>> {
@@ -564,6 +592,11 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+function responseRevision(response: Response): number {
+  const value = Number(response.headers.get('X-Veetee-Revision'))
+  return Number.isSafeInteger(value) && value > 0 ? value : 1
+}
+
 function providerInstallation(value: ProviderInstallationResource): ProviderInstallationView {
   const manifest = value.manifest
   const ui = isRecord(manifest.ui) ? manifest.ui : {}
@@ -626,6 +659,10 @@ function voiceProfile(value: VoiceResource): VoiceProfile {
 
 function modelMemory(value: ModelMemoryResource): ModelMemoryWorkspace {
   return value
+}
+
+function modelTtsVoice(value: ModelTtsVoiceResource): ModelTtsVoice {
+  return { id: value.id, ttsModelId: value.ttsModelId, name: value.name, ttsVoice: value.ttsVoice, languages: value.languages, voiceDemo: value.voiceDemo, remark: value.remark, referenceAudio: value.referenceAudio, referenceText: value.referenceText, sort: value.sort, etag: value.etag, updatedAt: value.updatedAt }
 }
 
 function deviceCard(value: DeviceResource): DeviceCard {

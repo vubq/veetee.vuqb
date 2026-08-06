@@ -3,11 +3,13 @@ import { readFile } from 'node:fs/promises'
 import {
   MODEL_TYPES,
   cloneModelConfig,
+  cloneModelTtsVoice,
   cloneModelProvider,
   modelConfigId,
   modelEtag,
   modelProviderId,
   newModelConfig,
+  newModelTtsVoice,
   newModelProvider,
   normalizeModelConfigInput,
   normalizeModelProviderInput,
@@ -18,12 +20,16 @@ import {
   type ModelProvider,
   type ModelProviderInput,
   type ModelProviderField,
+  type ModelTtsVoice,
+  type ModelTtsVoiceInput,
+  type ModelTtsVoicePage,
   type ModelTtsVoiceSeed,
   type ModelType,
 } from './model-registry.js'
+import { localizeLegacyCatalogText, localizeLegacyCatalogValue } from './catalog-localization.js'
 
 export { MODEL_TYPES }
-export type { ModelConfig, ModelConfigInput, ModelConfigPage, ModelConfigQuery, ModelProvider, ModelProviderField, ModelProviderInput, ModelTtsVoiceSeed, ModelType }
+export type { ModelConfig, ModelConfigInput, ModelConfigPage, ModelConfigQuery, ModelProvider, ModelProviderField, ModelProviderInput, ModelTtsVoice, ModelTtsVoiceInput, ModelTtsVoicePage, ModelTtsVoiceSeed, ModelType }
 
 export type ProviderKind = 'vad' | 'asr' | 'llm' | 'tts' | 'intent' | 'memory'
 
@@ -394,7 +400,15 @@ export interface SecretReferenceUpdate {
 export interface ModelMemoryView {
   assistantId: string
   selections: Array<{ kind: ProviderKind; mode: 'selected' | 'disabled'; providerConfigId?: string }>
-  availableConfigs: Array<{ id: string; kind: ProviderKind; name: string; providerName: string; availability: 'ready' | 'unavailable' | 'disabled'; supportedLocales: string[] }>
+  availableConfigs: Array<{
+    id: string
+    kind: ProviderKind
+    name: string
+    providerName: string
+    availability: 'ready' | 'unavailable' | 'disabled'
+    supportedLocales: string[]
+    model?: { id: string; code: string; name: string; providerCode: string; isDefault: boolean; isEnabled: boolean }
+  }>
   memory: { enabled: boolean; itemCount: number }
   memoryItems: Array<{ id: string; kind: string; content: string; enabled: boolean; updatedAt: string }>
 }
@@ -418,6 +432,10 @@ export interface Store {
   deleteModelConfig(ownerId: string, id: string, ifMatch?: string): Promise<void>
   setModelEnabled(ownerId: string, id: string, enabled: boolean): Promise<ModelConfig>
   setDefaultModel(ownerId: string, id: string): Promise<ModelConfig>
+  listModelTtsVoices(ownerId: string, modelId: string, query?: { name?: string; page?: number; limit?: number }): Promise<ModelTtsVoicePage>
+  createModelTtsVoice(ownerId: string, input: ModelTtsVoiceInput): Promise<ModelTtsVoice>
+  updateModelTtsVoice(ownerId: string, id: string, input: Partial<ModelTtsVoiceInput>, ifMatch?: string): Promise<ModelTtsVoice>
+  deleteModelTtsVoice(ownerId: string, id: string, ifMatch?: string): Promise<void>
   listInstallations(): Promise<ProviderInstallation[]>
   listProviderConfigs(ownerId: string, kind?: ProviderKind): Promise<ProviderConfig[]>
   createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<ProviderConfig>
@@ -467,6 +485,7 @@ export class InMemoryStore implements Store {
   private readonly installations: ProviderInstallation[]
   private readonly modelProviders = new Map<string, ModelProvider>()
   private readonly modelConfigs = new Map<string, ModelConfig>()
+  private readonly modelTtsVoices = new Map<string, ModelTtsVoice>()
   private readonly providerConfigs = new Map<string, ProviderConfig>()
   private readonly providerConfigSecretRefs = new Map<string, Set<string>>()
   private readonly voiceProfiles = new Map<string, VoiceProfile>()
@@ -621,6 +640,54 @@ export class InMemoryStore implements Store {
     return this.updateModelConfig(ownerId, id, { isDefault: true, isEnabled: true })
   }
 
+  async listModelTtsVoices(ownerId: string, modelId: string, query: { name?: string; page?: number; limit?: number } = {}): Promise<ModelTtsVoicePage> {
+    const model = this.modelConfigs.get(modelId)
+    if (!model || model.ownerId !== ownerId || model.modelType !== 'TTS') throw problem('NOT_FOUND', 'TTS model not found', 404)
+    const term = normalizeSearch(query.name ?? '')
+    const all = [...this.modelTtsVoices.values()]
+      .filter((voice) => voice.ttsModelId === modelId)
+      .filter((voice) => !term || normalizeSearch(`${voice.name} ${voice.ttsVoice} ${voice.languages} ${voice.remark ?? ''}`).includes(term))
+      .sort((left, right) => left.sort - right.sort || left.name.localeCompare(right.name, 'vi'))
+    const page = Math.max(1, Math.trunc(query.page ?? 1))
+    const limit = Math.min(100, Math.max(1, Math.trunc(query.limit ?? 10)))
+    return { items: all.slice((page - 1) * limit, page * limit).map(cloneModelTtsVoice), total: all.length, page, limit }
+  }
+
+  async createModelTtsVoice(ownerId: string, input: ModelTtsVoiceInput): Promise<ModelTtsVoice> {
+    const model = this.modelConfigs.get(input.ttsModelId)
+    if (!model || model.ownerId !== ownerId || model.modelType !== 'TTS') throw problem('NOT_FOUND', 'TTS model not found', 404)
+    const normalized = newModelTtsVoice(input)
+    if (!normalized.name || !normalized.ttsVoice || !normalized.languages) throw problem('CONFIG_INVALID', 'Voice code, name and language are required', 422)
+    const duplicate = [...this.modelTtsVoices.values()].some((voice) => voice.ttsModelId === model.id && (voice.id === normalized.id || voice.ttsVoice.toLocaleLowerCase() === normalized.ttsVoice.toLocaleLowerCase()))
+    if (duplicate) throw problem('NAME_CONFLICT', 'Voice code already exists for this TTS model', 409)
+    this.modelTtsVoices.set(normalized.id, normalized)
+    return cloneModelTtsVoice(normalized)
+  }
+
+  async updateModelTtsVoice(ownerId: string, id: string, input: Partial<ModelTtsVoiceInput>, ifMatch?: string): Promise<ModelTtsVoice> {
+    const current = this.modelTtsVoices.get(id)
+    if (!current) throw problem('NOT_FOUND', 'TTS voice not found', 404)
+    const model = this.modelConfigs.get(current.ttsModelId)
+    if (!model || model.ownerId !== ownerId || model.modelType !== 'TTS') throw problem('NOT_FOUND', 'TTS model not found', 404)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'TTS voice changed', 409)
+    if (input.ttsModelId && input.ttsModelId !== current.ttsModelId) throw problem('CONFIG_INVALID', 'TTS voice cannot move between models', 422)
+    const next = newModelTtsVoice({ ...current, ...input, id: current.id, ttsModelId: current.ttsModelId })
+    if (!next.name || !next.ttsVoice || !next.languages) throw problem('CONFIG_INVALID', 'Voice code, name and language are required', 422)
+    const duplicate = [...this.modelTtsVoices.values()].some((voice) => voice.id !== id && voice.ttsModelId === current.ttsModelId && voice.ttsVoice.toLocaleLowerCase() === next.ttsVoice.toLocaleLowerCase())
+    if (duplicate) throw problem('NAME_CONFLICT', 'Voice code already exists for this TTS model', 409)
+    this.modelTtsVoices.set(id, next)
+    return cloneModelTtsVoice(next)
+  }
+
+  async deleteModelTtsVoice(ownerId: string, id: string, ifMatch?: string): Promise<void> {
+    const current = this.modelTtsVoices.get(id)
+    if (!current) throw problem('NOT_FOUND', 'TTS voice not found', 404)
+    const model = this.modelConfigs.get(current.ttsModelId)
+    if (!model || model.ownerId !== ownerId || model.modelType !== 'TTS') throw problem('NOT_FOUND', 'TTS model not found', 404)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'TTS voice changed', 409)
+    this.modelTtsVoices.delete(id)
+  }
+
   private clearDefault(ownerId: string, modelType: ModelType, exceptId?: string): void {
     for (const [id, item] of this.modelConfigs) {
       if (item.ownerId !== ownerId || item.modelType !== modelType || id === exceptId || !item.isDefault) continue
@@ -644,6 +711,15 @@ export class InMemoryStore implements Store {
         // by the source business key, just like the relational adapter does.
         const providerExists = [...this.modelProviders.values()].some((provider) => provider.modelType === item.modelType && provider.providerCode === item.providerCode)
         if (providerExists) this.modelConfigs.set(item.id, item)
+      } catch { /* invalid seed is ignored */ }
+    }
+    for (const voice of registry.voices ?? []) {
+      try {
+        const model = this.modelConfigs.get(voice.ttsModelId)
+        if (model?.modelType === 'TTS') {
+          const item = newModelTtsVoice({ ...voice, sort: voice.sort ?? 0, voiceDemo: voice.voiceDemo ?? null, remark: voice.remark ?? null, referenceAudio: voice.referenceAudio ?? null, referenceText: voice.referenceText ?? null })
+          this.modelTtsVoices.set(item.id, item)
+        }
       } catch { /* invalid seed is ignored */ }
     }
   }
@@ -1326,10 +1402,41 @@ export class InMemoryStore implements Store {
     return {
       assistantId: current.id,
       selections,
-      availableConfigs: [...this.providerConfigs.values()].filter((item) => item.ownerId === current.ownerId && !item.archivedAt).map((item) => { const installation = this.installations.find((candidate) => candidate.id === item.installationId); return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayName ?? installation?.displayNameKey ?? item.installationId, availability: item.enabled ? 'ready' as const : 'disabled' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] } }),
+      availableConfigs: [...this.providerConfigs.values()].filter((item) => item.ownerId === current.ownerId && !item.archivedAt).map((item) => {
+        const installation = this.installations.find((candidate) => candidate.id === item.installationId)
+        const kind = installation?.kind ?? 'memory'
+        const model = this.modelForProvider(kind, installation, item.config)
+        return {
+          id: item.id,
+          kind,
+          name: item.name,
+          providerName: installation?.displayName ?? installation?.displayNameKey ?? item.installationId,
+          availability: !item.enabled ? 'disabled' as const : model && !model.isEnabled ? 'unavailable' as const : 'ready' as const,
+          supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'],
+          ...(model ? { model } : {}),
+        }
+      }),
       memory: { enabled: current.role.memoryEnabled !== false, itemCount: 0 },
       memoryItems: [],
     }
+  }
+
+  private modelForProvider(kind: ProviderKind, installation: ProviderInstallation | undefined, config: Record<string, unknown>) {
+    const modelType = kind.toUpperCase() as ModelType
+    const candidates = [...this.modelConfigs.values()].filter((model) => model.ownerId === 'local-owner' && model.modelType === modelType)
+    if (!candidates.length) return undefined
+    const tokens = [installation?.id, installation?.manifest.providerFamily, typeof config.type === 'string' ? config.type : undefined]
+      .filter((value): value is string => Boolean(value)).join(' ').toLocaleLowerCase()
+    const configuredModel = [config.model, config.model_name, config.modelName, config.modelCode, config.backboneRepo].find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    const exact = configuredModel ? candidates.find((model) => model.modelCode.toLocaleLowerCase() === configuredModel.toLocaleLowerCase()) : undefined
+    const tokenMatch = candidates.find((model) => tokens.includes(model.providerCode.toLocaleLowerCase()) || tokens.includes(model.modelCode.toLocaleLowerCase()))
+    // Do not invent a model for fixture providers or legacy configs that do
+    // not identify one.  Falling back to the category default made a fixture
+    // appear as Groq/PhoWhisper/VieNeu in the assistant UI, which was false
+    // and could lead an operator to select the wrong runtime.
+    const selected = exact ?? tokenMatch
+    if (!selected) return undefined
+    return { id: selected.id, code: selected.modelCode, name: selected.modelName, providerCode: selected.providerCode, isDefault: selected.isDefault, isEnabled: selected.isEnabled }
   }
 }
 
@@ -1369,18 +1476,18 @@ export function parseModelRegistry(raw: unknown): ModelRegistrySeed {
     const fields = fieldsRaw.map((field, fieldIndex) => {
       if (!isRecord(field)) throw new Error(`model registry provider[${index}].fields[${fieldIndex}] must be an object`)
       return {
-        ...structuredClone(field),
+        ...localizeLegacyCatalogValue(structuredClone(field)),
         key: catalogString(field.key, `model registry provider[${index}].fields[${fieldIndex}].key`),
-        label: catalogString(field.label, `model registry provider[${index}].fields[${fieldIndex}].label`),
+        label: localizeLegacyCatalogText(catalogString(field.label, `model registry provider[${index}].fields[${fieldIndex}].label`)),
         type: catalogString(field.type, `model registry provider[${index}].fields[${fieldIndex}].type`) as ModelProviderField['type'],
       }
     })
-    return normalizeModelProviderInput({ ...(typeof value.id === 'string' ? { id: value.id } : {}), modelType: catalogString(value.modelType, `model registry provider[${index}].modelType`) as ModelType, providerCode: catalogString(value.providerCode, `model registry provider[${index}].providerCode`), name: catalogString(value.name, `model registry provider[${index}].name`), fields, sort: typeof value.sort === 'number' ? value.sort : 0 })
+    return normalizeModelProviderInput({ ...(typeof value.id === 'string' ? { id: value.id } : {}), modelType: catalogString(value.modelType, `model registry provider[${index}].modelType`) as ModelType, providerCode: catalogString(value.providerCode, `model registry provider[${index}].providerCode`), name: localizeLegacyCatalogText(catalogString(value.name, `model registry provider[${index}].name`)), fields, sort: typeof value.sort === 'number' ? value.sort : 0 })
   })
   const configs = raw.configs.map((value, index) => {
     if (!isRecord(value)) throw new Error(`model registry config[${index}] must be an object`)
-    const configJson = isRecord(value.configJson) ? value.configJson : {}
-    return normalizeModelConfigInput({ modelType: catalogString(value.modelType, `model registry config[${index}].modelType`) as ModelType, providerCode: catalogString(value.providerCode, `model registry config[${index}].providerCode`), ...(typeof value.id === 'string' ? { id: value.id } : {}), modelCode: catalogString(value.modelCode, `model registry config[${index}].modelCode`), modelName: catalogString(value.modelName, `model registry config[${index}].modelName`), isDefault: value.isDefault === true, isEnabled: value.isEnabled !== false, configJson, docLink: typeof value.docLink === 'string' ? value.docLink : null, remark: typeof value.remark === 'string' ? value.remark : null, sort: typeof value.sort === 'number' ? value.sort : 0 })
+    const configJson = isRecord(value.configJson) ? localizeLegacyCatalogValue(value.configJson) : {}
+    return normalizeModelConfigInput({ modelType: catalogString(value.modelType, `model registry config[${index}].modelType`) as ModelType, providerCode: catalogString(value.providerCode, `model registry config[${index}].providerCode`), ...(typeof value.id === 'string' ? { id: value.id } : {}), modelCode: catalogString(value.modelCode, `model registry config[${index}].modelCode`), modelName: localizeLegacyCatalogText(catalogString(value.modelName, `model registry config[${index}].modelName`)), isDefault: value.isDefault === true, isEnabled: value.isEnabled !== false, configJson, docLink: typeof value.docLink === 'string' ? value.docLink : null, remark: typeof value.remark === 'string' ? localizeLegacyCatalogText(value.remark) : null, sort: typeof value.sort === 'number' ? value.sort : 0 })
   })
   const providerKeys = new Set(providers.map((item) => `${item.modelType}:${item.providerCode}`))
   for (const config of configs) if (!providerKeys.has(`${config.modelType}:${config.providerCode}`)) throw new Error(`model registry config references missing provider: ${config.modelType}/${config.providerCode}`)
@@ -1389,7 +1496,7 @@ export function parseModelRegistry(raw: unknown): ModelRegistrySeed {
     const text = (key: string): string => typeof value[key] === 'string' ? value[key] as string : ''
     const id = catalogString(value.id, `model registry voice[${index}].id`)
     const ttsModelId = catalogString(value.ttsModelId, `model registry voice[${index}].ttsModelId`)
-    const name = text('name').trim()
+    const name = localizeLegacyCatalogText(text('name').trim())
     const ttsVoice = text('ttsVoice').trim()
     const languages = text('languages').trim()
     if (!name || !languages) throw new Error(`model registry voice[${index}] requires name and languages`)
@@ -1400,9 +1507,9 @@ export function parseModelRegistry(raw: unknown): ModelRegistrySeed {
       ttsVoice,
       languages,
       voiceDemo: typeof value.voiceDemo === 'string' ? value.voiceDemo : null,
-      remark: typeof value.remark === 'string' ? value.remark : null,
+      remark: typeof value.remark === 'string' ? localizeLegacyCatalogText(value.remark) : null,
       referenceAudio: typeof value.referenceAudio === 'string' ? value.referenceAudio : null,
-      referenceText: typeof value.referenceText === 'string' ? value.referenceText : null,
+      referenceText: typeof value.referenceText === 'string' ? localizeLegacyCatalogText(value.referenceText) : null,
       sort: typeof value.sort === 'number' ? Math.max(0, Math.trunc(value.sort)) : 0,
     }
   }) : []

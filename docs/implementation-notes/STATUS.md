@@ -1,5 +1,43 @@
 # Trạng thái thực thi hiện tại
 
+## Chuẩn hóa tiếng Việt cho catalog và database — 2026-08-06
+
+- Đã chuyển toàn bộ tên provider/model, nhãn field, ghi chú và giá trị hiển thị
+  trong catalog seed sang tiếng Việt; ID, provider code, model code, JSON key và
+  giá trị wire (ví dụ locale/voice code) không bị đổi.
+- `veetee-manager-api/src/catalog-localization.ts` vẫn chặn dữ liệu legacy,
+  nhưng source không còn ký tự Trung; catalog fixture API và Web dùng cùng một
+  bản JSON tiếng Việt.
+- Migration `013_localize_model_catalog_to_vietnamese.sql` được làm sạch để
+  database mới không nhận metadata CJK; migration `014_polish_vietnamese_model_catalog_names.sql`
+  tiếp tục chuẩn hóa các nhãn hiển thị. Database `veetee_vubq` đã chạy migrate
+  và kiểm tra toàn bộ cột text/json trong schema `veetee_manager`: **0 bản ghi
+  còn ký tự Trung**.
+- Đã tạo backup trước khi đồng bộ checksum migration:
+  `.runtime/backups/veetee_vubq-before-vietnamese-20260806.dump`.
+- Rà soát source (loại trừ `references/`, dependency và artifact build):
+  `rg '[\\p{Han}]'` không còn kết quả.
+
+## TTS model catalog và assistant binding audit — 2026-08-06
+
+- Đã hợp nhất trải nghiệm quản lý voice theo model TTS: URL/query model được
+  đọc, catalog dùng `ai_tts_voice`, có search, clear filter, select-all, batch
+  delete, add/edit/delete, ETag conflict và audio preview URL.
+- Trợ lý hiển thị model catalog thật (`modelId`, model code/name, provider code,
+  default/enabled) cạnh runtime provider config; model TTS có link mở đúng thư
+  viện voice. Model disabled không còn bị hiển thị “Sẵn sàng”.
+- Role config ưu tiên voice catalog theo TTS model đã chọn và dùng `ttsVoice`
+  code; voice draft cũ chưa có trong catalog được giữ lại dưới dạng cảnh báo.
+  Runtime voice alias cùng provider cũng được gộp vào danh sách để không làm
+  mất các voice người dùng đã tạo (catalog model vẫn được ưu tiên khi trùng mã).
+- PostgreSQL migration `012_expand_tts_voice_catalog_fields.sql` sửa giới hạn
+  tên voice source cũ gây 500 khi CRUD từ UI.
+- Evidence: Manager API **58/58** InMemory + PostgreSQL test database riêng;
+  Manager Web **119 unit**, **21 Chromium E2E**, typecheck/lint/build pass;
+  Voice Server **194 passed**, Ruff/compileall pass, OpenAPI export/check pass.
+  Chi tiết: [`2026-08-06-tts-assistant-catalog-audit.md`](2026-08-06-tts-assistant-catalog-audit.md)
+  và [ADR-035](../ADR/ADR-035-model-scoped-tts-catalog-and-assistant-binding.md).
+
 ## Manager Web function audit — 2026-08-06
 
 - Đã kiểm tra và sửa lỗi dialog sửa/nhân bản model bị crash do

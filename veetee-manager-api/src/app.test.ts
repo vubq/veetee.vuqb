@@ -108,6 +108,28 @@ test('source model catalog keeps the tested Veetee defaults and dynamic field ty
   }
 })
 
+test('TTS voice catalog is scoped to a model and supports ETag-guarded CRUD', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const initial = await app.inject({ method: 'GET', url: '/api/v1/models/TTS_VieNeu/voices?voiceName=Minh&page=1&limit=100' })
+    assert.equal(initial.statusCode, 200)
+    assert.ok(initial.json().items.every((item: { ttsModelId: string }) => item.ttsModelId === 'TTS_VieNeu'))
+    const created = await app.inject({ method: 'POST', url: '/api/v1/models/TTS_VieNeu/voices', payload: { name: 'Giọng kiểm tra', ttsVoice: `test_${Date.now()}`, languages: 'vi-VN', remark: 'catalog test', sort: 99 } })
+    assert.equal(created.statusCode, 201)
+    const value = created.json() as { id: string; etag: string }
+    const updated = await app.inject({ method: 'PATCH', url: `/api/v1/models/TTS_VieNeu/voices/${value.id}`, headers: { 'if-match': value.etag }, payload: { name: 'Giọng kiểm tra mới' } })
+    assert.equal(updated.statusCode, 200)
+    assert.equal(updated.json().name, 'Giọng kiểm tra mới')
+    const stale = await app.inject({ method: 'PATCH', url: `/api/v1/models/TTS_VieNeu/voices/${value.id}`, headers: { 'if-match': value.etag }, payload: { name: 'Ghi đè cũ' } })
+    assert.equal(stale.statusCode, 409)
+    const removed = await app.inject({ method: 'DELETE', url: `/api/v1/models/TTS_VieNeu/voices/${value.id}`, headers: { 'if-match': updated.headers.etag } })
+    assert.equal(removed.statusCode, 204)
+  } finally {
+    await app.close()
+  }
+})
+
 test('role config OpenAPI response documents known policy fields while keeping additive extensions', async () => {
   const app = await buildApp({ env })
   await app.ready()
@@ -439,6 +461,21 @@ test('provider status is user-controlled, ETag guarded and visible in model choi
     } })
     assert.equal(duplicate.statusCode, 409)
     assert.equal(duplicate.json().code, 'NAME_CONFLICT')
+  } finally {
+    await app.close()
+  }
+})
+
+test('assistant model choices expose catalog identity and disabled model state', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const assistant = (await app.inject({ method: 'GET', url: '/api/v1/assistants' })).json().items[0] as { id: string }
+    const workspace = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistant.id}/model-memory` })
+    assert.equal(workspace.statusCode, 200)
+    const tts = workspace.json().availableConfigs.find((item: { kind: string }) => item.kind === 'tts') as { model?: unknown; availability: string } | undefined
+    assert.equal(tts?.model, undefined)
+    assert.equal(tts?.availability, 'ready')
   } finally {
     await app.close()
   }
