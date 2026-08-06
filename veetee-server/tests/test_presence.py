@@ -41,3 +41,22 @@ async def test_presence_queue_delivers_hash_only_payload_and_is_bounded() -> Non
     finally:
         release.set()
         await reporter.stop()
+
+
+@pytest.mark.asyncio
+async def test_presence_report_now_returns_bind_state_for_pairing_handshake() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/internal/v1/devices/presence"
+        return httpx.Response(202, json={"id": "device-1", "paired": True, "onlineState": "online", "lastSeenAt": "now"}, request=request)
+
+    reporter = DevicePresenceReporter(
+        PresenceReporterSettings("http://manager.test/internal/v1/devices/presence"),
+        transport=httpx.MockTransport(handler),
+    )
+    await reporter.start()
+    try:
+        paired = await reporter.report_now({"identityHash": "a" * 64, "clientIdHash": "b" * 64, "maskedMac": "AA:BB:CC:••:••:FF", "board": "ESP32-S3", "firmwareVersion": "0.1.0", "onlineState": "online"})
+        assert paired is True
+        assert reporter.metrics()["sent"] == 1
+    finally:
+        await reporter.stop()

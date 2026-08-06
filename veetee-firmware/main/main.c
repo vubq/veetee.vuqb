@@ -250,6 +250,9 @@ typedef struct {
     volatile bool wifi_stop_requested;
     volatile bool provisioning_active;
     volatile bool provisioning_submitted;
+    /* Server-confirmed bind state. The pairing code remains visible after
+       WebSocket hello until the Manager API commits the web pairing. */
+    volatile bool pairing_required;
     char pairing_code[VT_PAIRING_CODE_LENGTH + 1U];
     char pairing_code_hash[65];
     bool tts_stop_pending;
@@ -472,11 +475,9 @@ static void display_task(void *context) {
     while (!app->stop_requested) {
         vt_device_state_t current = state_read(app);
         (void)vt_display_tick(&app->display, current, esp_log_timestamp());
-        /* The code is useful while the board is waiting to be claimed. Once
-           the transport has accepted the server hello, the same LCD becomes
-           the live interaction surface. Keeping this decision at the display
-           owner avoids a second pairing/status state in the wire protocol. */
-        const bool show_pairing = !vt_transport_is_ready(&app->transport);
+        /* Wi-Fi/WebSocket readiness is not the same as ownership. Keep the
+           six-digit code visible until the server confirms the web bind. */
+        const bool show_pairing = !vt_transport_is_ready(&app->transport) || app->pairing_required;
         if (!app->display.notice_active && (current != previous || show_pairing != previous_show_pairing)) {
             esp_err_t render_result = show_pairing && app->pairing_code[0] != '\0'
                 ? vt_display_show_pairing_code(&app->display, app->pairing_code)
@@ -550,11 +551,16 @@ static void websocket_text_callback(const cJSON *message, void *context) {
     cJSON *type = cJSON_GetObjectItemCaseSensitive(message, "type");
     if (!cJSON_IsString(type) || type->valuestring == NULL) return;
     if (strcmp(type->valuestring, "hello") == 0) {
+        cJSON *pairing_required = cJSON_GetObjectItemCaseSensitive(message, "pairing_required");
+        /* Optional/additive field: a legacy server that omits it keeps the
+           existing status-screen behavior, while Veetee's server explicitly
+           holds the pairing screen until the control plane confirms binding. */
+        app->pairing_required = cJSON_IsTrue(pairing_required);
 #if CONFIG_VEETEE_MCP_ENABLED
         if (app->mcp_task != NULL) vt_mcp_task_reset_session(app->mcp_task);
 #endif
         (void)state_apply(app, VT_EVENT_HELLO_READY);
-        ESP_LOGI(TAG, "server hello accepted; session ready");
+        ESP_LOGI(TAG, "server hello accepted; session ready pairing_required=%d", app->pairing_required ? 1 : 0);
         return;
     }
     cJSON *incoming_session = cJSON_GetObjectItemCaseSensitive(message, "session_id");
@@ -572,6 +578,14 @@ static void websocket_text_callback(const cJSON *message, void *context) {
             ESP_LOGW(TAG, "MCP request rejected by bounded owner queue");
         }
 #endif
+        return;
+    }
+    if (strcmp(type->valuestring, "device") == 0) {
+        cJSON *state = cJSON_GetObjectItemCaseSensitive(message, "state");
+        if (cJSON_IsString(state) && strcmp(state->valuestring, "paired") == 0) {
+            app->pairing_required = false;
+            ESP_LOGI(TAG, "server confirmed device pairing");
+        }
         return;
     }
     if (strcmp(type->valuestring, "tts") == 0) {

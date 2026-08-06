@@ -281,9 +281,32 @@ Server response:
     "channels": 1,
     "frame_duration": 60
   },
+  "session_id": "01JZ9R4GJ5M7Y0H2F6V3P8QKCE",
+  "pairing_required": true
+}
+```
+
+`pairing_required` là field additive, chỉ có ý nghĩa khi client đã gửi
+`device_info.pairingCodeHash`. `true` nghĩa là device đã vào WebSocket nhưng
+chưa được bind vào assistant; firmware MUST tiếp tục hiển thị mã sáu chữ số.
+`false` nghĩa là Manager API đã xác nhận binding (hoặc device không tham gia
+pairing). Peer cũ bỏ qua field này và vẫn hoàn tất handshake như trước.
+
+Sau khi người dùng nhập mã trên Manager Web và transaction binding commit, Voice
+Server MAY gửi message additive để phiên đang mở đổi màn hình mà không cần
+reconnect:
+
+```json
+{
+  "type": "device",
+  "state": "paired",
+  "pairing_required": false,
   "session_id": "01JZ9R4GJ5M7Y0H2F6V3P8QKCE"
 }
 ```
+
+Firmware Veetee xử lý `state:"paired"` như một ownership acknowledgement;
+peer không hiểu `device` được phép bỏ qua.
 
 Validation và negotiation:
 
@@ -745,6 +768,7 @@ cancel hardware side effect
 | `tts` sentence_start | `state`, `text` | `session_id`, glyph | subtitle hiện tại |
 | `tts` stop | `state:"stop"` | `session_id`, `turn_id`, `reason`, `continue_listening` | graceful drain; `continue_listening:true` giữ phiên auto sau khi drain; `reason:"barge_in"` là cancellation barrier additive |
 | `listen` ready | `state:"ready"`, `mode:"auto"` | `session_id` | arm capture cho lượt tiếp theo trong cùng WebSocket; peer cũ bỏ qua |
+| `device` | `state:"paired"` | `session_id`, `pairing_required:false` | rời pairing screen sau khi Manager binding đã commit; peer cũ bỏ qua |
 | `llm` | `text`, `emotion` | `session_id` | cập nhật emotion/UI |
 | `mcp` | `session_id`, object `payload` | — | dispatch device JSON-RPC server |
 | `iot` | array `commands` | — | legacy-only hardware command |

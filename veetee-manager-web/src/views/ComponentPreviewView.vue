@@ -155,7 +155,7 @@ async function runLongAction() {
               <VtInput
                 id="preview-readonly"
                 name="preview-device-code"
-                model-value="VT-9D1C-A7"
+                model-value="123456"
                 autocomplete="off"
                 readonly
                 :aria-describedby="describedby"

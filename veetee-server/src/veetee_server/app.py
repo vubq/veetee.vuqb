@@ -216,6 +216,7 @@ class VoiceSession:
         self.codec: OpusCodec | None = None
         self.mcp: DeviceMcpBridge | None = None
         self._mcp_discovery_task: asyncio.Task[None] | None = None
+        self._pairing_watch_task: asyncio.Task[None] | None = None
         self._tool_descriptors: list[dict[str, Any]] = []
         self.memory: MemorySession | None = None
         self.view: RuntimeView | None = None
@@ -237,6 +238,11 @@ class VoiceSession:
         self.conversation_started_at: str | None = None
         self.turn_sequence = 0
         self.device_info: dict[str, str] | None = None
+        # A device that advertises a pairing hash must remain on its pairing
+        # screen until the Manager API confirms the binding. The value is
+        # carried only as an additive hello/control field; plaintext codes
+        # never leave firmware.
+        self.pairing_required = False
 
     async def run(self) -> None:
         try:
@@ -302,6 +308,9 @@ class VoiceSession:
             if self._mcp_discovery_task is not None and not self._mcp_discovery_task.done():
                 self._mcp_discovery_task.cancel()
                 await asyncio.gather(self._mcp_discovery_task, return_exceptions=True)
+            if self._pairing_watch_task is not None and not self._pairing_watch_task.done():
+                self._pairing_watch_task.cancel()
+                await asyncio.gather(self._pairing_watch_task, return_exceptions=True)
             if self.mcp is not None:
                 self.mcp.cancel_all()
             await self._cancel_conversation_idle()
@@ -343,6 +352,7 @@ class VoiceSession:
             raise ProtocolError("client audio must be opus mono 16kHz/60ms")
         self.client_hello = message
         self.device_info = self._parse_device_info(message.get("device_info"))
+        await self._initial_presence()
         await self.app.admit_session(self)
         if self._closed:
             return
@@ -371,6 +381,10 @@ class VoiceSession:
                     "frame_duration": int(wire.get("frameDurationMs", 60)),
                 },
                 "session_id": self.session_id,
+                # Optional/additive: older peers ignore this field, while the
+                # Veetee firmware uses it to keep the six-digit code visible
+                # after the WebSocket handshake.
+                "pairing_required": self.pairing_required,
             }
         )
         descriptors = snapshot.raw.get("tools")
@@ -387,13 +401,70 @@ class VoiceSession:
             allow_device_discovery=tool_policy.get("allowDeviceDiscovery") is True,
         )
         self.ready = True
+        if self.pairing_required and self.app.presence_reporter is not None:
+            self._pairing_watch_task = asyncio.create_task(self._watch_pairing(), name=f"pairing-watch-{self.session_id}")
         if bool((features or {}).get("mcp", False)):
             # Discovery is deliberately started only after the hello response
             # has been sent and the receive loop is active. The device replies
             # to initialize before it accepts the paginated tools/list request;
             # awaiting either response inside _hello would deadlock that loop.
             self._mcp_discovery_task = asyncio.create_task(self._discover_mcp(), name=f"mcp-discovery-{self.session_id}")
-        self._report_presence("online")
+
+    async def _initial_presence(self) -> None:
+        """Synchronously establish presence once so hello can carry bind state."""
+
+        reporter = self.app.presence_reporter
+        if reporter is None or self.device_info is None:
+            self.pairing_required = bool(self.device_info and self.device_info.get("pairingCodeHash"))
+            return
+        report_now = getattr(reporter, "report_now", None)
+        if not callable(report_now):
+            # Keep compatibility with lightweight presence adapters used by
+            # integrations/tests that implement only the original enqueue API.
+            self.pairing_required = bool(self.device_info.get("pairingCodeHash"))
+            self._report_presence("online")
+            return
+        event = self._presence_payload("online")
+        try:
+            paired = await report_now(event)
+        except Exception:  # presence is best-effort; never fail the voice hello
+            paired = None
+        self.pairing_required = bool(self.device_info.get("pairingCodeHash")) and paired is not True
+        if paired is None:
+            # Keep the existing best-effort queue as a recovery path when the
+            # Manager API is restarting or its response is malformed.
+            self._report_presence("online")
+
+    async def _watch_pairing(self) -> None:
+        """Poll the control-plane response until the web bind is committed."""
+
+        reporter = self.app.presence_reporter
+        if reporter is None or self.device_info is None:
+            return
+        report_now = getattr(reporter, "report_now", None)
+        if not callable(report_now):
+            return
+        try:
+            while not self._closed and self.ready and self.pairing_required:
+                await asyncio.sleep(2.0)
+                if self._closed or not self.ready or not self.pairing_required:
+                    return
+                try:
+                    paired = await report_now(self._presence_payload("online"))
+                except Exception:  # keep the pairing screen while control plane is unavailable
+                    paired = None
+                if paired is not True:
+                    continue
+                self.pairing_required = False
+                await self.send_text({
+                    "type": "device",
+                    "state": "paired",
+                    "pairing_required": False,
+                    "session_id": self.session_id,
+                })
+                return
+        except asyncio.CancelledError:
+            raise
 
     async def _discover_mcp(self) -> None:
         bridge = self.mcp
@@ -852,11 +923,10 @@ class VoiceSession:
         if not reporter.enqueue(event):
             self.app.metrics["history_enqueue_dropped"] = self.app.metrics.get("history_enqueue_dropped", 0) + 1
 
-    def _report_presence(self, state: str) -> bool:
-        reporter = self.app.presence_reporter
-        if reporter is None or self.device_info is None or state not in {"online", "offline"}:
-            return False
-        event = {
+    def _presence_payload(self, state: str) -> dict[str, Any]:
+        if self.device_info is None:
+            return {}
+        event: dict[str, Any] = {
             "identityHash": hashlib.sha256(self.device_id.encode("utf-8")).hexdigest(),
             "clientIdHash": hashlib.sha256(self.client_id.encode("utf-8")).hexdigest(),
             "maskedMac": _mask_device_id(self.device_id),
@@ -867,6 +937,13 @@ class VoiceSession:
         pairing_hash = self.device_info.get("pairingCodeHash")
         if pairing_hash:
             event["pairingCodeHash"] = pairing_hash
+        return event
+
+    def _report_presence(self, state: str) -> bool:
+        reporter = self.app.presence_reporter
+        if reporter is None or self.device_info is None or state not in {"online", "offline"}:
+            return False
+        event = self._presence_payload(state)
         if not reporter.enqueue(event):
             self.app.metrics["presence_enqueue_dropped"] = self.app.metrics.get("presence_enqueue_dropped", 0) + 1
             return False

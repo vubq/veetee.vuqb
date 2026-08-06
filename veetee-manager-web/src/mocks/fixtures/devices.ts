@@ -2,7 +2,7 @@ import type { DeviceCard } from '@/domain'
 
 import { ASSISTANT_IDS } from './assistants'
 
-export const PAIRING_SUCCESS_CODE = 'VT-2608'
+export const PAIRING_SUCCESS_CODE = '260812'
 
 export function createDeviceFixtures(): DeviceCard[] {
   return [

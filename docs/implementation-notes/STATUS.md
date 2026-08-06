@@ -1904,12 +1904,13 @@
 
 ### LCD pairing/status surface sau khi flash (2026-08-05, cập nhật)
 
-- `display_task` nay render mã ghép nối 6 số khi transport chưa có session; sau
-  `hello` chuyển sang renderer `idle/listening/thinking/speaking`, và khi mất
-  kết nối quay lại màn hình ghép nối. Không đổi wire contract, Wi-Fi hoặc NVS.
-- ESP-IDF **6.0.2** build/flash pass, image `0x165110`, app còn 65%; serial giữ
+- `display_task` render mã ghép nối 6 số khi transport chưa có session hoặc
+  server hello báo `pairing_required:true`; chỉ sau `device.state=paired` mới
+  chuyển sang renderer `idle/listening/thinking/speaking`, và khi mất kết nối
+  quay lại màn hình ghép nối. Field/event mới là additive, Wi-Fi/NVS không đổi.
+- ESP-IDF **6.0.2** build/flash pass, image `0x1bd810`, app còn 56%; serial giữ
   Wi-Fi NVS, `ST7789 ready 240x280`, startup chime, `wake_ready=1`,
-  `connecting → listening → server hello accepted → WebSocket v3 ready`, AEC
+  `connecting → listening → server hello accepted pairing_required=1 → WebSocket v3 ready`, AEC
   underrun/overrun bằng 0. Host CTest **9/9**, Voice sau reconnect
   `activeConnections=1`, `activeTurns=0`, `protocol_errors=0`.
 - Physical LCD/backlight/orientation và nghe âm thanh vẫn cần người dùng xác
@@ -1917,12 +1918,12 @@
 
 ### Pairing UX không lẫn dữ liệu preview (2026-08-05, cập nhật)
 
-- Dialog ghép nối chỉ còn hướng dẫn mã 6 số trên robot; mã fixture `VT-2608`
-  không xuất hiện trong API/production mode. Fixture vẫn giữ mã riêng trong mock
-  gateway để E2E deterministic.
-- Full Chromium E2E **15/15 passed** sau thay đổi; UI unit **96/96**,
-  typecheck/lint/build vẫn xanh. Không đổi API, wire contract, database runtime
-  hoặc firmware.
+- Dialog ghép nối chỉ còn hướng dẫn mã 6 số trên robot, không yêu cầu chọn
+  “robot đang chờ”; challenge production mới cũng sinh 6 chữ số. Fixture mock
+  giữ một mã số riêng để E2E deterministic.
+- Web unit **103/103**, Manager API **39 pass**, Voice Server full suite **194
+  pass**; typecheck/lint/build vẫn xanh. Wire change chỉ additive
+  (`pairing_required`, `device.state=paired`); database runtime không bị reset.
 
 # 2026-08-06 — capability-first provider UI và firmware screen model
 

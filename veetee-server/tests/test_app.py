@@ -4,12 +4,14 @@ from pathlib import Path
 import time
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from aiohttp import WSMsgType
 from aiohttp.test_utils import TestClient, TestServer
 
 from veetee_server.app import VoiceApplication
 from veetee_server.config import ServerConfig
+from veetee_server.presence import DevicePresenceReporter, PresenceReporterSettings
 from veetee_server.runtime import RuntimeConfigManager
 from veetee_server.providers import AudioChunk, LLMDelta
 
@@ -161,6 +163,49 @@ async def test_websocket_v3_handshake_and_turn(monkeypatch):
         assert session.phase == "ready_idle"
     finally:
         await client.close()
+        await runtime.stop()
+
+
+@pytest.mark.asyncio
+async def test_websocket_hello_keeps_unpaired_device_in_pairing_state(monkeypatch):
+    fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
+    monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
+    monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    config = ServerConfig.from_env()
+    runtime = RuntimeConfigManager(config)
+    await runtime.start()
+
+    async def presence_handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/internal/v1/devices/presence"
+        payload = json.loads(request.content.decode("utf-8"))
+        assert payload["pairingCodeHash"] == "a" * 64
+        return httpx.Response(202, json={"id": "device-1", "paired": False, "onlineState": "online", "lastSeenAt": "now"}, request=request)
+
+    presence = DevicePresenceReporter(
+        PresenceReporterSettings("http://manager.test/internal/v1/devices/presence"),
+        transport=httpx.MockTransport(presence_handler),
+    )
+    await presence.start()
+    service = VoiceApplication(config, runtime, presence_reporter=presence)
+    server = TestServer(service.make_app())
+    client = TestClient(server)
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/veetee/v1/",
+            headers={"Device-Id": "device-pairing", "Client-Id": "client-pairing", "Protocol-Version": "3"},
+        )
+        await ws.send_json({
+            "type": "hello", "version": 3, "transport": "websocket",
+            "audio_params": {"format": "opus", "sample_rate": 16000, "channels": 1, "frame_duration": 60},
+            "device_info": {"board": "ESP32-S3 N16R8", "firmwareVersion": "test", "pairingCodeHash": "a" * 64},
+        })
+        hello = await ws.receive_json()
+        assert hello["pairing_required"] is True
+        await ws.close()
+    finally:
+        await client.close()
+        await presence.stop()
         await runtime.stop()
 
 

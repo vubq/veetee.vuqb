@@ -847,7 +847,10 @@ export class InMemoryStore implements Store {
     device.lastSeenAt = nowIso
     this.devices.set(device.id, device)
     const id = randomUUID()
-    const verificationCode = `VT-${randomInt(0, 10000).toString().padStart(4, '0')}`
+    /* The firmware renders a six-digit numeric code. Keep the challenge
+       format identical across the API, LCD and dashboard; the parser still
+       accepts the old VT-#### shape for already-issued compatibility codes. */
+    const verificationCode = randomInt(100000, 1000000).toString()
     const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString()
     this.pairingChallenges.set(id, { id, deviceId: device.id, codeHash: hashPairingCode(verificationCode), expiresAt, attempts: 0, state: 'pending' })
     return { id, deviceId: device.id, verificationCode, expiresAt }

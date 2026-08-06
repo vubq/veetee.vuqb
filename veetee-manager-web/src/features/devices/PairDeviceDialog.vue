@@ -3,7 +3,7 @@ import { nextTick, ref, watch } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
 import { isPreviewMode } from '@/app/runtime-mode'
-import type { AssistantCard, DeviceCard, DiscoverableDevice } from '@/domain'
+import type { AssistantCard, DeviceCard } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import VtButton from '@/ui/primitives/VtButton.vue'
 import VtDialog from '@/ui/primitives/VtDialog.vue'
@@ -22,36 +22,11 @@ const displayName = ref('')
 const codeError = ref('')
 const formError = ref('')
 const loading = ref(false)
-const devices = ref<DiscoverableDevice[]>([])
-const devicesLoading = ref(false)
 const codeInput = ref<InstanceType<typeof VtInput> | null>(null)
 
 function assistantOptions(): VtSelectOption[] {
   return props.assistants.map((assistant) => ({ value: assistant.id, label: assistant.name, description: assistant.locale }))
 }
-
-function deviceOptions(): VtSelectOption[] {
-  return devices.value.map((device) => ({
-    value: device.id,
-    label: `${device.board} · ${device.maskedMac}`,
-    description: `Online · ${device.firmwareVersion}`,
-  }))
-}
-
-async function loadDiscoverable() {
-  devicesLoading.value = true
-  const result = await gateway.listDiscoverableDevices()
-  devicesLoading.value = false
-  if (!result.ok) {
-    devices.value = []
-    formError.value = result.meta.offline ? 'Máy chủ quản trị đang ngoại tuyến.' : 'Không tải được danh sách robot đang chờ ghép nối.'
-    return
-  }
-  devices.value = result.data.items
-  if (!selectedDeviceId.value) selectedDeviceId.value = devices.value[0]?.id ?? ''
-}
-
-const selectedDeviceId = ref('')
 
 watch(() => props.open, (open) => {
   if (open) {
@@ -60,24 +35,20 @@ watch(() => props.open, (open) => {
     displayName.value = ''
     codeError.value = ''
     formError.value = ''
-    devices.value = []
-    selectedDeviceId.value = ''
-    void loadDiscoverable()
     void nextTick(() => codeInput.value?.focus())
   }
 })
 
 async function submit() {
   const normalizedCode = code.value.trim().toUpperCase()
-  codeError.value = /^\d{6}$/.test(normalizedCode) || /^VT-\d{4}$/.test(normalizedCode) ? '' : 'Nhập đúng 6 chữ số trên robot.'
+  codeError.value = /^\d{6}$/.test(normalizedCode) ? '' : 'Nhập đúng 6 chữ số trên robot.'
   if (!selectedAssistant.value) formError.value = 'Hãy chọn trợ lý sẽ quản lý thiết bị.'
-  if (!selectedDeviceId.value) formError.value = formError.value || 'Chưa có robot nào đang chờ ghép nối.'
   if (codeError.value || formError.value) {
     void nextTick(() => codeInput.value?.focus())
     return
   }
   loading.value = true
-  const result = await gateway.pairDevice({ assistantId: selectedAssistant.value, deviceId: selectedDeviceId.value || undefined, verificationCode: normalizedCode, displayName: displayName.value || undefined })
+  const result = await gateway.pairDevice({ assistantId: selectedAssistant.value, verificationCode: normalizedCode, displayName: displayName.value || undefined })
   loading.value = false
   if (!result.ok) {
     if (result.problem.type === 'pairing-code' || result.problem.type === 'validation') {
@@ -100,7 +71,7 @@ async function submit() {
   <VtDialog
     :open="open"
     title="Ghép nối thiết bị"
-    description="Chọn robot đang online, sau đó nhập mã 6 chữ số đang hiển thị trên màn hình robot."
+    description="Bật robot và nhập mã 6 chữ số đang hiển thị trên màn hình robot."
     width="sm"
     @update:open="$emit('update:open', $event)"
   >
@@ -110,19 +81,7 @@ async function submit() {
       @submit.prevent="submit"
     >
       <VtFormField
-        label="Robot đang chờ"
-        for-id="pair-device"
-        :error="devicesLoading ? undefined : (devices.length === 0 ? 'Bật robot và chờ robot xuất hiện trên mạng.' : undefined)"
-      >
-        <VtSelect
-          id="pair-device"
-          v-model="selectedDeviceId"
-          label="Robot đang chờ"
-          :options="deviceOptions()"
-          :disabled="devicesLoading || devices.length === 0"
-        />
-      </VtFormField>
-      <VtFormField
+        v-if="!assistantId"
         label="Trợ lý"
         for-id="pair-assistant"
       >

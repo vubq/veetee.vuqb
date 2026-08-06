@@ -13,8 +13,8 @@ Wi-Fi thiếu
   → SoftAP/captive portal 192.168.4.1
   → lưu SSID/password vào NVS
   → station online + hello.device_info.pairingCodeHash
-  → presence tạo discoverable device
-  → Web chọn robot + nhập mã sáu chữ số
+  → presence tạo pairing challenge theo identity hash
+  → Web nhập mã sáu chữ số trong assistant đang mở
   → bind vào assistant
 ```
 
@@ -50,4 +50,3 @@ peer cũ vẫn xử lý graceful stop.
 Chưa dùng các kết quả host để khẳng định LCD, loa, mic, PTT hoặc wake word trên
 board thật. Sau khi toàn bộ server/API/Web contract ổn định mới flash không erase
 NVS và kiểm tra serial; nghe/nhìn/chạm trên board vẫn là gate riêng.
-

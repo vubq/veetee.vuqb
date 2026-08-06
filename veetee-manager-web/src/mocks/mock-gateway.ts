@@ -719,7 +719,7 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     }
 
     const verificationCode = input.verificationCode.trim().toUpperCase()
-    if (!/^VT-\d{4}$/.test(verificationCode)) {
+    if (!/^\d{6}$/.test(verificationCode)) {
       const problem: ValidationProblem = {
         type: 'validation',
         code: 'VALIDATION_ERROR',

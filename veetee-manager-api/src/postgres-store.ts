@@ -592,7 +592,10 @@ export class PostgresStore implements Store {
       await this.handle.db.insert(deviceTable).values({ id: deviceId, ownerId: null, assistantId: null, identityHash: value.identityHash, clientIdHash: value.clientIdHash, displayName: '', maskedMac: value.maskedMac, board: value.board, firmwareVersion: value.firmwareVersion, onlineState: 'online', lastSeenAt: now, lastConversationAt: null, createdAt: now, updatedAt: now })
     }
     const id = randomUUID()
-    const verificationCode = `VT-${randomInt(0, 10000).toString().padStart(4, '0')}`
+    /* The firmware renders a six-digit numeric code. Keep the challenge
+       format identical across the API, LCD and dashboard; the parser still
+       accepts the old VT-#### shape for already-issued compatibility codes. */
+    const verificationCode = randomInt(100000, 1000000).toString()
     const expiresAt = new Date(now.getTime() + 10 * 60 * 1000)
     await this.handle.db.insert(pairingChallengeTable).values({ id, deviceId, codeHash: hashPairingCode(verificationCode), state: 'pending', attempts: 0, expiresAt, createdAt: now, usedAt: null })
     return { id, deviceId, verificationCode, expiresAt: expiresAt.toISOString() }

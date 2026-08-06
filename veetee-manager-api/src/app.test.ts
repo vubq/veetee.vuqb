@@ -489,9 +489,9 @@ test('device pairing challenge is single-use and binds a device to an assistant'
     })
     assert.equal(challenge.statusCode, 201)
     const code = challenge.json().verificationCode as string
-    assert.match(code, /^VT-\d{4}$/)
+    assert.match(code, /^\d{6}$/)
 
-    const invalid = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: 'VT-9999' } })
+    const invalid = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: '999999' } })
     assert.equal(invalid.statusCode, 422)
     const paired = await app.inject({ method: 'POST', url: '/api/v1/devices/pair', payload: { assistantId, verificationCode: code, displayName: 'Veetee phòng làm việc' } })
     assert.equal(paired.statusCode, 201)
