@@ -31,9 +31,11 @@ const props = withDefaults(defineProps<{
   initialKind?: ProviderKind
   showKindNav?: boolean
   showVoiceCatalog?: boolean
+  embedded?: boolean
 }>(), {
   showKindNav: true,
   showVoiceCatalog: true,
+  embedded: false,
 })
 const installations = ref<ProviderInstallationView[]>([])
 const configs = ref<ProviderConfigRecord[]>([])
@@ -319,9 +321,10 @@ function toggleSecretReference(id: string, checked: boolean) {
 </script>
 
 <template>
-  <main
-    id="main-content"
-    class="page-container provider-page"
+  <component
+    :is="props.embedded ? 'div' : 'main'"
+    :id="props.embedded ? undefined : 'main-content'"
+    :class="['page-container', 'provider-page', { 'is-embedded': props.embedded }]"
     :aria-busy="loading"
   >
     <header class="provider-header">
@@ -592,11 +595,12 @@ function toggleSecretReference(id: string, checked: boolean) {
       @stay="unsavedGuard.stay"
       @leave="unsavedGuard.leave"
     />
-  </main>
+  </component>
 </template>
 
 <style scoped>
 .provider-page { display: grid; gap: 16px; }
+.provider-page.is-embedded { width: 100%; margin: 0; padding: 0; }
 .provider-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .provider-content { display: grid; gap: 14px; }
 .provider-kind-nav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }

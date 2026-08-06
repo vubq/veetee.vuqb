@@ -37,7 +37,7 @@ describe('router auth boundary', () => {
     await router.push('/model-config')
 
     expect(router.currentRoute.value.name).toBe('model-config')
-    expect(document.title).toBe('Model Configuration · Veetee')
+    expect(document.title).toBe('Cấu hình model · Veetee')
   })
 
   it('uses only safe internal redirects after an authenticated login visit', async () => {

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { Bot, Component, LayoutGrid, LogOut, Menu, RotateCcw, Sparkles } from '@lucide/vue'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { authSession } from '@/auth/auth-session'
+import { prefetchRoute } from '@/app/router'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
 import VtButton from '@/ui/primitives/VtButton.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
@@ -12,10 +13,12 @@ import VtIconButton from '@/ui/primitives/VtIconButton.vue'
 import VtMenu, { type VtMenuItem } from '@/ui/primitives/VtMenu.vue'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useI18n()
 const isApiMode = Boolean(import.meta.env.VITE_MANAGER_API_URL)
 const logoutLoading = ref(false)
 const isAuthenticated = computed(() => authSession.status.value === 'authenticated')
+const aiServicesActive = computed(() => ['/ai-services', '/model-config', '/provider-management'].includes(route.path) || route.path.startsWith('/providers/'))
 const mobileItems = computed<VtMenuItem[]>(() => [
   { id: 'assistants', label: 'Trợ lý' },
   { id: 'ai-services', label: 'Dịch vụ AI' },
@@ -23,11 +26,31 @@ const mobileItems = computed<VtMenuItem[]>(() => [
   ...(!isApiMode ? [{ id: 'reset-hint', label: 'Đặt lại dữ liệu ở thanh công cụ', disabled: true, separatorBefore: true }] : []),
 ])
 
+function warmRoute(path: string) {
+  prefetchRoute(path)
+}
+
 function navigate(id: string) {
   if (id === 'assistants') void router.push('/assistants')
   if (id === 'ai-services') void router.push('/ai-services')
   if (id === 'components') void router.push('/_preview/components')
 }
+
+onMounted(() => {
+  // Mobile users do not get a hover event before opening the menu. Warm the
+  // three compact AI-service destinations during an idle slot instead.
+  const warm = () => {
+    warmRoute('/ai-services')
+    warmRoute('/model-config')
+    warmRoute('/provider-management')
+    warmRoute('/providers/tts/voices')
+  }
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(warm, { timeout: 1_500 })
+  } else {
+    globalThis.setTimeout(warm, 1_000)
+  }
+})
 
 async function logout() {
   logoutLoading.value = true
@@ -60,6 +83,9 @@ async function logout() {
         <RouterLink
           class="nav-link"
           to="/assistants"
+          @pointerenter="warmRoute('/assistants')"
+          @focus="warmRoute('/assistants')"
+          @touchstart="warmRoute('/assistants')"
         >
           <VtIcon
             :icon="LayoutGrid"
@@ -70,6 +96,10 @@ async function logout() {
         <RouterLink
           class="nav-link"
           to="/ai-services"
+          :class="{ 'is-active': aiServicesActive }"
+          @pointerenter="warmRoute('/ai-services')"
+          @focus="warmRoute('/ai-services')"
+          @touchstart="warmRoute('/ai-services')"
         >
           <VtIcon
             :icon="Sparkles"
@@ -154,7 +184,7 @@ async function logout() {
 .global-nav { display: flex; height: 100%; align-items: center; gap: 3px; }
 .nav-link { display: inline-flex; height: 34px; align-items: center; gap: 7px; border-radius: var(--vt-radius-button); color: var(--vt-text-muted); padding: 0 10px; font-size: 11px; font-weight: 500; text-decoration: none; transition: background var(--vt-transition), color var(--vt-transition), box-shadow var(--vt-transition); }
 .nav-link:hover { background: var(--vt-surface-muted); color: var(--vt-text); }
-.nav-link.router-link-active { background: #e9eef3; color: var(--vt-text); font-weight: 600; }
+.nav-link.router-link-active, .nav-link.is-active { background: #e9eef3; color: var(--vt-text); font-weight: 600; }
 .nav-link:focus-visible { box-shadow: 0 0 0 3px var(--vt-focus); }
 .top-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .account-label { max-width: 170px; overflow: hidden; color: var(--vt-text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }

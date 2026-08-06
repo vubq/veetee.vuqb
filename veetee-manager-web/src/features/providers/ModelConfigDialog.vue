@@ -10,7 +10,7 @@ import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
 import VtSwitch from '@/ui/primitives/VtSwitch.vue'
 import VtTextArea from '@/ui/primitives/VtTextArea.vue'
 
-import { MODEL_TYPE_LABELS } from './model-registry-labels'
+import { localizedFieldLabel, localizedModelName, localizedProviderName, MODEL_TYPE_LABELS } from './model-registry-labels'
 
 type ConfigDraft = {
   id: string
@@ -44,7 +44,7 @@ const draft = ref<ConfigDraft>(emptyDraft())
 const formError = ref('')
 
 const availableProviders = computed(() => props.providers.filter((provider) => provider.modelType === props.modelType).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)))
-const providerOptions = computed<VtSelectOption[]>(() => availableProviders.value.map((provider) => ({ value: provider.providerCode, label: provider.name, description: provider.providerCode })))
+const providerOptions = computed<VtSelectOption[]>(() => availableProviders.value.map((provider) => ({ value: provider.providerCode, label: localizedProviderName(provider), description: provider.providerCode })))
 const selectedProvider = computed(() => availableProviders.value.find((provider) => provider.providerCode === draft.value.providerCode))
 const title = computed(() => props.duplicate ? 'Nhân bản model' : props.model ? 'Sửa model' : 'Thêm model')
 const description = computed(() => `${MODEL_TYPE_LABELS[props.modelType]} · cấu hình theo schema provider`)
@@ -74,7 +74,7 @@ function fromModel(model: ModelConfigRecord, duplicate: boolean): ConfigDraft {
   return {
     id: duplicate ? '' : model.id,
     modelCode: duplicate ? `${model.modelCode}_copy` : model.modelCode,
-    modelName: duplicate ? `${model.modelName} (bản sao)` : model.modelName,
+    modelName: duplicate ? `${localizedModelName(model)} (bản sao)` : localizedModelName(model),
     providerCode: model.providerCode,
     isDefault: duplicate ? false : model.isDefault,
     isEnabled: model.isEnabled,
@@ -205,7 +205,7 @@ function submit() {
         <header>
           <div>
             <h3>Thông số provider</h3><p v-if="selectedProvider">
-              {{ selectedProvider.name }} · {{ selectedProvider.fields.length }} trường theo schema.
+              {{ localizedProviderName(selectedProvider) }} · {{ selectedProvider.fields.length }} trường theo schema.
             </p><p v-else>
               Chưa có provider cho danh mục này.
             </p>
@@ -218,7 +218,7 @@ function submit() {
           <VtFormField
             v-for="field in selectedProvider.fields"
             :key="field.key"
-            :label="field.label"
+            :label="localizedFieldLabel(field)"
             :for-id="`model-field-${field.key}`"
             :hint="`${field.key}${field.sensitive ? ' · giá trị bí mật' : ''}`"
           >
@@ -226,7 +226,7 @@ function submit() {
               v-if="field.type === 'boolean'"
               :id="`model-field-${field.key}`"
               :model-value="Boolean(draft.config[field.key])"
-              :label="field.label"
+              :label="localizedFieldLabel(field)"
               @update:model-value="setBoolean(field, $event)"
             />
             <VtTextArea

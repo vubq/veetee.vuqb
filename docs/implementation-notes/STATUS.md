@@ -1,5 +1,25 @@
 # Trạng thái thực thi hiện tại
 
+## Manager Web responsive/performance pass — 2026-08-06
+
+- Xác nhận stack hiện tại: Vue 3.5 + Vite 8 + TypeScript + Tailwind CSS 4;
+  primitive tương tác dùng Reka UI, icon Lucide, font Be Vietnam Pro; API mode
+  gọi Manager API bằng typed HTTP gateway, không có API URL thì chạy mock preview.
+- Navigation AI được prefetch khi hover/focus/touch và warm trong idle slot; route
+  guard cache kết quả hydrate cookie trong vòng đời tab, không gọi `/auth/me` lại
+  sau mỗi click. Màn hình model tải provider/model song song; overview dùng một
+  catalog request bounded thay vì một request cho từng loại.
+- F5 có inline boot shell ổn định trước khi Vue/lazy chunk/font sẵn sàng; không
+  đổi protocol, audio pipeline, firmware, DB hay network.
+- Model/provider catalog giữ nguyên CRUD, search, category, pagination,
+  selection, enable/default, duplicate/delete và schema inspector; mobile/tablet
+  chuyển sang card thao tác đầy đủ, desktop vẫn dùng bảng. Query search/category
+  được giữ qua route để reload không mất ngữ cảnh.
+- Compatibility route `/providers/:kind` vẫn giữ provider config nâng cao; catalog
+  source-aligned mới dùng `/model-config` và `/provider-management`.
+- Verification slice: Web **118 unit**, **16 Chromium E2E**, typecheck/lint/build
+  pass; không phát audio, không flash/reset ESP32, không đổi Wi‑Fi/Tailscale.
+
 ## Audio/UI validation — 2026-08-06
 
 - Đã hoàn tất audio acceptance trên firmware sau flash app `5567e48`: normal

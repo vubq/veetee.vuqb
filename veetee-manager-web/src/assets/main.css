@@ -142,7 +142,7 @@ html {
 
 body {
   min-width: 320px;
-  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
   background: var(--vt-page);
   color: var(--vt-text);
@@ -176,7 +176,7 @@ a[href] {
 }
 
 .app-root {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .page-container {

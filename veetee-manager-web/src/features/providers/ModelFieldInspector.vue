@@ -7,7 +7,7 @@ import VtButton from '@/ui/primitives/VtButton.vue'
 import VtDialog from '@/ui/primitives/VtDialog.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
 
-import { formatFieldType } from './model-registry-labels'
+import { formatFieldType, localizedFieldLabel } from './model-registry-labels'
 
 const props = withDefaults(defineProps<{
   fields: ModelProviderField[]
@@ -43,7 +43,7 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>()
           :size="15"
         /></span>
         <span class="field-copy">
-          <strong>{{ field.label }}</strong>
+          <strong>{{ localizedFieldLabel(field) }}</strong>
           <small><code>{{ field.key }}</code> · {{ formatFieldType(field.type) }}</small>
         </span>
         <VtBadge

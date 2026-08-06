@@ -7,7 +7,7 @@ import VtCheckbox from '@/ui/primitives/VtCheckbox.vue'
 import VtIconButton from '@/ui/primitives/VtIconButton.vue'
 import VtSwitch from '@/ui/primitives/VtSwitch.vue'
 
-import { MODEL_TYPE_SHORT_LABELS } from './model-registry-labels'
+import { localizedModelName, localizedProviderName, MODEL_TYPE_SHORT_LABELS } from './model-registry-labels'
 
 defineProps<{
   items: ModelConfigRecord[]
@@ -30,7 +30,8 @@ const emit = defineEmits<{
 }>()
 
 function providerName(model: ModelConfigRecord, providers: ModelProviderRecord[]): string {
-  return providers.find((provider) => provider.modelType === model.modelType && provider.providerCode === model.providerCode)?.name ?? model.providerCode
+  const provider = providers.find((item) => item.modelType === model.modelType && item.providerCode === model.providerCode)
+  return provider ? localizedProviderName(provider) : model.providerCode
 }
 
 function voiceValue(model: ModelConfigRecord): string {
@@ -56,116 +57,221 @@ function voiceValue(model: ModelConfigRecord): string {
     </div>
     <div
       v-else
-      class="table-scroll"
+      class="table-content"
     >
-      <table class="model-table">
-        <thead>
-          <tr>
-            <th class="selection-column">
-              <VtCheckbox
-                label="Chọn tất cả model"
-                aria-label="Chọn tất cả model"
-                :show-label="false"
-                :model-value="allSelected"
-                @update:model-value="emit('toggleAll')"
-              />
-            </th>
-            <th>Model ID</th>
-            <th>Tên model</th>
-            <th>Provider</th>
-            <th>Đang bật</th>
-            <th>Mặc định</th>
-            <th v-if="activeType === 'TTS'">
-              Giọng nói
-            </th>
-            <th class="actions-column">
-              Thao tác
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="model in items"
-            :key="model.id"
-          >
-            <td>
-              <VtCheckbox
-                :label="`Chọn ${model.modelName}`"
-                :show-label="false"
-                :model-value="selectedIds.includes(model.id)"
-                @update:model-value="emit('toggle', model.id, $event)"
-              />
-            </td>
-            <td><code class="model-id">{{ model.id }}</code></td>
-            <td>
-              <div class="model-name">
-                <strong>{{ model.modelName }}</strong><small>{{ MODEL_TYPE_SHORT_LABELS[model.modelType] }} · {{ model.modelCode }}</small>
-              </div>
-            </td>
-            <td>
-              <VtBadge tone="neutral">
+      <div class="desktop-table">
+        <p class="mobile-table-hint">
+          Vuốt ngang để xem đủ cột và thao tác.
+        </p>
+        <div class="table-scroll">
+          <table class="model-table">
+            <thead>
+              <tr>
+                <th class="selection-column">
+                  <VtCheckbox
+                    label="Chọn tất cả model"
+                    aria-label="Chọn tất cả model"
+                    :show-label="false"
+                    :model-value="allSelected"
+                    @update:model-value="emit('toggleAll')"
+                  />
+                </th>
+                <th>Model ID</th>
+                <th>Tên model</th>
+                <th>Provider</th>
+                <th>Đang bật</th>
+                <th>Mặc định</th>
+                <th v-if="activeType === 'TTS'">
+                  Giọng nói
+                </th>
+                <th class="actions-column">
+                  Thao tác
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="model in items"
+                :key="model.id"
+              >
+                <td>
+                  <VtCheckbox
+                    :label="`Chọn ${localizedModelName(model)}`"
+                    :show-label="false"
+                    :model-value="selectedIds.includes(model.id)"
+                    @update:model-value="emit('toggle', model.id, $event)"
+                  />
+                </td>
+                <td><code class="model-id">{{ model.id }}</code></td>
+                <td>
+                  <div class="model-name">
+                    <strong>{{ localizedModelName(model) }}</strong><small>{{ MODEL_TYPE_SHORT_LABELS[model.modelType] }} · {{ model.modelCode }}</small>
+                  </div>
+                </td>
+                <td>
+                  <VtBadge tone="neutral">
+                    {{ providerName(model, providers) }}
+                  </VtBadge>
+                </td>
+                <td>
+                  <VtSwitch
+                    :model-value="model.isEnabled"
+                    :label="`Bật ${localizedModelName(model)}`"
+                    :aria-label="`${model.isEnabled ? 'Tắt' : 'Bật'} ${localizedModelName(model)}`"
+                    :show-label="false"
+                    :disabled="model.isDefault && model.isEnabled"
+                    @update:model-value="emit('enabled', model, $event)"
+                  />
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    class="default-toggle"
+                    :class="{ active: model.isDefault }"
+                    :aria-pressed="model.isDefault"
+                    :aria-label="`${model.isDefault ? 'Bỏ mặc định' : 'Đặt mặc định'} ${localizedModelName(model)}`"
+                    @click="emit('default', model)"
+                  >
+                    <span class="default-dot" />{{ model.isDefault ? 'Mặc định' : 'Đặt mặc định' }}
+                  </button>
+                </td>
+                <td v-if="activeType === 'TTS'">
+                  <button
+                    type="button"
+                    class="voice-link"
+                    @click="emit('voices', model)"
+                  >
+                    <Volume2 :size="14" />{{ voiceValue(model) }}
+                  </button>
+                </td>
+                <td>
+                  <div class="row-actions">
+                    <VtIconButton
+                      :icon="Pencil"
+                      :label="`Sửa ${localizedModelName(model)}`"
+                      size="sm"
+                      variant="soft"
+                      @click="emit('edit', model)"
+                    />
+                    <VtIconButton
+                      :icon="Copy"
+                      :label="`Nhân bản ${localizedModelName(model)}`"
+                      size="sm"
+                      variant="soft"
+                      @click="emit('duplicate', model)"
+                    />
+                    <VtIconButton
+                      :icon="Trash2"
+                      :label="`Xóa ${localizedModelName(model)}`"
+                      size="sm"
+                      variant="danger"
+                      @click="emit('remove', model)"
+                    />
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="mobile-card-list">
+        <div class="mobile-list-toolbar">
+          <VtCheckbox
+            label="Chọn tất cả model"
+            aria-label="Chọn tất cả model"
+            :show-label="false"
+            :model-value="allSelected"
+            @update:model-value="emit('toggleAll')"
+          />
+          <span>Chọn tất cả</span>
+        </div>
+        <article
+          v-for="model in items"
+          :key="`mobile-${model.id}`"
+          class="model-card"
+        >
+          <header class="mobile-card-header">
+            <VtCheckbox
+              :label="`Chọn ${localizedModelName(model)}`"
+              :show-label="false"
+              :model-value="selectedIds.includes(model.id)"
+              @update:model-value="emit('toggle', model.id, $event)"
+            />
+            <div class="mobile-card-name">
+              <strong :title="localizedModelName(model)">{{ localizedModelName(model) }}</strong>
+              <code :title="model.id">{{ model.id }}</code>
+            </div>
+            <VtBadge :tone="model.isDefault ? 'primary' : 'neutral'">
+              {{ model.isDefault ? 'Mặc định' : MODEL_TYPE_SHORT_LABELS[model.modelType] }}
+            </VtBadge>
+          </header>
+          <dl class="mobile-card-meta">
+            <div>
+              <dt>Provider</dt><dd :title="providerName(model, providers)">
                 {{ providerName(model, providers) }}
-              </VtBadge>
-            </td>
-            <td>
-              <VtSwitch
-                :model-value="model.isEnabled"
-                :label="`Bật ${model.modelName}`"
-                :aria-label="`${model.isEnabled ? 'Tắt' : 'Bật'} ${model.modelName}`"
-                :show-label="false"
-                :disabled="model.isDefault && model.isEnabled"
-                @update:model-value="emit('enabled', model, $event)"
+              </dd>
+            </div>
+            <div>
+              <dt>Trạng thái</dt><dd>
+                <VtSwitch
+                  :model-value="model.isEnabled"
+                  :label="`${model.isEnabled ? 'Tắt' : 'Bật'} ${localizedModelName(model)}`"
+                  :show-label="false"
+                  :disabled="model.isDefault && model.isEnabled"
+                  @update:model-value="emit('enabled', model, $event)"
+                />
+              </dd>
+            </div>
+            <div v-if="activeType === 'TTS'">
+              <dt>Giọng</dt><dd>
+                <button
+                  type="button"
+                  class="voice-link"
+                  @click="emit('voices', model)"
+                >
+                  <Volume2 :size="14" />{{ voiceValue(model) }}
+                </button>
+              </dd>
+            </div>
+          </dl>
+          <footer class="mobile-card-actions">
+            <button
+              type="button"
+              class="default-toggle"
+              :class="{ active: model.isDefault }"
+              :aria-pressed="model.isDefault"
+              :aria-label="`${model.isDefault ? 'Bỏ mặc định' : 'Đặt mặc định'} ${localizedModelName(model)}`"
+              @click="emit('default', model)"
+            >
+              <span class="default-dot" />{{ model.isDefault ? 'Mặc định' : 'Đặt mặc định' }}
+            </button>
+            <div class="row-actions">
+              <VtIconButton
+                :icon="Pencil"
+                :label="`Sửa ${localizedModelName(model)}`"
+                size="sm"
+                variant="soft"
+                @click="emit('edit', model)"
               />
-            </td>
-            <td>
-              <button
-                type="button"
-                class="default-toggle"
-                :class="{ active: model.isDefault }"
-                :aria-pressed="model.isDefault"
-                :aria-label="`${model.isDefault ? 'Bỏ mặc định' : 'Đặt mặc định'} ${model.modelName}`"
-                @click="emit('default', model)"
-              >
-                <span class="default-dot" />{{ model.isDefault ? 'Mặc định' : 'Đặt mặc định' }}
-              </button>
-            </td>
-            <td v-if="activeType === 'TTS'">
-              <button
-                type="button"
-                class="voice-link"
-                @click="emit('voices', model)"
-              >
-                <Volume2 :size="14" />{{ voiceValue(model) }}
-              </button>
-            </td>
-            <td>
-              <div class="row-actions">
-                <VtIconButton
-                  :icon="Pencil"
-                  :label="`Sửa ${model.modelName}`"
-                  size="sm"
-                  variant="soft"
-                  @click="emit('edit', model)"
-                />
-                <VtIconButton
-                  :icon="Copy"
-                  :label="`Nhân bản ${model.modelName}`"
-                  size="sm"
-                  variant="soft"
-                  @click="emit('duplicate', model)"
-                />
-                <VtIconButton
-                  :icon="Trash2"
-                  :label="`Xóa ${model.modelName}`"
-                  size="sm"
-                  variant="danger"
-                  @click="emit('remove', model)"
-                />
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              <VtIconButton
+                :icon="Copy"
+                :label="`Nhân bản ${localizedModelName(model)}`"
+                size="sm"
+                variant="soft"
+                @click="emit('duplicate', model)"
+              />
+              <VtIconButton
+                :icon="Trash2"
+                :label="`Xóa ${localizedModelName(model)}`"
+                size="sm"
+                variant="danger"
+                @click="emit('remove', model)"
+              />
+            </div>
+          </footer>
+        </article>
+      </div>
     </div>
   </div>
 </template>
@@ -173,6 +279,7 @@ function voiceValue(model: ModelConfigRecord): string {
 <style scoped>
 .model-table-shell { min-width: 0; overflow: hidden; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-card); background: var(--vt-surface); }
 .table-scroll { overflow-x: auto; }
+.mobile-card-list { display: none; }
 .model-table { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; }
 .model-table th, .model-table td { border-bottom: 1px solid var(--vt-border); padding: 11px 12px; text-align: left; vertical-align: middle; }
 .model-table th { background: var(--vt-surface-subtle); color: var(--vt-text-muted); font-size: 10px; font-weight: 700; white-space: nowrap; }
@@ -201,4 +308,23 @@ function voiceValue(model: ModelConfigRecord): string {
 .voice-link { color: var(--vt-primary-text); }
 .row-actions { display: flex; justify-content: flex-end; gap: 3px; }
 .table-state { color: var(--vt-text-muted); padding: 48px 20px; text-align: center; }
+.mobile-table-hint { display: none; margin: 0; border-bottom: 1px solid var(--vt-border); background: var(--vt-surface-subtle); color: var(--vt-text-faint); padding: 7px 10px; font-size: 9px; }
+.mobile-list-toolbar { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--vt-border); color: var(--vt-text-muted); padding: 10px 11px; font-size: 11px; }
+.model-card { display: grid; gap: 11px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-section); background: var(--vt-surface); padding: 12px; }
+.mobile-card-header, .mobile-card-actions { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.mobile-card-name { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.mobile-card-name strong, .mobile-card-name code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-card-name strong { color: var(--vt-text); font-size: 12px; font-weight: 650; }
+.mobile-card-name code { color: var(--vt-primary-text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; }
+.mobile-card-meta { display: grid; gap: 7px; margin: 0; border-top: 1px solid var(--vt-border); border-bottom: 1px solid var(--vt-border); padding: 10px 0; }
+.mobile-card-meta > div { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; }
+.mobile-card-meta dt { color: var(--vt-text-muted); font-size: 10px; }
+.mobile-card-meta dd { min-width: 0; margin: 0; color: var(--vt-text); font-size: 10px; font-weight: 600; text-align: right; }
+.mobile-card-meta dd:not(:has(.vt-switch)) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-card-actions { justify-content: space-between; }
+@media (max-width: 820px) {
+  .desktop-table { display: none; }
+  .mobile-card-list { display: grid; gap: 8px; }
+  .model-table-shell { border: 0; background: transparent; }
+}
 </style>

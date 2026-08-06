@@ -32,13 +32,14 @@ describe('AiServicesOverviewFeature', () => {
     expect((await view.findAllByText('PhoWhisper-small')).length).toBeGreaterThan(0)
     expect((await view.findAllByText('VieNeu-v3-turbo')).length).toBeGreaterThan(0)
     expect((await view.findAllByText('SileroVAD')).length).toBeGreaterThan(0)
-    expect(view.getByText('Provider schema')).toBeTruthy()
+    expect((await view.findAllByText('Quản lý provider')).length).toBeGreaterThan(0)
+    expect(view.container.textContent ?? '').not.toMatch(/[\u3400-\u9fff]/u)
   })
 
   it('navigates from the overview to model management', async () => {
     const { view, router } = await renderOverview()
 
-    await fireEvent.click(await view.findByRole('button', { name: 'Mở Model Configuration' }))
+    await fireEvent.click(await view.findByRole('button', { name: 'Cấu hình model' }))
     await waitFor(() => expect(router.currentRoute.value.path).toBe('/model-config'))
   })
 })

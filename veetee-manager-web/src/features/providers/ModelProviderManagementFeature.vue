@@ -19,7 +19,7 @@ import { notify } from '@/ui/primitives/notifications'
 import ModelFieldInspector from './ModelFieldInspector.vue'
 import ModelProviderDialog from './ModelProviderDialog.vue'
 import ModelProviderTable from './ModelProviderTable.vue'
-import { MODEL_TYPE_LABELS, MODEL_TYPE_ORDER, normalizeModelSearch } from './model-registry-labels'
+import { localizedProviderName, MODEL_TYPE_LABELS, MODEL_TYPE_ORDER, normalizeModelSearch } from './model-registry-labels'
 
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
 const route = useRoute()
@@ -41,6 +41,7 @@ const inspectorOpen = ref(false)
 const inspectorProvider = ref<ModelProviderRecord>()
 const deleteTarget = ref<ModelProviderRecord>()
 const deleting = ref(false)
+let loadGeneration = 0
 
 const categoryOptions: VtSelectOption[] = [{ value: 'all', label: 'Tất cả danh mục' }, ...MODEL_TYPE_ORDER.map((value) => ({ value, label: MODEL_TYPE_LABELS[value] }))]
 const pageSizeOptions: VtSelectOption[] = [
@@ -68,9 +69,11 @@ const allSelected = computed(() => pagedProviders.value.length > 0 && pagedProvi
 const selectedProviders = computed(() => providers.value.filter((provider) => selectedIds.value.includes(provider.id)))
 
 async function load() {
+  const generation = ++loadGeneration
   loading.value = true
   loadError.value = ''
   const result = await gateway.listModelProviders()
+  if (generation !== loadGeneration) return
   if (!result.ok) {
     loadError.value = 'Không tải được danh sách provider. Kiểm tra máy chủ quản trị rồi thử lại.'
   } else {
@@ -83,6 +86,13 @@ async function load() {
 function applyFilter() {
   query.value = searchInput.value.trim()
   page.value = 1
+  void router.replace({
+    query: {
+      ...route.query,
+      ...(query.value ? { q: query.value } : { q: undefined }),
+      page: undefined,
+    },
+  })
 }
 
 function clearFilter() {
@@ -132,7 +142,7 @@ async function saveProvider(input: { modelType: ModelType; providerCode: string;
   const saved = result.data
   providers.value = editingProvider.value ? providers.value.map((provider) => provider.id === saved.id ? saved : provider) : [...providers.value, saved]
   dialogOpen.value = false
-  notify(editingProvider.value ? 'Đã cập nhật provider' : 'Đã thêm provider', { tone: 'success', message: saved.name })
+  notify(editingProvider.value ? 'Đã cập nhật provider' : 'Đã thêm provider', { tone: 'success', message: localizedProviderName(saved) })
 }
 
 async function deleteProvider(provider: ModelProviderRecord) {
@@ -140,14 +150,14 @@ async function deleteProvider(provider: ModelProviderRecord) {
   const result = await gateway.deleteModelProvider(provider.id, provider.etag)
   deleting.value = false
   if (!result.ok) {
-    notify('Không xóa được provider', { tone: 'error', message: 'Provider đang được model sử dụng hoặc đã thay đổi.' })
+    notify('Không xóa được provider', { tone: 'error', message: 'Provider đang được model sử dụng hoặc dữ liệu đã thay đổi.' })
     return
   }
   providers.value = providers.value.filter((item) => item.id !== provider.id)
   selectedIds.value = selectedIds.value.filter((id) => id !== provider.id)
   page.value = Math.min(page.value, pageCount.value)
   deleteTarget.value = undefined
-  notify('Đã xóa provider', { tone: 'success', message: provider.name })
+  notify('Đã xóa provider', { tone: 'success', message: localizedProviderName(provider) })
 }
 
 async function deleteSelected() {
@@ -155,7 +165,7 @@ async function deleteSelected() {
   for (const provider of targets) {
     const result = await gateway.deleteModelProvider(provider.id, provider.etag)
     if (!result.ok) {
-      notify('Xóa chưa hoàn tất', { tone: 'error', message: `Không thể xóa ${provider.name}.` })
+      notify('Xóa chưa hoàn tất', { tone: 'error', message: `Không thể xóa ${localizedProviderName(provider)}.` })
       await load()
       return
     }
@@ -170,8 +180,21 @@ function previousPage() { if (page.value > 1) page.value -= 1 }
 function nextPage() { if (page.value < pageCount.value) page.value += 1 }
 
 watch([category, pageSize], () => { page.value = 1 })
+watch(category, (value) => {
+  const query = { ...route.query }
+  if (value === 'all') delete query.type
+  else query.type = value
+  void router.replace({ query })
+})
 watch(() => route.query.type, (value) => {
   if (typeof value === 'string' && MODEL_TYPE_ORDER.includes(value as ModelType)) category.value = value as ModelType
+}, { immediate: true })
+watch(() => route.query.q, (value) => {
+  const next = typeof value === 'string' ? value : ''
+  if (query.value === next && searchInput.value === next) return
+  query.value = next
+  searchInput.value = next
+  page.value = 1
 }, { immediate: true })
 onMounted(load)
 </script>
@@ -180,7 +203,7 @@ onMounted(load)
   <section class="provider-management">
     <PageHeader
       title="Quản lý provider"
-      :subtitle="`${providers.length} provider · schema dùng chung cho Model Configuration`"
+      :subtitle="`${providers.length} provider · schema dùng chung cho cấu hình model`"
       :icon="Settings2"
     >
       <template #actions>
@@ -196,7 +219,7 @@ onMounted(load)
           variant="primary"
           @click="router.push('/model-config')"
         >
-          Model Configuration
+          Cấu hình model
         </VtButton>
       </template>
     </PageHeader>
@@ -313,7 +336,7 @@ onMounted(load)
     <ModelFieldInspector
       v-model:open="inspectorOpen"
       :fields="inspectorProvider?.fields ?? []"
-      :title="`Trường cấu hình · ${inspectorProvider?.name ?? 'provider'}`"
+      :title="`Trường cấu hình · ${inspectorProvider ? localizedProviderName(inspectorProvider) : 'provider'}`"
     />
     <VtDialog
       :open="Boolean(deleteTarget)"
@@ -323,7 +346,7 @@ onMounted(load)
       @update:open="(open) => !open && (deleteTarget = undefined)"
     >
       <p class="confirm-copy">
-        Bạn chắc chắn muốn xóa <strong>{{ deleteTarget?.name }}</strong>?
+        Bạn chắc chắn muốn xóa <strong>{{ deleteTarget ? localizedProviderName(deleteTarget) : '' }}</strong>?
       </p>
       <template #footer>
         <VtButton @click="deleteTarget = undefined">

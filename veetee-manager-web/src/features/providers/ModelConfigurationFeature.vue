@@ -18,7 +18,7 @@ import { notify } from '@/ui/primitives/notifications'
 
 import ModelConfigDialog from './ModelConfigDialog.vue'
 import ModelConfigTable from './ModelConfigTable.vue'
-import { MODEL_TYPE_DESCRIPTIONS, MODEL_TYPE_LABELS, MODEL_TYPE_ORDER } from './model-registry-labels'
+import { localizedModelName, MODEL_TYPE_DESCRIPTIONS, MODEL_TYPE_LABELS, MODEL_TYPE_ORDER } from './model-registry-labels'
 
 const router = useRouter()
 const route = useRoute()
@@ -36,7 +36,8 @@ const searchInput = ref('')
 const query = ref('')
 const loadingProviders = ref(true)
 const loadingModels = ref(true)
-const error = ref('')
+const providerError = ref('')
+const modelError = ref('')
 const selectedIds = ref<string[]>([])
 const dialogOpen = ref(false)
 const editingModel = ref<ModelConfigRecord>()
@@ -44,6 +45,7 @@ const duplicateMode = ref(false)
 const saving = ref(false)
 const deleteTarget = ref<ModelConfigRecord>()
 const deleting = ref(false)
+let modelLoadGeneration = 0
 
 const categoryOptions: VtSelectOption[] = [
   { value: '10', label: '10 model / trang' },
@@ -60,21 +62,25 @@ const rangeLabel = computed(() => {
   return `${start}–${end} / ${total.value} model`
 })
 const activeLabel = computed(() => MODEL_TYPE_LABELS[activeType.value])
+const error = computed(() => providerError.value || modelError.value)
 
 async function loadProviders() {
   loadingProviders.value = true
+  providerError.value = ''
   const result = await gateway.listModelProviders()
   if (result.ok) providers.value = result.data
-  else error.value = 'Không tải được danh sách provider schema.'
+  else providerError.value = 'Không tải được danh sách schema provider.'
   loadingProviders.value = false
 }
 
 async function loadModels() {
+  const generation = ++modelLoadGeneration
   loadingModels.value = true
-  error.value = ''
+  modelError.value = ''
   const result = await gateway.listModelConfigs({ modelType: activeType.value, modelName: query.value || undefined, page: page.value, limit: limit.value })
+  if (generation !== modelLoadGeneration) return
   if (!result.ok) {
-    error.value = 'Không tải được danh sách model. Kiểm tra máy chủ quản trị rồi thử lại.'
+    modelError.value = 'Không tải được danh sách model. Kiểm tra máy chủ quản trị rồi thử lại.'
   } else {
     models.value = result.data.items
     total.value = result.data.total
@@ -84,16 +90,28 @@ async function loadModels() {
   loadingModels.value = false
 }
 
+function reloadData() {
+  void Promise.all([loadProviders(), loadModels()])
+}
+
 function selectType(type: ModelType) {
   if (activeType.value === type) return
   activeType.value = type
   page.value = 1
   selectedIds.value = []
+  void router.replace({ query: { ...route.query, type } })
 }
 
 function applySearch() {
   query.value = searchInput.value.trim()
   page.value = 1
+  void router.replace({
+    query: {
+      ...route.query,
+      ...(query.value ? { q: query.value } : { q: undefined }),
+      page: undefined,
+    },
+  })
 }
 
 function clearSearch() {
@@ -138,7 +156,7 @@ async function saveModel(input: { modelType: ModelType; providerCode: string; id
     return
   }
   dialogOpen.value = false
-  notify(editingModel.value && !duplicateMode.value ? 'Đã cập nhật model' : 'Đã thêm model', { tone: 'success', message: result.data.modelName })
+  notify(editingModel.value && !duplicateMode.value ? 'Đã cập nhật model' : 'Đã thêm model', { tone: 'success', message: localizedModelName(result.data) })
   await loadModels()
 }
 
@@ -160,7 +178,7 @@ async function setDefault(model: ModelConfigRecord) {
     return
   }
   await loadModels()
-  notify('Đã đặt model mặc định', { tone: 'success', message: model.modelName })
+  notify('Đã đặt model mặc định', { tone: 'success', message: localizedModelName(model) })
 }
 
 function openDelete(model: ModelConfigRecord) {
@@ -177,7 +195,7 @@ async function deleteModel(model: ModelConfigRecord) {
   }
   deleteTarget.value = undefined
   await loadModels()
-  notify('Đã xóa model', { tone: 'success', message: model.modelName })
+  notify('Đã xóa model', { tone: 'success', message: localizedModelName(model) })
 }
 
 async function deleteSelected() {
@@ -185,7 +203,7 @@ async function deleteSelected() {
   for (const model of targets) {
     const result = await gateway.deleteModelConfig(model.id, model.etag)
     if (!result.ok) {
-      notify('Xóa chưa hoàn tất', { tone: 'error', message: `Không thể xóa ${model.modelName}.` })
+      notify('Xóa chưa hoàn tất', { tone: 'error', message: `Không thể xóa ${localizedModelName(model)}.` })
       await loadModels()
       return
     }
@@ -202,7 +220,7 @@ function openVoiceManagement(model: ModelConfigRecord) {
 function previousPage() { if (page.value > 1) { page.value -= 1 } }
 function nextPage() { if (page.value < pageCount.value) { page.value += 1 } }
 
-watch([activeType, page, limit], () => { void loadModels() })
+watch([activeType, page, limit, query], () => { void loadModels() })
 watch(limit, () => { page.value = 1 })
 watch(() => route.query.type, (value) => {
   if (typeof value === 'string' && MODEL_TYPE_ORDER.includes(value as ModelType)) {
@@ -210,13 +228,20 @@ watch(() => route.query.type, (value) => {
     page.value = 1
   }
 }, { immediate: true })
-onMounted(async () => { await loadProviders(); await loadModels() })
+watch(() => route.query.q, (value) => {
+  const next = typeof value === 'string' ? value : ''
+  if (query.value === next && searchInput.value === next) return
+  query.value = next
+  searchInput.value = next
+  page.value = 1
+}, { immediate: true })
+onMounted(reloadData)
 </script>
 
 <template>
   <section class="model-configuration">
     <PageHeader
-      title="Model Configuration"
+      title="Cấu hình model"
       :subtitle="`${activeLabel} · ${rangeLabel}`"
       :icon="SlidersHorizontal"
     >
@@ -227,7 +252,7 @@ onMounted(async () => { await loadProviders(); await loadModels() })
               :icon="Settings2"
               :size="14"
             />
-          </template>Provider Management
+          </template>Quản lý provider
         </VtButton>
         <VtButton
           variant="primary"
@@ -311,7 +336,7 @@ onMounted(async () => { await loadProviders(); await loadModels() })
           >
             {{ error }} <VtButton
               size="sm"
-              @click="loadModels"
+              @click="reloadData"
             >
               Thử lại
             </VtButton>
@@ -321,7 +346,7 @@ onMounted(async () => { await loadProviders(); await loadModels() })
             class="empty-provider-state"
           >
             <strong>Chưa có provider cho {{ activeLabel }}</strong>
-            <span>Thêm provider schema trước, sau đó model config sẽ tự sinh field theo schema.</span>
+            <span>Thêm schema provider trước, sau đó cấu hình model sẽ tự sinh trường theo schema.</span>
             <VtButton
               size="sm"
               variant="primary"
@@ -333,7 +358,7 @@ onMounted(async () => { await loadProviders(); await loadModels() })
                   :size="13"
                 />
               </template>
-              Thêm provider schema
+              Thêm schema provider
             </VtButton>
           </div>
           <ModelConfigTable
@@ -406,7 +431,7 @@ onMounted(async () => { await loadProviders(); await loadModels() })
       @update:open="(open) => !open && (deleteTarget = undefined)"
     >
       <p class="confirm-copy">
-        Bạn chắc chắn muốn xóa <strong>{{ deleteTarget?.modelName }}</strong>?
+        Bạn chắc chắn muốn xóa <strong>{{ deleteTarget ? localizedModelName(deleteTarget) : '' }}</strong>?
       </p>
       <template #footer>
         <VtButton @click="deleteTarget = undefined">
@@ -438,6 +463,7 @@ onMounted(async () => { await loadProviders(); await loadModels() })
 .category-copy strong, .category-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .category-copy strong { color: inherit; font-size: 10px; font-weight: 650; }
 .category-copy small { color: var(--vt-text-faint); font-size: 8px; }
+.category-item.active .category-copy small { color: var(--vt-primary-text); }
 .configuration-main { display: grid; min-width: 0; gap: 13px; padding: 14px; }
 .operation-bar { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .search-control { min-width: 220px; flex: 1; }.search-group { display: flex; min-width: 0; align-items: center; gap: 6px; }.search-group > :first-child { min-width: 0; flex: 1; }

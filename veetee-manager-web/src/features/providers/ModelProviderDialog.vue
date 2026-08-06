@@ -12,7 +12,7 @@ import VtInput from '@/ui/primitives/VtInput.vue'
 import VtSelect, { type VtSelectOption } from '@/ui/primitives/VtSelect.vue'
 import VtSwitch from '@/ui/primitives/VtSwitch.vue'
 
-import { MODEL_TYPE_LABELS, MODEL_TYPE_ORDER } from './model-registry-labels'
+import { localizedFieldLabel, localizedProviderName, MODEL_TYPE_LABELS, MODEL_TYPE_ORDER } from './model-registry-labels'
 
 type ProviderDraft = {
   modelType: ModelType
@@ -67,9 +67,9 @@ function fromProvider(provider: ModelProviderRecord): ProviderDraft {
   return {
     modelType: provider.modelType,
     providerCode: provider.providerCode,
-    name: provider.name,
+    name: localizedProviderName(provider),
     sort: String(provider.sort),
-    fields: provider.fields.map((field) => ({ ...field, defaultText: serializeDefault(field.default) })),
+    fields: provider.fields.map((field) => ({ ...field, label: localizedFieldLabel(field), defaultText: serializeDefault(field.default) })),
   }
 }
 
@@ -138,7 +138,7 @@ function submit() {
         <VtFormField
           label="Danh mục"
           for-id="provider-model-type"
-          hint="Danh mục dùng để lọc trong Model Configuration."
+          hint="Danh mục dùng để lọc trong cấu hình model."
         >
           <VtSelect
             id="provider-model-type"

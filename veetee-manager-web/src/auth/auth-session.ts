@@ -40,6 +40,7 @@ export function createAuthSession(baseUrl: string, injectedClient?: ManagerApiCl
   const status = ref<AuthStatus>(isApiMode ? 'checking' : 'preview')
   const user = shallowRef<AuthUser | null>(null)
   let hydration: Promise<AuthStatus> | undefined
+  let hasHydrated = false
 
   async function hydrate(): Promise<AuthStatus> {
     if (!client) {
@@ -47,6 +48,10 @@ export function createAuthSession(baseUrl: string, injectedClient?: ManagerApiCl
       return status.value
     }
     if (status.value === 'authenticated') return status.value
+    // Route guards can run for every click. Once the cookie has been checked,
+    // reuse that result for this app lifetime instead of adding one /me round
+    // trip to every navigation. Login/logout explicitly invalidate the state.
+    if (hasHydrated) return status.value
     if (hydration) return hydration
     hydration = (async () => {
       status.value = 'checking'
@@ -63,6 +68,7 @@ export function createAuthSession(baseUrl: string, injectedClient?: ManagerApiCl
         user.value = null
         status.value = 'unauthenticated'
       }
+      hasHydrated = true
       return status.value
     })().finally(() => { hydration = undefined })
     return hydration
@@ -70,18 +76,22 @@ export function createAuthSession(baseUrl: string, injectedClient?: ManagerApiCl
 
   async function login(email: string, password: string): Promise<AuthResult> {
     if (!client) return { ok: false, failure: { code: 'PREVIEW_MODE' } }
+    hasHydrated = false
     status.value = 'authenticating'
     try {
       const result = await client.POST('/api/v1/auth/login', { body: { email, password } })
       if (result.response.ok && result.data?.user) {
         user.value = result.data.user
         status.value = 'authenticated'
+        hasHydrated = true
         return { ok: true, user: result.data.user }
       }
       status.value = 'unauthenticated'
+      hasHydrated = true
       return { ok: false, failure: { code: responseCode(result.error, result.response.status === 429 ? 'LOGIN_THROTTLED' : 'INVALID_CREDENTIALS') } }
     } catch {
       status.value = 'unauthenticated'
+      hasHydrated = true
       return { ok: false, failure: { code: 'NETWORK_UNAVAILABLE' } }
     }
   }
@@ -96,6 +106,7 @@ export function createAuthSession(baseUrl: string, injectedClient?: ManagerApiCl
     } finally {
       user.value = null
       status.value = 'unauthenticated'
+      hasHydrated = true
     }
   }
 

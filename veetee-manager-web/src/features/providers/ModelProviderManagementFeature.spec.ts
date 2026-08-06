@@ -36,6 +36,6 @@ describe('ModelProviderManagementFeature', () => {
     expect(await view.findByText('1–10 / 63 provider')).toBeTruthy()
     await fireEvent.click(view.getByRole('button', { name: 'Tìm' }))
     expect(await view.findByText('1–1 / 1 provider')).toBeTruthy()
-    expect(view.getByText('Groq streaming')).toBeTruthy()
+    expect((await view.findAllByText('Groq streaming')).length).toBeGreaterThan(0)
   })
 })

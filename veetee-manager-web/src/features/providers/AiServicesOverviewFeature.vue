@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ArrowRight, Boxes, CheckCircle2, CircleAlert, Plus, SlidersHorizontal, Volume2 } from '@lucide/vue'
+import { ArrowRight, Boxes, CircleAlert, Layers3, Plus, SlidersHorizontal, Volume2 } from '@lucide/vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { requireInjection } from '@/app/requireInjection'
-import type { ModelConfigRecord, ModelProviderRecord } from '@/domain'
+import type { ModelConfigRecord, ModelProviderRecord, ModelType } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import VtBadge from '@/ui/primitives/VtBadge.vue'
 import VtButton from '@/ui/primitives/VtButton.vue'
@@ -12,7 +12,17 @@ import VtCard from '@/ui/primitives/VtCard.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
 
 import AiServicesNav from './AiServicesNav.vue'
-import { MODEL_TYPE_LABELS, MODEL_TYPE_ORDER } from './model-registry-labels'
+import { localizedModelName, localizedProviderName, MODEL_TYPE_LABELS, MODEL_TYPE_ORDER } from './model-registry-labels'
+
+const CORE_TYPES = ['VAD', 'ASR', 'LLM', 'TTS'] as const satisfies readonly ModelType[]
+
+type CatalogRow = {
+  type: ModelType
+  label: string
+  providerCount: number
+  modelCount: number
+  defaultModel?: ModelConfigRecord
+}
 
 const router = useRouter()
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
@@ -23,36 +33,56 @@ const loading = ref(true)
 const error = ref('')
 
 const defaults = computed(() => configs.value.filter((item) => item.isDefault))
-const enabledConfigs = computed(() => configs.value.filter((item) => item.isEnabled))
 const defaultByType = computed(() => new Map(defaults.value.map((item) => [item.modelType, item])))
-const typeRows = computed(() => MODEL_TYPE_ORDER.map((type) => ({
+const catalogRows = computed<CatalogRow[]>(() => MODEL_TYPE_ORDER.map((type) => ({
   type,
   label: MODEL_TYPE_LABELS[type],
   providerCount: providers.value.filter((provider) => provider.modelType === type).length,
   modelCount: configs.value.filter((config) => config.modelType === type).length,
   defaultModel: defaultByType.value.get(type),
 })).filter((row) => row.providerCount > 0 || row.modelCount > 0))
+const coreRows = computed(() => catalogRows.value.filter((row) => CORE_TYPES.includes(row.type as (typeof CORE_TYPES)[number])))
+const advancedRows = computed(() => catalogRows.value.filter((row) => !CORE_TYPES.includes(row.type as (typeof CORE_TYPES)[number])))
+const enabledModelCount = computed(() => configs.value.filter((item) => item.isEnabled).length)
+const testedDefaultsReady = computed(() => coreRows.value.filter((row) => row.defaultModel?.isEnabled).length)
+
+function providerFor(model: ModelConfigRecord | undefined): ModelProviderRecord | undefined {
+  if (!model) return undefined
+  return providers.value.find((provider) => provider.modelType === model.modelType && provider.providerCode === model.providerCode)
+}
+
+function openModelConfig(type?: ModelType) {
+  void router.push(type ? { path: '/model-config', query: { type } } : '/model-config')
+}
+
+function openProviderManagement(type?: ModelType) {
+  void router.push(type ? { path: '/provider-management', query: { type } } : '/provider-management')
+}
 
 async function load() {
   loading.value = true
   error.value = ''
-  const providerResult = await gateway.listModelProviders()
-  const results = await Promise.all(MODEL_TYPE_ORDER.map((modelType) => gateway.listModelConfigs({ modelType, page: 1, limit: 100 })))
-  const voicesResult = await gateway.listVoices('vi-VN')
-  const modelResult = results.find((result) => !result.ok)
-  if (!providerResult.ok || modelResult && !modelResult.ok) {
-    error.value = 'Không tải được catalog dịch vụ. Bạn vẫn có thể mở từng mục để thử lại.'
+  try {
+    const [providerResult, modelResult, voicesResult] = await Promise.all([
+      gateway.listModelProviders(),
+      // The API can return all catalog rows in one bounded page. This avoids
+      // one request per category and keeps the overview fast as categories
+      // are added. The management screen still owns normal pagination.
+      gateway.listModelConfigs({ page: 1, limit: 100 }),
+      gateway.listVoices('vi-VN'),
+    ])
+    if (!providerResult.ok || !modelResult.ok) {
+      error.value = 'Không tải được catalog AI. Hãy thử lại hoặc mở trực tiếp phần cấu hình.'
+      return
+    }
+    providers.value = providerResult.data
+    configs.value = modelResult.data.items
+    voiceCount.value = voicesResult.ok ? voicesResult.data.total : 0
+  } catch {
+    error.value = 'Không kết nối được máy chủ quản trị. Hãy thử lại sau.'
+  } finally {
     loading.value = false
-    return
   }
-  providers.value = providerResult.data
-  configs.value = results.flatMap((result) => result.ok ? result.data.items : [])
-  voiceCount.value = voicesResult.ok ? voicesResult.data.total : 0
-  loading.value = false
-}
-
-function go(path: string) {
-  void router.push(path)
 }
 
 onMounted(() => { void load() })
@@ -61,58 +91,49 @@ onMounted(() => { void load() })
 <template>
   <section class="services-overview">
     <AiServicesNav />
-    <VtCard class="overview-hero">
-      <div class="hero-copy">
-        <VtBadge tone="primary">
-          Control plane
-        </VtBadge>
+
+    <header class="page-intro">
+      <div class="intro-copy">
+        <p class="eyebrow">
+          Thiết lập AI
+        </p>
         <h1>Dịch vụ AI</h1>
-        <p>Quản lý provider schema và model config theo từng capability. Thay đổi ở đây chỉ tác động đến cấu hình được publish; không làm thay đổi wire protocol hay pipeline hội thoại đang chạy.</p>
-        <div class="hero-actions">
-          <VtButton
-            variant="primary"
-            @click="go('/model-config')"
-          >
-            <template #leading>
-              <VtIcon
-                :icon="SlidersHorizontal"
-                :size="14"
-              />
-            </template>
-            Mở Model Configuration
-          </VtButton>
-          <VtButton @click="go('/provider-management')">
-            <template #leading>
-              <VtIcon
-                :icon="Boxes"
-                :size="14"
-              />
-            </template>
-            Quản lý provider schema
-          </VtButton>
-        </div>
+        <p class="lede">
+          Chọn đúng nơi cần thao tác: model, schema provider hoặc giọng đọc. Các thay đổi ở đây chỉ là cấu hình quản trị; luồng giao tiếp đã kiểm thử vẫn giữ nguyên.
+        </p>
       </div>
-      <div
-        class="hero-illustration"
-        aria-hidden="true"
-      >
-        <div class="illustration-ring ring-one" />
-        <div class="illustration-ring ring-two" />
-        <div class="illustration-core">
-          <VtIcon
-            :icon="SlidersHorizontal"
-            :size="28"
-          />
-        </div>
+      <div class="intro-actions">
+        <VtButton
+          variant="primary"
+          @click="openModelConfig()"
+        >
+          <template #leading>
+            <VtIcon
+              :icon="SlidersHorizontal"
+              :size="14"
+            />
+          </template>
+          Cấu hình model
+        </VtButton>
+        <VtButton @click="openProviderManagement()">
+          <template #leading>
+            <VtIcon
+              :icon="Boxes"
+              :size="14"
+            />
+          </template>
+          Quản lý provider
+        </VtButton>
       </div>
-    </VtCard>
+    </header>
 
     <div
       v-if="error"
       class="load-error"
       role="alert"
     >
-      <CircleAlert :size="15" />{{ error }}
+      <CircleAlert :size="15" />
+      <span>{{ error }}</span>
       <VtButton
         size="sm"
         @click="load"
@@ -122,139 +143,183 @@ onMounted(() => { void load() })
     </div>
 
     <div
-      class="summary-grid"
+      class="quick-links"
       :aria-busy="loading"
     >
-      <VtCard class="summary-card">
-        <span class="summary-icon blue"><Boxes :size="16" /></span><div><strong>{{ loading ? '—' : providers.length }}</strong><span>Provider schema</span></div><small>Có thể dùng lại cho nhiều model</small>
-      </VtCard>
-      <VtCard class="summary-card">
-        <span class="summary-icon violet"><SlidersHorizontal :size="16" /></span><div><strong>{{ loading ? '—' : configs.length }}</strong><span>Model config</span></div><small>{{ enabledConfigs.length }} model đang bật</small>
-      </VtCard>
-      <VtCard class="summary-card">
-        <span class="summary-icon green"><CheckCircle2 :size="16" /></span><div><strong>{{ loading ? '—' : defaults.length }}</strong><span>Default đang chọn</span></div><small>Mỗi capability có một lựa chọn</small>
-      </VtCard>
-      <VtCard class="summary-card">
-        <span class="summary-icon orange"><Volume2 :size="16" /></span><div><strong>{{ loading ? '—' : voiceCount }}</strong><span>Voice khả dụng</span></div><small>Quản lý trong thư viện giọng</small>
-      </VtCard>
+      <button
+        type="button"
+        class="quick-link"
+        @click="openModelConfig()"
+      >
+        <span class="quick-icon blue"><SlidersHorizontal :size="17" /></span>
+        <span class="quick-copy"><strong>Cấu hình model</strong><small>{{ loading ? 'Đang tải…' : `${configs.length} model · ${enabledModelCount} đang bật` }}</small></span>
+        <ArrowRight :size="15" />
+      </button>
+      <button
+        type="button"
+        class="quick-link"
+        @click="openProviderManagement()"
+      >
+        <span class="quick-icon violet"><Boxes :size="17" /></span>
+        <span class="quick-copy"><strong>Quản lý provider</strong><small>{{ loading ? 'Đang tải…' : `${providers.length} schema có thể dùng lại` }}</small></span>
+        <ArrowRight :size="15" />
+      </button>
+      <button
+        type="button"
+        class="quick-link"
+        @click="void router.push('/providers/tts/voices')"
+      >
+        <span class="quick-icon orange"><Volume2 :size="17" /></span>
+        <span class="quick-copy"><strong>Thư viện giọng</strong><small>{{ loading ? 'Đang tải…' : `${voiceCount} giọng đang khả dụng` }}</small></span>
+        <ArrowRight :size="15" />
+      </button>
     </div>
 
-    <div class="overview-columns">
-      <VtCard class="defaults-card">
-        <header class="section-header">
-          <div><h2>Stack mặc định</h2><p>Những lựa chọn được dùng khi tạo/publish cấu hình.</p></div><VtButton
-            size="sm"
-            variant="ghost"
-            @click="go('/model-config')"
-          >
-            Xem tất cả <ArrowRight :size="13" />
-          </VtButton>
-        </header>
-        <div
-          v-if="loading"
-          class="overview-state"
-        >
-          Đang tải catalog…
-        </div>
-        <div
-          v-else
-          class="default-list"
-        >
-          <div
-            v-for="row in typeRows.filter((item) => item.defaultModel)"
-            :key="row.type"
-            class="default-row"
-          >
-            <span class="type-dot">{{ row.type.slice(0, 2) }}</span>
-            <div class="default-copy">
-              <strong>{{ row.label }}</strong><span>{{ row.defaultModel?.modelName }}</span>
-            </div>
-            <code>{{ row.defaultModel?.modelCode }}</code>
-          </div>
-          <div
-            v-if="!defaults.length"
-            class="overview-state"
-          >
-            Chưa có model mặc định.
-          </div>
-        </div>
-      </VtCard>
-      <VtCard class="workflow-card">
-        <header class="section-header">
-          <div><h2>Quản lý theo 3 bước</h2><p>Không cần sửa code khi thêm provider/model mới.</p></div>
-        </header>
-        <ol class="workflow-list">
-          <li><span>1</span><div><strong>Khai báo provider schema</strong><small>Định nghĩa field, type, default và secret metadata.</small></div></li>
-          <li><span>2</span><div><strong>Tạo model config</strong><small>Chọn provider rồi nhập thông số theo schema tự sinh.</small></div></li>
-          <li><span>3</span><div><strong>Đặt default và publish</strong><small>Runtime chỉ nhận snapshot hợp lệ ở boundary hiện có.</small></div></li>
-        </ol>
-        <VtButton
-          variant="secondary"
-          size="sm"
-          @click="go('/provider-management')"
-        >
-          <Plus :size="13" /> Thêm provider schema
-        </VtButton>
-      </VtCard>
-    </div>
-
-    <VtCard class="capability-card">
+    <VtCard class="stack-card">
       <header class="section-header">
-        <div><h2>Catalog theo capability</h2><p>Chọn một danh mục để xem model và thao tác quản lý chi tiết.</p></div>
+        <div>
+          <h2>Đang dùng cho hội thoại</h2>
+          <p>Đây là bốn thành phần đã được chọn và kiểm thử cho luồng nói chuyện hiện tại.</p>
+        </div>
+        <VtBadge :tone="testedDefaultsReady === CORE_TYPES.length ? 'success' : 'warning'">
+          {{ loading ? 'Đang kiểm tra' : `${testedDefaultsReady}/${CORE_TYPES.length} sẵn sàng` }}
+        </VtBadge>
       </header>
-      <div class="capability-grid">
+      <div
+        v-if="loading"
+        class="state-line"
+        role="status"
+      >
+        Đang tải lựa chọn model…
+      </div>
+      <div
+        v-else
+        class="stack-grid"
+      >
         <button
-          v-for="row in typeRows"
+          v-for="row in coreRows"
           :key="row.type"
           type="button"
-          class="capability-row"
-          @click="go(`/model-config?type=${row.type}`)"
+          class="stack-row"
+          @click="openModelConfig(row.type)"
         >
-          <span class="capability-code">{{ row.type }}</span>
-          <span class="capability-copy"><strong>{{ row.label }}</strong><small>{{ row.providerCount }} provider · {{ row.modelCount }} model</small></span>
-          <VtBadge
+          <span class="stack-code">{{ row.type }}</span>
+          <span class="stack-copy">
+            <strong>{{ row.label }}</strong>
+            <small v-if="row.defaultModel">
+              {{ localizedModelName(row.defaultModel) }} · {{ localizedProviderName(providerFor(row.defaultModel) ?? { modelType: row.type, providerCode: row.defaultModel.providerCode, name: row.defaultModel.providerCode }) }}
+            </small>
+            <small v-else>Chưa đặt model mặc định</small>
+          </span>
+          <span
             v-if="row.defaultModel"
+            class="stack-model-code"
+            :title="row.defaultModel.modelCode"
+          >{{ row.defaultModel.modelCode }}</span>
+          <VtBadge
+            v-if="row.defaultModel?.isEnabled"
             tone="success"
           >
-            {{ row.defaultModel.modelCode }}
-          </VtBadge><VtBadge
+            Đang bật
+          </VtBadge>
+          <VtBadge
             v-else
-            tone="neutral"
+            tone="warning"
           >
-            Chưa có default
+            Kiểm tra
           </VtBadge>
           <ArrowRight :size="14" />
         </button>
       </div>
     </VtCard>
+
+    <VtCard class="advanced-card">
+      <header class="section-header">
+        <div>
+          <h2>Danh mục mở rộng</h2>
+          <p>Thêm provider hoặc model mới theo cùng schema, không cần sửa code giao tiếp.</p>
+        </div>
+        <VtButton
+          size="sm"
+          variant="secondary"
+          @click="openProviderManagement()"
+        >
+          <Plus :size="13" /> Thêm provider
+        </VtButton>
+      </header>
+      <div
+        v-if="loading"
+        class="state-line"
+      >
+        Đang tải danh mục…
+      </div>
+      <div
+        v-else-if="advancedRows.length"
+        class="advanced-grid"
+      >
+        <button
+          v-for="row in advancedRows"
+          :key="row.type"
+          type="button"
+          class="advanced-row"
+          @click="openModelConfig(row.type)"
+        >
+          <span class="advanced-code">{{ row.type }}</span>
+          <span class="advanced-copy"><strong>{{ row.label }}</strong><small>{{ row.providerCount }} provider · {{ row.modelCount }} model</small></span>
+          <span class="advanced-default">{{ row.defaultModel ? localizedModelName(row.defaultModel) : 'Chưa có mặc định' }}</span>
+          <ArrowRight :size="14" />
+        </button>
+      </div>
+      <p
+        v-else
+        class="state-line"
+      >
+        Chưa có danh mục mở rộng.
+      </p>
+    </VtCard>
+
+    <div class="workflow-note">
+      <Layers3 :size="16" />
+      <span><strong>Thêm mới theo 3 bước:</strong> tạo schema provider → tạo cấu hình model → đặt mặc định rồi phát hành cấu hình cho trợ lý.</span>
+    </div>
   </section>
 </template>
 
 <style scoped>
 .services-overview { display: grid; gap: 14px; }
-.overview-hero { display: flex; min-height: 190px; align-items: center; justify-content: space-between; gap: 24px; overflow: hidden; padding: 22px 25px; }
-.hero-copy { max-width: 690px; }
-.hero-copy h1 { margin: 9px 0 4px; color: var(--vt-text); font-size: 25px; letter-spacing: -.03em; }
-.hero-copy p { max-width: 650px; margin: 0; color: var(--vt-text-muted); font-size: 11px; line-height: 1.65; }
-.hero-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 17px; }
-.hero-illustration { position: relative; width: 170px; height: 150px; flex: none; }
-.illustration-ring { position: absolute; border: 1px solid #cad8ff; border-radius: 50%; background: rgba(237, 243, 255, .38); }
-.ring-one { inset: 8px 0 0 24px; transform: rotate(18deg); }
-.ring-two { inset: 0 25px 14px 0; transform: rotate(-22deg); }
-.illustration-core { position: absolute; inset: 45px; display: grid; place-items: center; border: 1px solid #a9c0ff; border-radius: 14px; background: var(--vt-primary); color: white; box-shadow: 0 10px 24px rgba(43, 99, 238, .23); }
-.load-error { display: flex; align-items: center; gap: 8px; border: 1px solid #efc2c7; border-radius: var(--vt-radius-control); background: var(--vt-danger-soft); color: var(--vt-danger); padding: 9px 11px; font-size: 10px; }
-.load-error .vt-button { margin-left: auto; }
-.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.summary-card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 9px; row-gap: 2px; padding: 13px; }
-.summary-icon { display: inline-grid; width: 31px; height: 31px; place-items: center; border-radius: 8px; }.summary-icon.blue { background: #edf3ff; color: #2b63ee; }.summary-icon.violet { background: #f2edff; color: #7558ca; }.summary-icon.green { background: #e8f7f1; color: #147a5a; }.summary-icon.orange { background: #fff5e8; color: #b36a1c; }
-.summary-card > div { display: grid; min-width: 0; gap: 1px; }.summary-card strong { color: var(--vt-text); font-size: 19px; line-height: 1.1; }.summary-card span:not(.summary-icon) { color: var(--vt-text-soft); font-size: 10px; font-weight: 650; }.summary-card small { grid-column: 1 / -1; color: var(--vt-text-faint); font-size: 9px; }
-.overview-columns { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(330px, .9fr); gap: 12px; }.defaults-card, .workflow-card, .capability-card { display: grid; gap: 12px; padding: 15px; }
-.section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }.section-header h2 { margin: 0; color: var(--vt-text); font-size: 13px; }.section-header p { margin: 3px 0 0; color: var(--vt-text-muted); font-size: 10px; }.section-header .vt-button { display: inline-flex; align-items: center; gap: 4px; }
-.default-list { display: grid; gap: 6px; }.default-row { display: flex; min-width: 0; align-items: center; gap: 8px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); padding: 8px 9px; }.type-dot { display: inline-grid; width: 30px; height: 24px; flex: none; place-items: center; border-radius: 6px; background: var(--vt-primary-soft); color: var(--vt-primary-text); font-size: 8px; font-weight: 800; }.default-copy { display: grid; min-width: 0; flex: 1; gap: 1px; }.default-copy strong, .default-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.default-copy strong { color: var(--vt-text-soft); font-size: 10px; }.default-copy span { color: var(--vt-text-muted); font-size: 9px; }.default-row code { max-width: 180px; overflow: hidden; color: var(--vt-primary-text); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.workflow-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }.workflow-list li { display: flex; align-items: flex-start; gap: 8px; }.workflow-list li > span { display: inline-grid; width: 22px; height: 22px; flex: none; place-items: center; border-radius: 50%; background: var(--vt-primary-soft); color: var(--vt-primary-text); font-size: 10px; font-weight: 700; }.workflow-list div { display: grid; gap: 2px; }.workflow-list strong { color: var(--vt-text-soft); font-size: 10px; }.workflow-list small { color: var(--vt-text-muted); font-size: 9px; line-height: 1.4; }.workflow-card > .vt-button { justify-self: start; display: inline-flex; align-items: center; gap: 5px; }
-.capability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }.capability-row { display: flex; min-width: 0; align-items: center; gap: 8px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); color: var(--vt-text-soft); padding: 9px; text-align: left; transition: border-color var(--vt-transition), background var(--vt-transition), box-shadow var(--vt-transition); }.capability-row:hover { border-color: #b8caff; background: var(--vt-primary-soft); box-shadow: 0 2px 8px rgba(43, 99, 238, .08); }.capability-row:focus-visible { box-shadow: 0 0 0 3px var(--vt-focus); outline: 0; }.capability-code { display: inline-grid; width: 39px; height: 25px; flex: none; place-items: center; border-radius: 5px; background: var(--vt-surface-muted); color: var(--vt-primary-text); font-size: 9px; font-weight: 800; }.capability-copy { display: grid; min-width: 0; flex: 1; gap: 2px; }.capability-copy strong, .capability-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.capability-copy strong { color: var(--vt-text); font-size: 10px; }.capability-copy small { color: var(--vt-text-muted); font-size: 8px; }.capability-row > .vt-badge { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.capability-row > svg { flex: none; color: var(--vt-text-faint); }
-.overview-state { color: var(--vt-text-muted); padding: 19px; font-size: 10px; text-align: center; }
-@media (max-width: 900px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.overview-columns { grid-template-columns: 1fr; } }
-@media (max-width: 650px) { .overview-hero { align-items: flex-start; padding: 17px; }.hero-illustration { display: none; }.capability-grid { grid-template-columns: 1fr; } }
-@media (max-width: 430px) { .summary-grid { grid-template-columns: 1fr; }.summary-card { grid-template-columns: auto minmax(0, 1fr); } }
+.page-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--vt-border); padding: 4px 0 15px; }
+.intro-copy { max-width: 700px; }
+.eyebrow { margin: 0 0 4px; color: var(--vt-primary); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.page-intro h1 { margin: 0; color: var(--vt-text); font-size: 24px; letter-spacing: -.03em; }
+.lede { max-width: 680px; margin: 6px 0 0; color: var(--vt-text-muted); font-size: 11px; line-height: 1.55; }
+.intro-actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.quick-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.quick-link { display: flex; min-width: 0; align-items: center; gap: 9px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-card); background: var(--vt-surface); color: var(--vt-text); padding: 12px; text-align: left; transition: border-color var(--vt-transition), background var(--vt-transition), box-shadow var(--vt-transition), transform var(--vt-transition); }
+.quick-link:hover { border-color: #b9caff; background: var(--vt-primary-soft); box-shadow: 0 5px 16px rgba(43, 99, 238, .08); transform: translateY(-1px); }
+.quick-link:focus-visible, .stack-row:focus-visible, .advanced-row:focus-visible { box-shadow: 0 0 0 3px var(--vt-focus); outline: 0; }
+.quick-link > svg, .advanced-row > svg, .stack-row > svg { flex: none; color: var(--vt-text-faint); }
+.quick-icon { display: inline-grid; width: 31px; height: 31px; flex: none; place-items: center; border-radius: 8px; }.quick-icon.blue { background: #edf3ff; color: #2b63ee; }.quick-icon.violet { background: #f2edff; color: #7558ca; }.quick-icon.orange { background: #fff5e8; color: #b36a1c; }
+.quick-copy { display: grid; min-width: 0; flex: 1; gap: 2px; }.quick-copy strong, .quick-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.quick-copy strong { color: var(--vt-text); font-size: 11px; }.quick-copy small { color: var(--vt-text-muted); font-size: 9px; }
+.stack-card, .advanced-card { display: grid; gap: 12px; padding: 15px; }
+.section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }.section-header h2 { margin: 0; color: var(--vt-text); font-size: 13px; }.section-header p { margin: 3px 0 0; color: var(--vt-text-muted); font-size: 10px; line-height: 1.45; }
+.section-header :deep(.vt-button) { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+.stack-grid, .advanced-grid { display: grid; gap: 6px; }.stack-row, .advanced-row { display: flex; min-width: 0; align-items: center; gap: 9px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); color: var(--vt-text); padding: 8px 9px; text-align: left; transition: border-color var(--vt-transition), background var(--vt-transition); }.stack-row:hover, .advanced-row:hover { border-color: #b9caff; background: #f8faff; }
+.stack-code, .advanced-code { display: inline-grid; width: 38px; height: 25px; flex: none; place-items: center; border-radius: 6px; background: var(--vt-primary-soft); color: var(--vt-primary-text); font-size: 8px; font-weight: 800; }.stack-copy, .advanced-copy { display: grid; min-width: 0; flex: 1; gap: 2px; }.stack-copy strong, .stack-copy small, .advanced-copy strong, .advanced-copy small, .advanced-default { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.stack-copy strong, .advanced-copy strong { color: var(--vt-text-soft); font-size: 10px; }.stack-copy small, .advanced-copy small { color: var(--vt-text-muted); font-size: 9px; }.stack-model-code { max-width: 185px; overflow: hidden; color: var(--vt-primary-text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }.advanced-default { max-width: 190px; color: var(--vt-primary-text); font-size: 9px; }
+.state-line { border: 1px dashed var(--vt-border-strong); border-radius: var(--vt-radius-control); color: var(--vt-text-muted); padding: 20px; font-size: 10px; text-align: center; }.load-error { display: flex; align-items: center; gap: 8px; border: 1px solid #efc2c7; border-radius: var(--vt-radius-control); background: var(--vt-danger-soft); color: var(--vt-danger); padding: 9px 11px; font-size: 10px; }.load-error span { flex: 1; }.workflow-note { display: flex; align-items: center; gap: 8px; border: 1px solid #dce5ff; border-radius: var(--vt-radius-control); background: #f7f9ff; color: var(--vt-text-muted); padding: 10px 12px; font-size: 10px; }.workflow-note svg { flex: none; color: var(--vt-primary); }.workflow-note strong { color: var(--vt-text-soft); }
+@media (max-width: 880px) { .page-intro { align-items: flex-start; flex-direction: column; }.intro-actions { justify-content: flex-start; }.quick-links { grid-template-columns: 1fr; } }
+@media (max-width: 620px) {
+  .section-header { align-items: flex-start; flex-direction: column; }
+  .stack-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; }
+  .stack-code { grid-row: 1 / span 2; }
+  .stack-copy { grid-column: 2; min-width: 0; }
+  .stack-model-code { grid-column: 2; max-width: 100%; margin: 0; }
+  .stack-row > :deep(.vt-badge) { grid-column: 3; grid-row: 2; margin: 0; }
+  .stack-row > svg { grid-column: 3; grid-row: 1; }
+  .advanced-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; }
+  .advanced-code { grid-row: 1 / span 2; }
+  .advanced-copy { grid-column: 2; }
+  .advanced-default { grid-column: 2 / 4; max-width: 100%; }
+  .advanced-row > svg { grid-column: 3; grid-row: 1; }
+  .workflow-note { align-items: flex-start; }
+}
 </style>

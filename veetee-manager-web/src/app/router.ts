@@ -13,6 +13,33 @@ const AiServicesOverviewView = () => import('@/views/AiServicesOverviewView.vue'
 const ModelConfigurationView = () => import('@/views/ModelConfigurationView.vue')
 const ModelProviderManagementView = () => import('@/views/ModelProviderManagementView.vue')
 const ProviderVoiceCatalogView = () => import('@/views/ProviderVoiceCatalogView.vue')
+const ProviderKindView = () => import('@/views/ProviderKindView.vue')
+
+/**
+ * Route chunks stay lazy so the first page remains small. Navigation surfaces
+ * call this helper on hover/focus/touch to move the compilation/network work
+ * before the click without changing the route contract.
+ */
+const routeLoaders: Readonly<Record<string, () => Promise<unknown>>> = {
+  '/assistants': AssistantIndexView,
+  '/ai-services': AiServicesOverviewView,
+  '/model-config': ModelConfigurationView,
+  '/provider-management': ModelProviderManagementView,
+  '/providers/tts/voices': ProviderVoiceCatalogView,
+  '/providers/llm': ProviderKindView,
+}
+
+const prefetchedRoutes = new Set<string>()
+
+export function prefetchRoute(path: string): void {
+  const loader = routeLoaders[path]
+  if (!loader || prefetchedRoutes.has(path)) return
+  prefetchedRoutes.add(path)
+  void loader().catch(() => {
+    // A failed prefetch must never block a later normal navigation attempt.
+    prefetchedRoutes.delete(path)
+  })
+}
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/assistants' },
@@ -49,10 +76,13 @@ const routes: RouteRecordRaw[] = [
   },
   { path: '/ai-services', name: 'ai-services', component: AiServicesOverviewView, meta: { title: 'Dịch vụ AI' } },
   { path: '/providers', redirect: '/model-config' },
-  { path: '/model-config', name: 'model-config', component: ModelConfigurationView, meta: { title: 'Model Configuration' } },
-  { path: '/provider-management', name: 'provider-management', component: ModelProviderManagementView, meta: { title: 'Provider Management' } },
+  { path: '/model-config', name: 'model-config', component: ModelConfigurationView, meta: { title: 'Cấu hình model' } },
+  { path: '/provider-management', name: 'provider-management', component: ModelProviderManagementView, meta: { title: 'Quản lý provider' } },
   { path: '/providers/tts/voices', name: 'provider-voices', component: ProviderVoiceCatalogView, meta: { title: 'Thư viện giọng nói' } },
-  { path: '/providers/:kind', redirect: '/model-config' },
+  // Keep the per-kind provider configuration route as a compatibility and
+  // advanced-settings surface. The new catalog control plane lives at
+  // /model-config and /provider-management.
+  { path: '/providers/:kind', component: ProviderKindView, meta: { title: 'Cấu hình provider' } },
 ]
 
 if (import.meta.env.DEV && !import.meta.env.VITE_MANAGER_API_URL) {

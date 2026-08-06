@@ -45,4 +45,14 @@ describe('auth session', () => {
     const second = createAuthSession('http://manager.test', offline.client)
     expect(await second.login('owner@example.test', 'wrong')).toEqual({ ok: false, failure: { code: 'NETWORK_UNAVAILABLE' } })
   })
+
+  it('does not re-check the cookie on every route guard after hydration', async () => {
+    const { client, GET } = fakeClient()
+    GET.mockResolvedValue({ response: { ok: false, status: 401 }, error: { code: 'UNAUTHENTICATED' } })
+    const session = createAuthSession('http://manager.test', client)
+
+    expect(await session.hydrate()).toBe('unauthenticated')
+    expect(await session.hydrate()).toBe('unauthenticated')
+    expect(GET).toHaveBeenCalledTimes(1)
+  })
 })
