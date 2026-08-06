@@ -27,6 +27,12 @@ Log chứng minh renderer và font đã được tạo/nhận glyph; việc nhì
 backlight và orientation trên LCD vẫn là physical acceptance, không thể suy ra
 chỉ từ serial.
 
+Manager Web public URL cũng đã được mở bằng Chromium: snapshot có `Veetee
+Manager`, `Không gian quản trị`, `Đăng nhập`, `Email`, `Mật khẩu` và nút
+`Đăng nhập`; screenshot là `output/playwright/ui-public-current.png`. Vì chưa có
+plaintext owner password trong scope, dashboard sau auth không được giả nhận là
+đã kiểm tra bằng browser authenticated.
+
 ## Audio acceptance
 
 Các scenario dùng `idf.py monitor --no-reset`, `pw-play` và explicit
