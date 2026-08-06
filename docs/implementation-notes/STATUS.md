@@ -1,5 +1,15 @@
 # Trạng thái thực thi hiện tại
 
+## Firmware font rendering — 2026-08-06
+
+- Đã xác định lỗi LCD “không có chữ”: bitmap font RLE bị khai báo plain nên
+  LVGL đọc sai offset glyph; panel/layout không phải nguyên nhân.
+- Hai font tiếng Việt đã tái sinh với `--no-compress`, kiểm tra 409 glyph mỗi
+  cỡ không còn span sai; build/flash không erase NVS pass và serial xác nhận
+  ST7789 240×280 cùng `text resources ready ascii=1 vi=1`.
+- Physical acceptance cần nhìn lại LCD sau image mới. Chi tiết và rollback xem
+  [`2026-08-06-firmware-font-rendering-fix.md`](2026-08-06-firmware-font-rendering-fix.md).
+
 ## Trợ lý chọn model và giọng TTS — 2026-08-06
 
 - Đã sửa card `Mô hình & bộ nhớ`: nhãn lựa chọn hiển thị cả model và tên cấu
