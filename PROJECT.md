@@ -35,9 +35,9 @@ và các service port `18xxx`).
   tests** và **16 Chromium E2E** pass; gồm history keyboard, responsive overflow,
   provider schema flow và axe scan không có violation `serious`/`critical` trên
   critical surfaces. Preview/API mode vẫn phải tách rõ khi đọc report.
-- Lượt vận hành hiện tại khóa physical audio test: không phát clip, không mở
-  microphone/loa và không chạy harness audio với ESP32 cho tới khi chủ dự án cấp
-  quyền lại. Host-only tests/firmware build vẫn được phép.
+- Physical audio test đã được chủ dự án cấp quyền lại. Có thể chạy bounded
+  harness với ESP32 khi cần, nhưng report phải redacted và phải tách rõ bằng
+  chứng serial/host với acceptance nghe, nhìn, chạm trên board.
 - Hai thư mục dưới `references/` là snapshot bằng chứng **read-only**. Chỉ đọc
   để kiểm tra protocol/behavior và trích dẫn `path/to/file:line-line`; không fork,
   extend, vendor, copy nguyên khối hoặc sửa chúng. Commit pin, remote và quy trình
