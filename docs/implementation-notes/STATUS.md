@@ -1940,6 +1940,8 @@
   `VEETEE_PRESENCE_HEARTBEAT_MS` mặc định 30 giây, không gửi lại pairing hash.
   Voice suite **194/194**, Ruff pass; runtime sau một chu kỳ giữ
   `activeConnections=1`, `online_state=online` và `age_seconds=11`.
+- Image firmware cuối được build/flash từ commit sạch `7e1315f`; DB hiện báo
+  `firmware_version=7e1315f`, `paired=true`, `online_state=online`, không erase NVS.
 
 # 2026-08-06 — capability-first provider UI và firmware screen model
 

@@ -64,3 +64,6 @@ ESP32 Wi-Fi
   chu kỳ heartbeat.
 - File tạm chứa password và mã ghép nối đã được xóa sau kiểm thử. Source hiện
   không còn `PAIRING_DEBUG_LOCAL_ONLY`.
+- Sau khi commit `7e1315f` đã build/flash lại image sạch; DB presence cập nhật
+  `firmware_version=7e1315f`, `paired=true`, `online_state=online`. Việc flash
+  cuối vẫn không erase NVS.
