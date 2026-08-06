@@ -217,6 +217,7 @@ class VoiceSession:
         self.mcp: DeviceMcpBridge | None = None
         self._mcp_discovery_task: asyncio.Task[None] | None = None
         self._pairing_watch_task: asyncio.Task[None] | None = None
+        self._presence_heartbeat_task: asyncio.Task[None] | None = None
         self._tool_descriptors: list[dict[str, Any]] = []
         self.memory: MemorySession | None = None
         self.view: RuntimeView | None = None
@@ -311,13 +312,16 @@ class VoiceSession:
             if self._pairing_watch_task is not None and not self._pairing_watch_task.done():
                 self._pairing_watch_task.cancel()
                 await asyncio.gather(self._pairing_watch_task, return_exceptions=True)
+            if self._presence_heartbeat_task is not None and not self._presence_heartbeat_task.done():
+                self._presence_heartbeat_task.cancel()
+                await asyncio.gather(self._presence_heartbeat_task, return_exceptions=True)
             if self.mcp is not None:
                 self.mcp.cancel_all()
             await self._cancel_conversation_idle()
             # Presence enqueue is intentionally synchronous and best-effort;
             # the reporter owns delivery in its background worker.  Awaiting
             # this boolean return would raise during every normal disconnect.
-            self._report_presence("offline")
+            self._report_presence("offline", include_pairing_hash=False)
             await self._abort(reason="disconnect", send_stop=False)
         finally:
             if self.view is not None:
@@ -403,6 +407,8 @@ class VoiceSession:
         self.ready = True
         if self.pairing_required and self.app.presence_reporter is not None:
             self._pairing_watch_task = asyncio.create_task(self._watch_pairing(), name=f"pairing-watch-{self.session_id}")
+        elif self.app.presence_reporter is not None:
+            self._start_presence_heartbeat()
         if bool((features or {}).get("mcp", False)):
             # Discovery is deliberately started only after the hello response
             # has been sent and the receive loop is active. The device replies
@@ -450,7 +456,10 @@ class VoiceSession:
                 if self._closed or not self.ready or not self.pairing_required:
                     return
                 try:
-                    paired = await report_now(self._presence_payload("online"))
+                    # The hash is needed only to create/refresh the initial
+                    # challenge. Polling bind state without it prevents a
+                    # long-lived WebSocket from extending the challenge TTL.
+                    paired = await report_now(self._presence_payload("online", include_pairing_hash=False))
                 except Exception:  # keep the pairing screen while control plane is unavailable
                     paired = None
                 if paired is not True:
@@ -462,7 +471,34 @@ class VoiceSession:
                     "pairing_required": False,
                     "session_id": self.session_id,
                 })
+                self._start_presence_heartbeat()
                 return
+        except asyncio.CancelledError:
+            raise
+
+    def _start_presence_heartbeat(self) -> None:
+        if self._presence_heartbeat_task is not None or self.app.presence_reporter is None:
+            return
+        # Lightweight enqueue-only adapters are used by compatibility callers
+        # and tests; they have no lifecycle guarantee for a background task.
+        # The production reporter exposes report_now and is the heartbeat owner.
+        if not callable(getattr(self.app.presence_reporter, "report_now", None)):
+            return
+        self._presence_heartbeat_task = asyncio.create_task(
+            self._presence_heartbeat(),
+            name=f"presence-heartbeat-{self.session_id}",
+        )
+
+    async def _presence_heartbeat(self) -> None:
+        interval_ms = int(getattr(self.app.config, "presence_heartbeat_ms", 30000))
+        try:
+            while not self._closed and self.ready:
+                await asyncio.sleep(interval_ms / 1000)
+                if self._closed or not self.ready:
+                    return
+                # A heartbeat refreshes freshness only; never resend the
+                # pairing hash after the initial handshake.
+                self._report_presence("online", include_pairing_hash=False)
         except asyncio.CancelledError:
             raise
 
@@ -923,7 +959,7 @@ class VoiceSession:
         if not reporter.enqueue(event):
             self.app.metrics["history_enqueue_dropped"] = self.app.metrics.get("history_enqueue_dropped", 0) + 1
 
-    def _presence_payload(self, state: str) -> dict[str, Any]:
+    def _presence_payload(self, state: str, *, include_pairing_hash: bool = True) -> dict[str, Any]:
         if self.device_info is None:
             return {}
         event: dict[str, Any] = {
@@ -935,15 +971,15 @@ class VoiceSession:
             "onlineState": state,
         }
         pairing_hash = self.device_info.get("pairingCodeHash")
-        if pairing_hash:
+        if include_pairing_hash and pairing_hash:
             event["pairingCodeHash"] = pairing_hash
         return event
 
-    def _report_presence(self, state: str) -> bool:
+    def _report_presence(self, state: str, *, include_pairing_hash: bool = True) -> bool:
         reporter = self.app.presence_reporter
         if reporter is None or self.device_info is None or state not in {"online", "offline"}:
             return False
-        event = self._presence_payload(state)
+        event = self._presence_payload(state, include_pairing_hash=include_pairing_hash)
         if not reporter.enqueue(event):
             self.app.metrics["presence_enqueue_dropped"] = self.app.metrics.get("presence_enqueue_dropped", 0) + 1
             return False

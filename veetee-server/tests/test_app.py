@@ -171,15 +171,24 @@ async def test_websocket_hello_keeps_unpaired_device_in_pairing_state(monkeypatc
     fixture = Path(__file__).parents[1] / "config/fixtures/m0.json"
     monkeypatch.setenv("VEETEE_CONFIG_SOURCE", "fixture")
     monkeypatch.setenv("VEETEE_CONFIG_FIXTURE_FILE", str(fixture))
+    monkeypatch.setenv("VEETEE_PRESENCE_HEARTBEAT_MS", "1000")
     config = ServerConfig.from_env()
     runtime = RuntimeConfigManager(config)
     await runtime.start()
 
+    presence_requests: list[dict[str, object]] = []
+
     async def presence_handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/internal/v1/devices/presence"
         payload = json.loads(request.content.decode("utf-8"))
-        assert payload["pairingCodeHash"] == "a" * 64
-        return httpx.Response(202, json={"id": "device-1", "paired": False, "onlineState": "online", "lastSeenAt": "now"}, request=request)
+        presence_requests.append(payload)
+        if len(presence_requests) == 1:
+            assert payload["pairingCodeHash"] == "a" * 64
+            paired = False
+        else:
+            assert "pairingCodeHash" not in payload
+            paired = True
+        return httpx.Response(202, json={"id": "device-1", "paired": paired, "onlineState": "online", "lastSeenAt": "now"}, request=request)
 
     presence = DevicePresenceReporter(
         PresenceReporterSettings("http://manager.test/internal/v1/devices/presence"),
@@ -202,6 +211,11 @@ async def test_websocket_hello_keeps_unpaired_device_in_pairing_state(monkeypatc
         })
         hello = await ws.receive_json()
         assert hello["pairing_required"] is True
+        paired = await ws.receive_json(timeout=3)
+        assert paired == {"type": "device", "state": "paired", "pairing_required": False, "session_id": hello["session_id"]}
+        await asyncio.sleep(1.05)
+        assert len(presence_requests) >= 3
+        assert "pairingCodeHash" not in presence_requests[-1]
         await ws.close()
     finally:
         await client.close()

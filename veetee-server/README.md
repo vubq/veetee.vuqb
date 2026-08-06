@@ -56,7 +56,9 @@ Presence tùy chọn bằng `VEETEE_PRESENCE_ENABLED=true` đẩy online/offline
 session tới `POST /internal/v1/devices/presence` qua queue riêng. Payload chỉ
 chứa SHA-256 của `Device-Id`/`Client-Id`, MAC đã mask, board và firmware version;
 raw identity không đi vào Manager API. Các tham số queue/timeout/retry tương ứng
-có prefix `VEETEE_PRESENCE_`.
+có prefix `VEETEE_PRESENCE_`. Khi session còn mở, server gửi heartbeat online
+theo `VEETEE_PRESENCE_HEARTBEAT_MS` (mặc định 30 giây) để không bị coi là stale
+trong TTL của Manager; heartbeat không bao giờ gửi lại `pairingCodeHash`.
 
 Các giá trị vận hành đọc từ environment hoặc snapshot. Fixture mặc định dùng
 provider deterministic để contract test không gọi API ngoài. Groq/VieNeu thật chỉ

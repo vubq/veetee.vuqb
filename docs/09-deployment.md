@@ -133,6 +133,7 @@ Service requirements:
 | `VEETEE_GROQ_SECRET_FILE` | yes khi Groq active | Một production key/secretRef resolution. |
 | `VEETEE_LOG_LEVEL` | no | Enum validated. |
 | `VEETEE_METRICS_BIND` | no | Loopback mặc định. |
+| `VEETEE_PRESENCE_HEARTBEAT_MS` | khi presence active | Chu kỳ refresh presence sau handshake; mặc định `30000`, bounded `1000..120000`, phải ngắn hơn TTL online của Manager. Heartbeat không gửi lại pairing hash. |
 | `VEETEE_HELLO_TIMEOUT_MS` | no | Deadline client hello sau HTTP upgrade; mặc định `10000`, bounded `1000..60000`, quá hạn đóng `1002`. |
 | `VEETEE_WS_SEND_TIMEOUT_MS` | no | Deadline cho từng outbound text/binary WebSocket write; mặc định `5000`, bounded `100..60000`. Khi peer không đọc kịp, session đóng fail-closed và cleanup nhả turn lease. |
 

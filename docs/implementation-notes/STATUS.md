@@ -1925,6 +1925,22 @@
   pass**; typecheck/lint/build vẫn xanh. Wire change chỉ additive
   (`pairing_required`, `device.state=paired`); database runtime không bị reset.
 
+### Live code-only pairing và presence heartbeat (2026-08-06)
+
+- ESP32-S3 thật đã được flash image debug tạm thời để đọc mã hiển thị qua serial,
+  sau đó xóa debug line và flash lại image production; cả hai lần đều không
+  `erase_flash`, không đổi NVS/Wi-Fi. Không có plaintext code trong source/log sau
+  kiểm thử.
+- Owner Web session đã chạy đúng dialog `PairDeviceDialog`; DB `veetee_vubq`
+  xác nhận `device total=1, paired=1`, `pairing_challenge pending=0, used=1`.
+  UI hiển thị `Veetee ESP32` dưới assistant `Veetee`.
+- Production serial sau reset: `WiFi ready`, `WebSocket v3 ready`,
+  `server hello ... pairing_required=0`, không debug marker/panic/watchdog.
+- Phát hiện và sửa stale presence: Voice Server có
+  `VEETEE_PRESENCE_HEARTBEAT_MS` mặc định 30 giây, không gửi lại pairing hash.
+  Voice suite **194/194**, Ruff pass; runtime sau một chu kỳ giữ
+  `activeConnections=1`, `online_state=online` và `age_seconds=11`.
+
 # 2026-08-06 — capability-first provider UI và firmware screen model
 
 Đã hoàn thành host-only follow-up trong

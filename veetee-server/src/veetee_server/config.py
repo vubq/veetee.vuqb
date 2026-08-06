@@ -70,6 +70,7 @@ class ServerConfig:
     presence_max_retries: int
     presence_retry_backoff_ms: int
     presence_shutdown_drain_ms: int
+    presence_heartbeat_ms: int
     config_poll_ms: int
     log_level: str
     max_ws_message_bytes: int
@@ -123,6 +124,7 @@ class ServerConfig:
             presence_max_retries=_bounded_int("VEETEE_PRESENCE_MAX_RETRIES", os.getenv("VEETEE_PRESENCE_MAX_RETRIES", "1"), minimum=0, maximum=8),
             presence_retry_backoff_ms=_bounded_int("VEETEE_PRESENCE_RETRY_BACKOFF_MS", os.getenv("VEETEE_PRESENCE_RETRY_BACKOFF_MS", "100"), minimum=0, maximum=10000),
             presence_shutdown_drain_ms=_bounded_int("VEETEE_PRESENCE_SHUTDOWN_DRAIN_MS", os.getenv("VEETEE_PRESENCE_SHUTDOWN_DRAIN_MS", "500"), minimum=0, maximum=30000),
+            presence_heartbeat_ms=_bounded_int("VEETEE_PRESENCE_HEARTBEAT_MS", os.getenv("VEETEE_PRESENCE_HEARTBEAT_MS", "30000"), minimum=1000, maximum=120000),
             config_poll_ms=poll_ms,
             log_level=os.getenv("VEETEE_LOG_LEVEL", "INFO").upper(),
             max_ws_message_bytes=_positive_int(
