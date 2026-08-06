@@ -1,5 +1,17 @@
 # Trạng thái thực thi hiện tại
 
+## Firmware Pure Face OS — 2026-08-06
+
+- Đã triển khai bản UI đã duyệt: full-bleed, không card/vòng border lớn,
+  mark chỉ hai mắt, title/hint/footer theo trục cố định và waveform nhỏ khi
+  nghe/nói.
+- Favicon được crop thành asset LVGL 64×36 ARGB8888, loại vùng miệng; không
+  copy code/CSS/component từ repo chứa asset.
+- ESP-IDF build, firmware CTest **9/9**, flash không erase NVS và serial boot
+  đều pass. Physical acceptance của màu/pixel LCD vẫn cần nhìn trực tiếp;
+  không phát audio trong mốc này.
+- Chi tiết: [`2026-08-06-firmware-pure-face-os.md`](2026-08-06-firmware-pure-face-os.md).
+
 ## Firmware Eyes OS và logo favicon — 2026-08-06
 
 - UI LCD đã chuyển sang layout fixed-slot để title/hint tiếng Việt không chèn

@@ -2,8 +2,9 @@
 
 ## Trạng thái
 
-Được chọn để triển khai sau khi rà lại mockup `eyes-os-v2.html` trên canvas
-240×280. Wire protocol, state machine, audio task và pairing flow không đổi.
+Được chọn để triển khai sau khi rà lại demo `firmware-ui-pure-face-demo.html`
+trên canvas 240×280. Wire protocol, state machine, audio task và pairing flow
+không đổi.
 
 ## Vấn đề của bản cũ
 
@@ -15,34 +16,35 @@
 
 ## Quyết định thiết kế
 
-Chọn hướng **Conversation OS** với favicon/logo hai mắt do chủ dự án cung cấp:
+Chọn hướng **Pure Face OS** với mark chỉ gồm hai mắt được tách từ favicon do
+chủ dự án cung cấp:
 
-1. Header cố định cao 42 px: logo hai mắt bên trái, trạng thái kết nối ngắn bên
-   phải. Không render brand text cạnh logo.
-2. Activity bar cố định bên dưới header, rộng theo toàn màn hình; màu lấy từ
-   state, không thêm state chip tiếng Anh.
-3. Vùng visual cố định ở giữa: vòng tròn + lõi màu; listening/speaking có wave
-   bars nhỏ. Không để visual đẩy text theo nội dung.
+1. Header cố định cao 48 px: mark mắt-only và chữ brand ở bên trái, trạng thái
+   kết nối ngắn bên phải. Không dùng state chip tiếng Anh.
+2. Activity line mảnh ở y=54, rộng theo toàn màn hình; màu lấy từ state.
+3. Vùng visual full-bleed ở giữa: chỉ có mark hai mắt, aura mềm và wave bars
+   nhỏ khi listening/speaking. Không dùng card hoặc vòng border lớn.
 4. Mỗi state có một title một dòng và một hint tối đa hai dòng trong slot cố
    định. Title/hint động dùng mode clip/dots khi vượt slot để không lấn vùng khác.
-5. Footer là một action pill cố định, không chứa câu dài. Pairing có layout riêng
-   ưu tiên mã 6 số; notice/error không lặp message ở footer.
-6. Logo dùng đúng ảnh `public/favicon.svg` được rasterize thành LVGL image
-   `main/assets/veetee_logo.c` ở 32×32 ARGB8888. Không copy component, CSS hay
-   logic từ repo tham chiếu; checksum nguồn được ghi trong asset để kiểm tra
-   nguồn. Kích thước nhỏ giúp alpha ở góc bo vẫn rõ trên ST7789.
+5. Footer là một dòng action hint nhẹ, không có pill/border. Pairing có layout
+   riêng ưu tiên mã 6 số; notice/error không lặp message ở footer.
+6. Logo dùng đúng ảnh `public/favicon.svg`, rasterize thành LVGL image
+   `main/assets/veetee_logo.c` 64×36 ARGB8888 và chỉ giữ dải hai mắt; vùng miệng
+   bị loại khỏi crop. Không copy component, CSS hay logic từ repo tham chiếu;
+   checksum nguồn và tọa độ crop được ghi trong asset.
 7. Resource text vẫn đi qua `vt_display_texts_t`; fallback mặc định được rút gọn
    để vừa slot, không đưa business/provider/wake phrase vào renderer.
 
 ## Bố cục chuẩn
 
 ```text
-0..41    header: eye mark + connection status
-42..45   activity bar
-46..153  visual region: ring/core/wave
-154..184 title (one line)
-185..226 hint (maximum two lines)
-238..267 footer action pill
+0..47    header: eye-only mark + brand + connection status
+48..53   khoảng thở
+54..55   activity line
+61..158  visual region: aura + eye-only mark + wave
+166..200 title (one line)
+207..241 hint (maximum two lines)
+252..273 footer action hint
 ```
 
 Pairing dùng cùng header/footer nhưng thay visual bằng title → instruction → mã

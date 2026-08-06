@@ -1,5 +1,8 @@
 # Firmware Eyes OS và logo thương hiệu — 2026-08-06
 
+> Ghi chú lịch sử của bản card Eyes OS. Bản firmware hiện tại đã chuyển sang
+> Pure Face OS; xem [`2026-08-06-firmware-pure-face-os.md`](2026-08-06-firmware-pure-face-os.md).
+
 ## Phạm vi
 
 Lát cắt này chỉ chỉnh renderer LCD của `veetee-firmware`: bố cục cố định cho

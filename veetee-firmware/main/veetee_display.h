@@ -62,6 +62,7 @@ typedef struct {
     lv_obj_t *connection_dot;
     lv_obj_t *status_orb;
     lv_obj_t *status_ring;
+    lv_obj_t *wave_bars[6];
 } vt_display_view_t;
 
 typedef struct {
