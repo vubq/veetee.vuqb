@@ -53,9 +53,10 @@ Report redacted tương ứng (ngoài Git):
 `/tmp/veetee-no-speech-audio-rerun.json`, `/tmp/veetee-wake-corpus-rerun.json`,
 `/tmp/veetee-continuous-audio.json`.
 
-Metrics Voice Server sau lượt cuối: `active_connections=1`,
-`active_turns=0`, `turn_admissions=38`, `turn_releases=38`,
-`protocol_errors=0`, `turn_disconnect_aborts=0`, `last_ttfa_ms=1357`.
+Metrics Voice Server ngay sau lượt audio cuối (trước Lab probe):
+`active_connections=1`, `active_turns=0`, `turn_admissions=38`,
+`turn_releases=38`, `protocol_errors=0`, `turn_disconnect_aborts=0`,
+`last_ttfa_ms=1357`.
 
 Sau playback, serial AEC snapshot có `overrun=0` nhưng `underrun=16000`
 (`produced=764160`, `consumed=759680`, `resets=4`). Không có panic, decode lỗi
@@ -80,3 +81,14 @@ phân biệt startup/reference drain với underrun gây méo tiếng.
   kiểm tra echo-only/time-to-silence hoặc kiểm tra captive portal trên điện thoại.
 - `barge_in_count` server không tăng trong wake-word interrupt vì interrupt này
   được firmware xử lý local; đây là hành vi đúng, không phải test fail.
+
+## Lab probe bị từ chối có chủ đích
+
+Sau physical run, một lần chạy lại Realtime Lab v3 khi ESP32 vẫn giữ session
+độc quyền nhận `SERVER_BUSY` cho cả 3 turn. Tiến trình lab bị dừng sau khi xác
+nhận không tự kết thúc; cleanup đã trả metrics về `active_connections=1`,
+`active_turns=0`, `turn_admissions=41`, `turn_releases=41`. Counters cộng dồn
+hiện có `protocol_errors=3`, `turn_disconnect_aborts=1` do chính probe bị hủy,
+không phải do audio run. Realtime Lab 3/3 pass trước đó vẫn là evidence hợp lệ
+khi chạy không đồng thời với device session; lần sau phải tách admission hoặc
+ngắt device trước khi chạy Lab.

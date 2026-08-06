@@ -4,8 +4,8 @@
 
 - Đã hoàn tất audio acceptance trên firmware sau flash app `5567e48`: normal
   2/2, wake-word interrupt, voice-exit, no-speech, continuous conversation và
-  wake corpus negative/positive đều pass; metrics cuối `active_turns=0`,
-  `protocol_errors=0`, `last_ttfa_ms=1357`.
+  wake corpus negative/positive đều pass; ngay sau audio metrics là
+  `active_turns=0`, `protocol_errors=0`, `last_ttfa_ms=1357`.
 - LCD renderer đã đồng bộ offset qua LVGL; boot log xác nhận ST7789 240×280,
   `text resources ready ascii=1 vi=1`, Wi‑Fi NVS, startup chime và WebSocket v3.
   Chữ/backlight/orientation vẫn cần người dùng nhìn trực tiếp.
@@ -13,7 +13,9 @@
   InMemory + 13 skip có chủ đích); Web 103 unit + 16 Chromium E2E + typecheck/
   lint/build; firmware CTest 9/9 và ESP-IDF build pass.
 - PTT giữ/nhả GPIO0, chất lượng âm thanh/echo-only và physical LCD vẫn mở; chi
-  tiết lệnh/report redact xem `2026-08-06-audio-ui-validation.md`.
+  tiết lệnh/report redact xem `2026-08-06-audio-ui-validation.md`. Một Lab probe
+  chạy đồng thời với device bị `SERVER_BUSY` rồi được dừng/cleanup; counters
+  cộng dồn sau probe có `protocol_errors=3`, không gán cho audio/firmware.
 
 ## MQTT/UDP gateway composition — host-only continuation (2026-08-06)
 
