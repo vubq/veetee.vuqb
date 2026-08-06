@@ -72,6 +72,8 @@ phân biệt startup/reference drain với underrun gây méo tiếng.
   **16/16 passed** (bao gồm a11y serious/critical gate).
 - Firmware host CTest: **9/9 passed**; ESP-IDF 6.0.2 build pass, app binary
   `0x1bd6d0`, còn 56% partition.
+- Physical harness/configuration regression (PTT, wake audio/corpus guards):
+  **20 passed**; đây là test harness, không thay thế thao tác giữ/nhả GPIO0 thật.
 
 ## Giới hạn còn mở
 
