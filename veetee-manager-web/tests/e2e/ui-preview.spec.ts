@@ -209,8 +209,8 @@ test('mobile menu có Dịch vụ AI và điều hướng đúng màn hình', as
   await page.getByRole('button', { name: 'Mở điều hướng' }).click()
   await expect(page.getByRole('menuitem', { name: 'Dịch vụ AI' })).toBeVisible()
   await page.getByRole('menuitem', { name: 'Dịch vụ AI' }).click()
-  await expect(page).toHaveURL(/\/ai-services$/)
-  await expect(page.getByRole('heading', { name: 'Dịch vụ AI' })).toBeVisible()
+  await expect(page).toHaveURL(/\/model-config$/)
+  await expect(page.getByRole('heading', { name: 'Cấu hình model' })).toBeVisible()
 })
 
 test('role nâng cao thu gọn mặc định và cảnh báo bản nháp khi rời trang', async ({ page }) => {

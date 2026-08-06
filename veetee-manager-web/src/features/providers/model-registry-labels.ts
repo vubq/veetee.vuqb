@@ -2,6 +2,11 @@ import type { ModelConfigRecord, ModelProviderField, ModelProviderRecord, ModelT
 
 export const MODEL_TYPE_ORDER: readonly ModelType[] = ['VAD', 'ASR', 'LLM', 'VLLM', 'Intent', 'TTS', 'Memory', 'RAG', 'Plugin']
 
+// The model catalog follows the reference screen's capabilities. Plugin is a
+// provider/tool schema, not a selectable model category, so it remains visible
+// in provider management but does not create an empty model tab.
+export const MODEL_CONFIG_TYPE_ORDER: readonly ModelType[] = ['VAD', 'ASR', 'LLM', 'VLLM', 'Intent', 'TTS', 'Memory', 'RAG']
+
 export const MODEL_TYPE_LABELS: Record<ModelType, string> = {
   ASR: 'Nhận dạng giọng nói (ASR)',
   TTS: 'Tổng hợp giọng nói (TTS)',

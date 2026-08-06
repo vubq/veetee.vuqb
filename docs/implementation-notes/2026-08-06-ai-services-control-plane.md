@@ -27,14 +27,30 @@ catalog qua gateway và chỉ test các business invariant nói trên.
 ## UX đã cập nhật
 
 - Top navigation chỉ còn một entry `Dịch vụ AI`.
-- Contextual navigation có `Tổng quan`, `Model Configuration`, `Provider
-  Management`, `Thư viện giọng`.
+- `/model-config` là màn hình trung tâm; `/ai-services` chỉ còn là alias tương
+  thích cho bookmark cũ. Contextual navigation có `Cấu hình model`, `Quản lý
+  provider`, `Thư viện giọng` theo đúng đường thao tác chính.
 - Model Configuration mở mặc định ở `LLM`, có search submit, query category,
   empty state khi chưa có provider và link sang tạo schema.
 - Provider Management tải catalog một lần, lọc client-side, phân trang, chọn
   tất cả theo trang và giữ CRUD/schema inspector hiện có.
 - Overview hiển thị số liệu catalog và stack default động; không tạo catalog
   provider thứ hai cạnh runtime `provider_config`.
+
+Lưu ý: feature overview cũ vẫn được giữ trong source để không làm mất test và
+không phá import ngoài dự kiến, nhưng không còn là route mặc định nên không tạo
+request hoặc dữ liệu lặp trong luồng quản trị người dùng.
+
+## Hiệu năng cảm nhận
+
+- Vite dev vẫn phải biên dịch route lazy lần đầu; đây là nguyên nhân chính của
+  độ trễ ngắn khi click ở môi trường phát triển. Bản production build/preview
+  dùng chunk đã biên dịch nên không có bước này.
+- Idle prefetch được giới hạn còn model catalog sau initial paint, tránh warm
+  bốn route cùng lúc tranh CPU với thao tác đầu tiên.
+- Boot shell inline khi F5 chỉ còn một thanh tiến trình và skeleton tối thiểu;
+  nó biến mất khi `app.mount('#app')`, không bao bọc hoặc giữ trạng thái của
+  nội dung đã mount.
 
 ## Verification
 

@@ -18,7 +18,7 @@ import { notify } from '@/ui/primitives/notifications'
 
 import ModelConfigDialog from './ModelConfigDialog.vue'
 import ModelConfigTable from './ModelConfigTable.vue'
-import { localizedModelName, MODEL_TYPE_DESCRIPTIONS, MODEL_TYPE_LABELS, MODEL_TYPE_ORDER } from './model-registry-labels'
+import { localizedModelName, MODEL_CONFIG_TYPE_ORDER, MODEL_TYPE_DESCRIPTIONS, MODEL_TYPE_LABELS } from './model-registry-labels'
 
 const router = useRouter()
 const route = useRoute()
@@ -223,7 +223,7 @@ function nextPage() { if (page.value < pageCount.value) { page.value += 1 } }
 watch([activeType, page, limit, query], () => { void loadModels() })
 watch(limit, () => { page.value = 1 })
 watch(() => route.query.type, (value) => {
-  if (typeof value === 'string' && MODEL_TYPE_ORDER.includes(value as ModelType)) {
+  if (typeof value === 'string' && MODEL_CONFIG_TYPE_ORDER.includes(value as ModelType)) {
     activeType.value = value as ModelType
     page.value = 1
   }
@@ -279,7 +279,7 @@ onMounted(reloadData)
             Danh mục
           </p>
           <button
-            v-for="type in MODEL_TYPE_ORDER"
+            v-for="type in MODEL_CONFIG_TYPE_ORDER"
             :key="type"
             type="button"
             class="category-item"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Boxes, LayoutDashboard, Mic2, SlidersHorizontal, Volume2 } from '@lucide/vue'
+import { Boxes, Mic2, SlidersHorizontal, Volume2 } from '@lucide/vue'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -10,14 +10,12 @@ import VtIcon from '@/ui/primitives/VtIcon.vue'
 const route = useRoute()
 
 const items = [
-  { id: 'overview', label: 'Tổng quan', shortLabel: 'Tổng quan', to: '/ai-services', icon: LayoutDashboard },
   { id: 'models', label: 'Cấu hình model', shortLabel: 'Model', to: '/model-config', icon: SlidersHorizontal },
   { id: 'providers', label: 'Quản lý provider', shortLabel: 'Provider', to: '/provider-management', icon: Boxes },
   { id: 'voices', label: 'Thư viện giọng', shortLabel: 'Giọng', to: '/providers/tts/voices', icon: Volume2 },
 ] as const
 
 const activeId = computed(() => {
-  if (route.path === '/ai-services') return 'overview'
   if (route.path === '/provider-management') return 'providers'
   if (route.path.startsWith('/providers/tts/voices')) return 'voices'
   return 'models'
@@ -36,7 +34,7 @@ function warmRoute(path: string) {
     <div class="services-nav-heading">
       <RouterLink
         class="services-nav-title"
-        to="/ai-services"
+        to="/model-config"
       >
         <span class="services-nav-mark"><VtIcon
           :icon="Mic2"
@@ -45,7 +43,7 @@ function warmRoute(path: string) {
         <strong>Dịch vụ AI</strong>
       </RouterLink>
       <VtBadge tone="neutral">
-        Cấu hình, không đổi luồng nói chuyện
+        Dùng cho trợ lý
       </VtBadge>
     </div>
     <nav

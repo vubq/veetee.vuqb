@@ -20,6 +20,23 @@
 - Verification slice: Web **118 unit**, **16 Chromium E2E**, typecheck/lint/build
   pass; không phát audio, không flash/reset ESP32, không đổi Wi‑Fi/Tailscale.
 
+## Manager Web source-aligned navigation follow-up — 2026-08-06
+
+- `/model-config` nay là màn hình trung tâm của khu vực quản lý model/provider;
+  `/ai-services` vẫn được giữ như alias tương thích nên bookmark cũ không hỏng,
+  nhưng không còn tải overview với ba request catalog/voice dư thừa.
+- Context navigation bám thứ tự thao tác: Cấu hình model → Quản lý provider →
+  Thư viện giọng. Model/provider CRUD, schema, default và runtime selection
+  không thay đổi.
+- Idle prefetch chỉ warm model catalog sau initial paint; không biên dịch đồng
+  thời tất cả màn hình quản trị trong Vite dev nên giảm tranh chấp CPU lúc người
+  dùng bấm lần đầu.
+- Boot shell F5 được rút thành nav + skeleton line + progress nhỏ, bỏ các khối
+  card bao quanh toàn trang. Đây là lớp hiển thị tạm thời trước khi Vue mount,
+  không phải overlay runtime.
+- Đo trên Chromium local preview: route click tới model catalog **45 ms**,
+  heading sẵn sàng **74 ms** sau click; full E2E vẫn **16/16**.
+
 ## Audio/UI validation — 2026-08-06
 
 - Đã hoàn tất audio acceptance trên firmware sau flash app `5567e48`: normal

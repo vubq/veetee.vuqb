@@ -16,6 +16,7 @@
       <!-- Kept inline so a hard reload has a stable shell before Vue, fonts and
            the lazy route chunk are ready. Vue replaces this node on mount. -->
       <div class="app-boot-shell" role="status" aria-live="polite">
+        <span class="app-boot-progress" aria-hidden="true"></span>
         <div class="app-boot-nav">
           <span class="app-boot-brand"><span class="app-boot-mark">V</span><strong>Veetee</strong></span>
           <span class="app-boot-nav-item">Trợ lý</span>
@@ -26,15 +27,13 @@
           <span class="app-boot-title"></span>
           <span class="app-boot-line app-boot-line-wide"></span>
           <span class="app-boot-line"></span>
-          <div class="app-boot-grid">
-            <span></span><span></span><span></span>
-          </div>
         </main>
       </div>
     </div>
     <style>
       :root { color-scheme: light; }
-      .app-boot-shell { min-height: 100dvh; background: #f7fafc; color: #1f2937; font: 14px/1.5 "Segoe UI", sans-serif; }
+      .app-boot-shell { position: relative; min-height: 100dvh; background: #f7fafc; color: #1f2937; font: 14px/1.5 "Segoe UI", sans-serif; }
+      .app-boot-progress { position: absolute; z-index: 1; top: 0; left: 0; width: 38%; height: 2px; background: #2b63ee; animation: app-boot-progress 1.1s ease-in-out infinite; transform-origin: left; }
       .app-boot-nav { display: flex; height: 58px; align-items: center; gap: 24px; border-bottom: 1px solid #d5dfe9; background: #fff; padding: 0 max(12px, calc((100% - 1120px) / 2)); }
       .app-boot-brand { display: inline-flex; align-items: center; gap: 9px; font-size: 14px; }
       .app-boot-mark { display: inline-grid; width: 30px; height: 30px; place-items: center; border: 1px solid #bfd2ff; border-radius: 8px; background: #edf3ff; color: #2b63ee; font-weight: 700; }
@@ -44,14 +43,12 @@
       .app-boot-title { display: block; width: min(260px, 70%); height: 25px; border-radius: 5px; background: #e8eef4; }
       .app-boot-line { display: block; width: min(520px, 88%); height: 10px; margin-top: 12px; border-radius: 4px; background: #e8eef4; }
       .app-boot-line-wide { width: min(680px, 100%); margin-top: 18px; }
-      .app-boot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 24px; }
-      .app-boot-grid span { display: block; min-height: 118px; border: 1px solid #d5dfe9; border-radius: 10px; background: #fff; }
+      @keyframes app-boot-progress { 0% { transform: scaleX(.35); opacity: .55; } 50% { transform: scaleX(1); opacity: 1; } 100% { transform: translateX(170%); opacity: .55; } }
       @media (max-width: 640px) {
         .app-boot-nav-item { display: none; }
         .app-boot-content { width: calc(100% - 24px); padding-top: 20px; }
-        .app-boot-grid { grid-template-columns: 1fr; }
-        .app-boot-grid span { min-height: 86px; }
       }
+      @media (prefers-reduced-motion: reduce) { .app-boot-progress { animation: none; width: 58%; opacity: .7; } }
     </style>
     <script type="module" src="/src/main.ts"></script>
   </body>

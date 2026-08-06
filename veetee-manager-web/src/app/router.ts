@@ -9,7 +9,6 @@ const AssistantModelMemoryView = () => import('@/views/AssistantModelMemoryView.
 const AssistantRoleView = () => import('@/views/AssistantRoleView.vue')
 const AssistantDevicesView = () => import('@/views/AssistantDevicesView.vue')
 const AssistantHistoryView = () => import('@/views/AssistantHistoryView.vue')
-const AiServicesOverviewView = () => import('@/views/AiServicesOverviewView.vue')
 const ModelConfigurationView = () => import('@/views/ModelConfigurationView.vue')
 const ModelProviderManagementView = () => import('@/views/ModelProviderManagementView.vue')
 const ProviderVoiceCatalogView = () => import('@/views/ProviderVoiceCatalogView.vue')
@@ -22,7 +21,9 @@ const ProviderKindView = () => import('@/views/ProviderKindView.vue')
  */
 const routeLoaders: Readonly<Record<string, () => Promise<unknown>>> = {
   '/assistants': AssistantIndexView,
-  '/ai-services': AiServicesOverviewView,
+  // `/ai-services` is retained as a compatibility alias. The model catalog is
+  // the first screen in this area, so both entry points warm the same chunk.
+  '/ai-services': ModelConfigurationView,
   '/model-config': ModelConfigurationView,
   '/provider-management': ModelProviderManagementView,
   '/providers/tts/voices': ProviderVoiceCatalogView,
@@ -74,9 +75,14 @@ const routes: RouteRecordRaw[] = [
     component: AssistantHistoryView,
     meta: { title: 'Lịch sử hội thoại' },
   },
-  { path: '/ai-services', name: 'ai-services', component: AiServicesOverviewView, meta: { title: 'Dịch vụ AI' } },
+  {
+    path: '/model-config',
+    alias: '/ai-services',
+    name: 'model-config',
+    component: ModelConfigurationView,
+    meta: { title: 'Cấu hình model' },
+  },
   { path: '/providers', redirect: '/model-config' },
-  { path: '/model-config', name: 'model-config', component: ModelConfigurationView, meta: { title: 'Cấu hình model' } },
   { path: '/provider-management', name: 'provider-management', component: ModelProviderManagementView, meta: { title: 'Quản lý provider' } },
   { path: '/providers/tts/voices', name: 'provider-voices', component: ProviderVoiceCatalogView, meta: { title: 'Thư viện giọng nói' } },
   // Keep the per-kind provider configuration route as a compatibility and

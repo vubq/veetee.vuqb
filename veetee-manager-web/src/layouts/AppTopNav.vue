@@ -32,23 +32,19 @@ function warmRoute(path: string) {
 
 function navigate(id: string) {
   if (id === 'assistants') void router.push('/assistants')
-  if (id === 'ai-services') void router.push('/ai-services')
+  if (id === 'ai-services') void router.push('/model-config')
   if (id === 'components') void router.push('/_preview/components')
 }
 
 onMounted(() => {
-  // Mobile users do not get a hover event before opening the menu. Warm the
-  // three compact AI-service destinations during an idle slot instead.
-  const warm = () => {
-    warmRoute('/ai-services')
-    warmRoute('/model-config')
-    warmRoute('/provider-management')
-    warmRoute('/providers/tts/voices')
-  }
+  // Warm only the first destination after the initial paint. Compiling all
+  // management chunks in one idle callback can compete with the first click
+  // in Vite dev mode, which is the slow interaction users feel.
+  const warm = () => warmRoute('/model-config')
   if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(warm, { timeout: 1_500 })
+    window.requestIdleCallback(warm, { timeout: 2_500 })
   } else {
-    globalThis.setTimeout(warm, 1_000)
+    globalThis.setTimeout(warm, 1_500)
   }
 })
 
@@ -95,11 +91,11 @@ async function logout() {
         </RouterLink>
         <RouterLink
           class="nav-link"
-          to="/ai-services"
+          to="/model-config"
           :class="{ 'is-active': aiServicesActive }"
-          @pointerenter="warmRoute('/ai-services')"
-          @focus="warmRoute('/ai-services')"
-          @touchstart="warmRoute('/ai-services')"
+          @pointerenter="warmRoute('/model-config')"
+          @focus="warmRoute('/model-config')"
+          @touchstart="warmRoute('/model-config')"
         >
           <VtIcon
             :icon="Sparkles"

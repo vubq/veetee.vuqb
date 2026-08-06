@@ -42,7 +42,7 @@ onMounted(() => { void load() })
     <AiServicesNav />
     <RouterLink
       class="back-link"
-      to="/ai-services"
+      to="/model-config"
     >
       <VtIcon
         :icon="ArrowLeft"

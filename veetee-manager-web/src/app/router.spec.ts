@@ -31,8 +31,9 @@ describe('router auth boundary', () => {
 
     await router.push('/ai-services')
 
-    expect(router.currentRoute.value.name).toBe('ai-services')
-    expect(document.title).toBe('Dịch vụ AI · Veetee')
+    // The legacy entry point is an alias for the source-aligned model catalog.
+    expect(router.currentRoute.value.name).toBe('model-config')
+    expect(document.title).toBe('Cấu hình model · Veetee')
 
     await router.push('/model-config')
 
