@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_lvgl_port.h"
+#include "assets/veetee_logo.h"
 #include "veetee_pairing.h"
 
 LV_FONT_DECLARE(veetee_font_vietnamese_16);
@@ -26,31 +27,39 @@ LV_FONT_DECLARE(veetee_font_vietnamese_26);
 #define VT_COLOR_ORANGE 0xFF8958U
 #define VT_COLOR_PURPLE 0xB779FFU
 #define VT_COLOR_BLUE 0x6EA8FEU
+#define VT_SCREEN_MARGIN 16
+#define VT_SCREEN_WIDTH 208
+#define VT_ACTIVITY_Y 42
+#define VT_ACTIVITY_WIDTH 208
+#define VT_CARD_Y 52
+#define VT_CARD_HEIGHT 180
+#define VT_FOOTER_Y 238
+#define VT_FOOTER_HEIGHT 30
 
 static const vt_display_texts_t fallback_texts = {
     .brand = "VEETEE",
     .pairing_title = "Kết nối thiết bị",
-    .pairing_subtitle = "Mở dashboard để thêm robot vào không gian của bạn.",
-    .pairing_hint = "Nhập mã 6 số để tiếp tục",
+    .pairing_subtitle = "Nhập mã trên dashboard",
+    .pairing_hint = "Mã dùng một lần",
     .connection_label = "Đang kết nối",
     .idle_title = "Sẵn sàng",
-    .idle_hint = "Nhấn nút hoặc gọi từ khóa để nói",
+    .idle_hint = "Nhấn nút hoặc gọi từ khóa",
     .connecting_title = "Đang kết nối",
-    .connecting_hint = "Đang thiết lập đường truyền an toàn",
+    .connecting_hint = "Đang mở kết nối",
     .listening_title = "Đang nghe",
-    .listening_hint = "Bạn cứ nói, tôi đang lắng nghe",
+    .listening_hint = "Bạn cứ nói",
     .thinking_title = "Đang xử lý",
-    .thinking_hint = "Đang hiểu và chuẩn bị câu trả lời",
+    .thinking_hint = "Đang tìm câu trả lời",
     .speaking_title = "Đang nói",
-    .speaking_hint = "Nhấn nút để ngắt lời",
+    .speaking_hint = "Nhấn để ngắt",
     .online_label = "Đã kết nối",
-    .interaction_hint = "PTT  •  Wake word  •  Barge-in",
+    .interaction_hint = "Giữ nút  •  Đánh thức  •  Ngắt",
     .notice_title = "Thông báo",
-    .notice_hint = "Veetee sẽ tiếp tục khi sẵn sàng",
+    .notice_hint = "Veetee sẽ tiếp tục",
     .interrupted_title = "Đã ngắt",
-    .interrupted_hint = "Đang chuẩn bị lượt nói mới",
+    .interrupted_hint = "Sẵn sàng cho lượt mới",
     .error_title = "Có lỗi",
-    .error_hint = "Kiểm tra kết nối rồi thử lại",
+    .error_hint = "Kiểm tra kết nối",
 };
 
 static lv_color_t state_color(vt_device_state_t state) {
@@ -83,17 +92,6 @@ static const char *state_hint(const vt_display_texts_t *texts, vt_device_state_t
     case VT_DEVICE_SPEAKING: return texts->speaking_hint;
     case VT_DEVICE_IDLE:
     default: return texts->idle_hint;
-    }
-}
-
-static const char *state_chip_text(vt_device_state_t state) {
-    switch (state) {
-    case VT_DEVICE_CONNECTING: return "CONNECTING";
-    case VT_DEVICE_LISTENING: return "LISTENING";
-    case VT_DEVICE_THINKING: return "THINKING";
-    case VT_DEVICE_SPEAKING: return "SPEAKING";
-    case VT_DEVICE_IDLE:
-    default: return "HOME";
     }
 }
 
@@ -178,9 +176,28 @@ static lv_obj_t *make_text(lv_obj_t *parent, const char *text, const lv_font_t *
     lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
     lv_obj_set_style_text_color(label, color, LV_PART_MAIN);
     lv_obj_set_style_text_align(label, align, LV_PART_MAIN);
-    lv_obj_set_style_text_line_space(label, 2, LV_PART_MAIN);
+    lv_obj_set_style_text_line_space(label, 0, LV_PART_MAIN);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
     return label;
+}
+
+static lv_obj_t *make_text_single(lv_obj_t *parent, const char *text, const lv_font_t *font,
+                                  lv_color_t color, int width, int height, int x, int y,
+                                  lv_text_align_t align) {
+    lv_obj_t *label = make_text(parent, text, font, color, width, height, x, y, align);
+    /* A dynamic one-line slot must never push or overlap a neighbouring slot. */
+    lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+    return label;
+}
+
+static lv_obj_t *make_brand_logo(lv_obj_t *parent, int x, int y) {
+    lv_obj_t *logo = lv_image_create(parent);
+    if (logo == NULL) return NULL;
+    lv_image_set_src(logo, &veetee_logo);
+    lv_obj_set_size(logo, 32, 32);
+    lv_obj_set_pos(logo, x, y);
+    lv_obj_clear_flag(logo, LV_OBJ_FLAG_SCROLLABLE);
+    return logo;
 }
 
 static vt_display_view_t *view_for_state(vt_display_t *display, vt_device_state_t state) {
@@ -191,23 +208,36 @@ static vt_display_view_t *view_for_state(vt_display_t *display, vt_device_state_
 static void update_connection(vt_display_t *display, vt_display_view_t *view, vt_device_state_t state) {
     const bool connected = state != VT_DEVICE_CONNECTING;
     const lv_color_t accent = state_color(state);
-    lv_obj_set_style_bg_color(view->connection_dot, accent, LV_PART_MAIN);
-    lv_label_set_text(view->connection_label,
-                      connected ? display->texts->online_label : display->texts->connection_label);
+    if (view->connection_dot != NULL) {
+        lv_obj_set_style_bg_color(view->connection_dot, accent, LV_PART_MAIN);
+    }
+    if (view->connection_label != NULL) {
+        lv_label_set_text(view->connection_label,
+                          connected ? display->texts->online_label : display->texts->connection_label);
+    }
 }
 
 static void update_status(vt_display_t *display, vt_display_view_t *view, vt_device_state_t state) {
     const lv_color_t accent = state_color(state);
-    lv_label_set_text(view->state_chip_label, state_chip_text(state));
-    lv_obj_set_style_bg_color(view->state_chip, accent, LV_PART_MAIN);
-    lv_obj_set_width(view->activity_fill, (int32_t)(112U * state_activity(state) / 100U));
-    lv_label_set_text(view->status_title, state_title(display->texts, state));
-    lv_label_set_text(view->status_hint, state_hint(display->texts, state));
-    lv_obj_set_style_bg_color(view->status_orb, accent, LV_PART_MAIN);
-    lv_obj_set_style_border_color(view->status_ring, accent, LV_PART_MAIN);
-    lv_obj_set_style_shadow_color(view->status_orb, accent, LV_PART_MAIN);
-    lv_obj_set_style_shadow_opa(view->status_orb,
-                                state == VT_DEVICE_IDLE ? LV_OPA_20 : LV_OPA_60, LV_PART_MAIN);
+    if (view->activity_fill != NULL) {
+        lv_obj_set_width(view->activity_fill, (int32_t)(VT_ACTIVITY_WIDTH * state_activity(state) / 100U));
+        lv_obj_set_style_bg_color(view->activity_fill, accent, LV_PART_MAIN);
+    }
+    if (view->status_title != NULL) {
+        lv_label_set_text(view->status_title, state_title(display->texts, state));
+    }
+    if (view->status_hint != NULL) {
+        lv_label_set_text(view->status_hint, state_hint(display->texts, state));
+    }
+    if (view->status_orb != NULL) {
+        lv_obj_set_style_bg_color(view->status_orb, accent, LV_PART_MAIN);
+        lv_obj_set_style_shadow_color(view->status_orb, accent, LV_PART_MAIN);
+        lv_obj_set_style_shadow_opa(view->status_orb,
+                                    state == VT_DEVICE_IDLE ? LV_OPA_20 : LV_OPA_60, LV_PART_MAIN);
+    }
+    if (view->status_ring != NULL) {
+        lv_obj_set_style_border_color(view->status_ring, accent, LV_PART_MAIN);
+    }
     update_connection(display, view, state);
 }
 
@@ -218,41 +248,32 @@ static esp_err_t create_state_view(vt_display_t *display, vt_device_state_t stat
     if (view->screen == NULL) return ESP_ERR_NO_MEM;
     style_screen(view->screen);
 
-    lv_obj_t *brand = make_text(view->screen, display->texts->brand,
-                                &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_TEXT),
-                                110, 24, 16, 12, LV_TEXT_ALIGN_LEFT);
-    lv_obj_set_style_text_letter_space(brand, 2, LV_PART_MAIN);
+    (void)make_brand_logo(view->screen, VT_SCREEN_MARGIN, 5);
     view->connection_dot = lv_obj_create(view->screen);
     lv_obj_remove_style_all(view->connection_dot);
-    lv_obj_set_size(view->connection_dot, 9, 9);
-    lv_obj_set_pos(view->connection_dot, 154, 20);
+    lv_obj_set_size(view->connection_dot, 7, 7);
+    lv_obj_set_pos(view->connection_dot, 126, 17);
     lv_obj_set_style_radius(view->connection_dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-    view->connection_label = make_text(view->screen, display->texts->connection_label,
-                                       &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
-                                       72, 24, 166, 12, LV_TEXT_ALIGN_RIGHT);
+    view->connection_label = make_text_single(view->screen, display->texts->connection_label,
+                                              &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                                              96, 22, 138, 8, LV_TEXT_ALIGN_RIGHT);
 
-    view->state_chip = make_panel(view->screen, 14, 34, 76, 12, 6);
-    lv_obj_set_style_bg_color(view->state_chip, state_color(state), LV_PART_MAIN);
-    lv_obj_set_style_border_width(view->state_chip, 0, LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(view->state_chip, 0, LV_PART_MAIN);
-    view->state_chip_label = make_text(view->state_chip, state_chip_text(state),
-                                       &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_BACKGROUND),
-                                       72, 12, 2, 0, LV_TEXT_ALIGN_CENTER);
-    lv_obj_set_style_text_letter_space(view->state_chip_label, 1, LV_PART_MAIN);
-    lv_obj_t *activity_track = make_panel(view->screen, 104, 36, 122, 8, 4);
+    lv_obj_t *activity_track = make_panel(view->screen, VT_SCREEN_MARGIN, VT_ACTIVITY_Y,
+                                          VT_ACTIVITY_WIDTH, 4, 2);
     lv_obj_set_style_bg_color(activity_track, lv_color_hex(VT_COLOR_CARD_EDGE), LV_PART_MAIN);
     lv_obj_set_style_border_width(activity_track, 0, LV_PART_MAIN);
     lv_obj_set_style_shadow_width(activity_track, 0, LV_PART_MAIN);
-    view->activity_fill = make_panel(activity_track, 0, 0, 10, 8, 4);
+    view->activity_fill = make_panel(activity_track, 0, 0, 1, 4, 2);
     lv_obj_set_style_bg_color(view->activity_fill, state_color(state), LV_PART_MAIN);
     lv_obj_set_style_border_width(view->activity_fill, 0, LV_PART_MAIN);
     lv_obj_set_style_shadow_width(view->activity_fill, 0, LV_PART_MAIN);
 
-    lv_obj_t *card = make_panel(view->screen, 14, 50, 212, 174, 26);
+    lv_obj_t *card = make_panel(view->screen, VT_SCREEN_MARGIN, VT_CARD_Y,
+                                VT_SCREEN_WIDTH, VT_CARD_HEIGHT, 22);
     view->status_ring = lv_obj_create(card);
     lv_obj_remove_style_all(view->status_ring);
-    lv_obj_set_size(view->status_ring, 116, 116);
-    lv_obj_align(view->status_ring, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_set_size(view->status_ring, 94, 94);
+    lv_obj_align(view->status_ring, LV_ALIGN_TOP_MID, 0, 8);
     lv_obj_set_style_bg_opa(view->status_ring, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_radius(view->status_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_border_width(view->status_ring, 2, LV_PART_MAIN);
@@ -260,8 +281,8 @@ static esp_err_t create_state_view(vt_display_t *display, vt_device_state_t stat
 
     view->status_orb = lv_obj_create(card);
     lv_obj_remove_style_all(view->status_orb);
-    lv_obj_set_size(view->status_orb, 88, 88);
-    lv_obj_align(view->status_orb, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_size(view->status_orb, 66, 66);
+    lv_obj_align(view->status_orb, LV_ALIGN_TOP_MID, 0, 22);
     lv_obj_set_style_radius(view->status_orb, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(view->status_orb, LV_OPA_90, LV_PART_MAIN);
     lv_obj_set_style_border_width(view->status_orb, 1, LV_PART_MAIN);
@@ -270,18 +291,19 @@ static esp_err_t create_state_view(vt_display_t *display, vt_device_state_t stat
     lv_obj_set_style_shadow_width(view->status_orb, 26, LV_PART_MAIN);
     lv_obj_set_style_shadow_spread(view->status_orb, 3, LV_PART_MAIN);
 
-    view->status_title = make_text(card, state_title(display->texts, state),
-                                   &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
-                                   190, 34, 11, 120, LV_TEXT_ALIGN_CENTER);
+    view->status_title = make_text_single(card, state_title(display->texts, state),
+                                          &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
+                                          196, 36, 6, 104, LV_TEXT_ALIGN_CENTER);
     view->status_hint = make_text(card, state_hint(display->texts, state),
                                   &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
-                                  188, 36, 12, 151, LV_TEXT_ALIGN_CENTER);
+                                  196, 40, 6, 141, LV_TEXT_ALIGN_CENTER);
 
-    lv_obj_t *hint_panel = make_panel(view->screen, 14, 236, 212, 30, 15);
+    lv_obj_t *hint_panel = make_panel(view->screen, VT_SCREEN_MARGIN, VT_FOOTER_Y,
+                                      VT_SCREEN_WIDTH, VT_FOOTER_HEIGHT, 15);
     lv_obj_set_style_bg_color(hint_panel, lv_color_hex(VT_COLOR_BACKGROUND_TOP), LV_PART_MAIN);
     lv_obj_set_style_shadow_width(hint_panel, 0, LV_PART_MAIN);
-    make_text(hint_panel, display->texts->interaction_hint, &veetee_font_vietnamese_16,
-              lv_color_hex(VT_COLOR_MUTED), 200, 24, 6, 3, LV_TEXT_ALIGN_CENTER);
+    make_text_single(hint_panel, display->texts->interaction_hint, &veetee_font_vietnamese_16,
+                     lv_color_hex(VT_COLOR_MUTED), 196, 22, 6, 4, LV_TEXT_ALIGN_CENTER);
     update_status(display, view, state);
     return ESP_OK;
 }
@@ -290,20 +312,32 @@ static esp_err_t create_notice_view(vt_display_t *display) {
     display->notice_screen = lv_obj_create(NULL);
     if (display->notice_screen == NULL) return ESP_ERR_NO_MEM;
     style_screen(display->notice_screen);
-    make_text(display->notice_screen, display->texts->brand, &veetee_font_vietnamese_16,
-              lv_color_hex(VT_COLOR_TEXT), 110, 24, 16, 12, LV_TEXT_ALIGN_LEFT);
-    lv_obj_t *card = make_panel(display->notice_screen, 14, 50, 212, 174, 26);
-    display->notice_title = make_text(card, display->texts->notice_title,
-                                      &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
-                                      190, 38, 11, 24, LV_TEXT_ALIGN_CENTER);
+    (void)make_brand_logo(display->notice_screen, VT_SCREEN_MARGIN, 5);
+    lv_obj_t *status_dot = lv_obj_create(display->notice_screen);
+    if (status_dot != NULL) {
+        lv_obj_remove_style_all(status_dot);
+        lv_obj_set_size(status_dot, 7, 7);
+        lv_obj_set_pos(status_dot, 126, 17);
+        lv_obj_set_style_radius(status_dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(status_dot, lv_color_hex(VT_COLOR_ORANGE), LV_PART_MAIN);
+    }
+    make_text_single(display->notice_screen, display->texts->connection_label,
+                     &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                     96, 22, 138, 8, LV_TEXT_ALIGN_RIGHT);
+    lv_obj_t *card = make_panel(display->notice_screen, VT_SCREEN_MARGIN, VT_CARD_Y,
+                                VT_SCREEN_WIDTH, VT_CARD_HEIGHT, 22);
+    display->notice_title = make_text_single(card, display->texts->notice_title,
+                                              &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
+                                              196, 36, 6, 24, LV_TEXT_ALIGN_CENTER);
     display->notice_message = make_text(card, display->texts->notice_hint,
                                         &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
-                                        184, 84, 14, 78, LV_TEXT_ALIGN_CENTER);
-    lv_obj_t *hint_panel = make_panel(display->notice_screen, 14, 236, 212, 30, 15);
-    lv_obj_set_style_bg_color(hint_panel, lv_color_hex(VT_COLOR_BACKGROUND_TOP), LV_PART_MAIN);
-    lv_obj_set_style_shadow_width(hint_panel, 0, LV_PART_MAIN);
-    make_text(hint_panel, display->texts->notice_hint, &veetee_font_vietnamese_16,
-              lv_color_hex(VT_COLOR_MUTED), 200, 24, 6, 3, LV_TEXT_ALIGN_CENTER);
+                                        196, 58, 6, 78, LV_TEXT_ALIGN_CENTER);
+    lv_obj_t *footer = make_panel(display->notice_screen, VT_SCREEN_MARGIN, VT_FOOTER_Y,
+                                  VT_SCREEN_WIDTH, VT_FOOTER_HEIGHT, 15);
+    lv_obj_set_style_bg_color(footer, lv_color_hex(VT_COLOR_BACKGROUND_TOP), LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(footer, 0, LV_PART_MAIN);
+    make_text_single(footer, display->texts->brand, &veetee_font_vietnamese_16,
+                     lv_color_hex(VT_COLOR_MUTED), 196, 22, 6, 4, LV_TEXT_ALIGN_CENTER);
     return ESP_OK;
 }
 
@@ -319,24 +353,41 @@ static esp_err_t create_ui(vt_display_t *display) {
     display->status_screen = display->views[VT_DEVICE_IDLE].screen;
     if (create_notice_view(display) != ESP_OK) return ESP_ERR_NO_MEM;
 
-    /* Pairing screen: the code is presented as a readable typographic block,
-       not hand-drawn seven-segment pixels, and remains clear at a glance. */
-    make_text(display->pairing_screen, display->texts->brand, &veetee_font_vietnamese_16,
-              lv_color_hex(VT_COLOR_TEXT), 110, 24, 16, 12, LV_TEXT_ALIGN_LEFT);
-    lv_obj_t *pair_card = make_panel(display->pairing_screen, 14, 50, 212, 202, 26);
-    display->pairing_title = make_text(pair_card, display->texts->pairing_title,
-                                       &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
-                                       190, 36, 11, 18, LV_TEXT_ALIGN_CENTER);
+    /* Pairing keeps the code as the visual priority and uses the same header /
+       footer rhythm as the conversation screens. */
+    (void)make_brand_logo(display->pairing_screen, VT_SCREEN_MARGIN, 5);
+    lv_obj_t *pair_dot = lv_obj_create(display->pairing_screen);
+    if (pair_dot != NULL) {
+        lv_obj_remove_style_all(pair_dot);
+        lv_obj_set_size(pair_dot, 7, 7);
+        lv_obj_set_pos(pair_dot, 126, 17);
+        lv_obj_set_style_radius(pair_dot, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(pair_dot, lv_color_hex(VT_COLOR_AMBER), LV_PART_MAIN);
+    }
+    make_text_single(display->pairing_screen, display->texts->connection_label,
+                     &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                     96, 22, 138, 8, LV_TEXT_ALIGN_RIGHT);
+    lv_obj_t *pair_card = make_panel(display->pairing_screen, VT_SCREEN_MARGIN, VT_CARD_Y,
+                                     VT_SCREEN_WIDTH, VT_CARD_HEIGHT, 22);
+    display->pairing_title = make_text_single(pair_card, display->texts->pairing_title,
+                                              &veetee_font_vietnamese_26, lv_color_hex(VT_COLOR_TEXT),
+                                              196, 36, 6, 12, LV_TEXT_ALIGN_CENTER);
     display->pairing_subtitle = make_text(pair_card, display->texts->pairing_subtitle,
                                           &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
-                                          184, 42, 14, 61, LV_TEXT_ALIGN_CENTER);
-    display->pairing_code = make_text(pair_card, "------", &veetee_font_vietnamese_26,
-                                      lv_color_hex(VT_COLOR_GREEN), 190, 42, 11, 112,
-                                      LV_TEXT_ALIGN_CENTER);
+                                          196, 34, 6, 56, LV_TEXT_ALIGN_CENTER);
+    display->pairing_code = make_text_single(pair_card, "------", &veetee_font_vietnamese_26,
+                                             lv_color_hex(VT_COLOR_GREEN), 196, 36, 6, 94,
+                                             LV_TEXT_ALIGN_CENTER);
     lv_obj_set_style_text_letter_space(display->pairing_code, 5, LV_PART_MAIN);
-    display->pairing_hint = make_text(pair_card, display->texts->pairing_hint,
-                                      &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
-                                      184, 28, 14, 160, LV_TEXT_ALIGN_CENTER);
+    display->pairing_hint = make_text_single(pair_card, display->texts->pairing_hint,
+                                             &veetee_font_vietnamese_16, lv_color_hex(VT_COLOR_MUTED),
+                                             196, 22, 6, 137, LV_TEXT_ALIGN_CENTER);
+    lv_obj_t *pair_footer = make_panel(display->pairing_screen, VT_SCREEN_MARGIN, VT_FOOTER_Y,
+                                       VT_SCREEN_WIDTH, VT_FOOTER_HEIGHT, 15);
+    lv_obj_set_style_bg_color(pair_footer, lv_color_hex(VT_COLOR_BACKGROUND_TOP), LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(pair_footer, 0, LV_PART_MAIN);
+    make_text_single(pair_footer, display->texts->brand, &veetee_font_vietnamese_16,
+                     lv_color_hex(VT_COLOR_MUTED), 196, 22, 6, 4, LV_TEXT_ALIGN_CENTER);
 
     display->last_state = VT_DEVICE_IDLE;
     display->active_screen = VT_DISPLAY_SCREEN_PAIRING;

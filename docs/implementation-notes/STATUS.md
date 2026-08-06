@@ -1,5 +1,17 @@
 # Trạng thái thực thi hiện tại
 
+## Firmware Eyes OS và logo favicon — 2026-08-06
+
+- UI LCD đã chuyển sang layout fixed-slot để title/hint tiếng Việt không chèn
+  sang vùng khác; bỏ state chip tiếng Anh và message lặp ở footer.
+- Header dùng đúng favicon/logo hai mắt từ asset owner-provided trong repo
+  tham chiếu, rasterize 32×32 ARGB8888 thành asset LVGL riêng; không copy code,
+  CSS hay component khác.
+- ESP-IDF build, firmware CTest **9/9**, flash không erase NVS và serial boot
+  đều pass. Physical acceptance của hình ảnh LCD vẫn cần người dùng nhìn trực
+  tiếp; audio không được phát trong lát cắt này.
+- Chi tiết: [`2026-08-06-firmware-eyes-os-redesign.md`](2026-08-06-firmware-eyes-os-redesign.md).
+
 ## Firmware font rendering — 2026-08-06
 
 - Đã xác định lỗi LCD “không có chữ”: bitmap font RLE bị khai báo plain nên
