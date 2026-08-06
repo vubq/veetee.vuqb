@@ -82,6 +82,7 @@ export function createProviderRegistryFixtures(): {
       id: 'preview-config-groq',
       installationId: groq.id,
       name: 'Groq test config',
+      enabled: true,
       revision: 1,
       config: {
         baseUrl: 'https://api.groq.com/openai/v1',

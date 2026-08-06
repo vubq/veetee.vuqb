@@ -35,6 +35,11 @@ import type {
   ProviderProbeResult,
   ProviderInstallationView,
   ProviderKind,
+  ModelConfigPage,
+  ModelConfigRecord,
+  ModelProviderRecord,
+  ModelType,
+  ModelProviderField,
   RetentionPolicy,
   RetentionPolicyInput,
   RetentionExpiredProblem,
@@ -72,6 +77,12 @@ export type RetentionMutationProblem =
   | OfflineProblem
   | RevisionConflictProblem<RetentionPolicy, RetentionPolicyInput>
 
+export type ModelControlProblem =
+  | ValidationProblem
+  | OfflineProblem
+  | NotFoundProblem
+  | RevisionConflictProblem<ModelConfigRecord | ModelProviderRecord, unknown>
+
 export interface AssistantGateway {
   listAssistants(
     query?: AssistantListQuery,
@@ -100,6 +111,7 @@ export interface AssistantGateway {
   listProviderConfigs(kind?: ProviderKind): Promise<GatewayResult<ProviderConfigRecord[], never>>
   createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>>
   updateProviderConfig(id: string, input: { name?: string; config?: Record<string, unknown>; secretRefs?: string[] }, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem | RevisionConflictProblem<ProviderConfigRecord, unknown>>>
+  setProviderConfigEnabled(id: string, enabled: boolean, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<ProviderConfigRecord, unknown>>>
   deleteProviderConfig(id: string, expectedEtag: string): Promise<GatewayResult<void, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<ProviderConfigRecord, unknown>>>
   probeProviderConfig(id: string): Promise<GatewayResult<ProviderProbeResult, ValidationProblem | NotFoundProblem | OfflineProblem>>
 
@@ -117,6 +129,18 @@ export interface AssistantGateway {
       NotFoundProblem | OfflineProblem | ProviderUnavailableProblem
     >
   >
+
+  listModelProviders(query?: { modelType?: ModelType; name?: string }): Promise<GatewayResult<ModelProviderRecord[], ModelControlProblem>>
+  createModelProvider(input: { modelType: ModelType; providerCode: string; name: string; fields: ModelProviderField[]; sort?: number }): Promise<GatewayResult<ModelProviderRecord, ModelControlProblem>>
+  updateModelProvider(id: string, input: Partial<{ modelType: ModelType; providerCode: string; name: string; fields: ModelProviderField[]; sort: number }>, expectedEtag?: string): Promise<GatewayResult<ModelProviderRecord, ModelControlProblem>>
+  deleteModelProvider(id: string, expectedEtag?: string): Promise<GatewayResult<void, ModelControlProblem>>
+  listModelConfigs(query?: { modelType?: ModelType; modelName?: string; page?: number; limit?: number }): Promise<GatewayResult<ModelConfigPage, ModelControlProblem>>
+  getModelConfig(id: string): Promise<GatewayResult<ModelConfigRecord, ModelControlProblem>>
+  createModelConfig(input: { modelType: ModelType; providerCode: string; id?: string; modelCode: string; modelName: string; isDefault?: boolean; isEnabled?: boolean; configJson: Record<string, unknown>; docLink?: string | null; remark?: string | null; sort?: number }): Promise<GatewayResult<ModelConfigRecord, ModelControlProblem>>
+  updateModelConfig(id: string, input: Partial<{ modelType: ModelType; providerCode: string; modelCode: string; modelName: string; isDefault: boolean; isEnabled: boolean; configJson: Record<string, unknown>; docLink: string | null; remark: string | null; sort: number }>, expectedEtag?: string): Promise<GatewayResult<ModelConfigRecord, ModelControlProblem>>
+  deleteModelConfig(id: string, expectedEtag?: string): Promise<GatewayResult<void, ModelControlProblem>>
+  setModelEnabled(id: string, enabled: boolean): Promise<GatewayResult<ModelConfigRecord, ModelControlProblem>>
+  setDefaultModel(id: string): Promise<GatewayResult<ModelConfigRecord, ModelControlProblem>>
 }
 
 export interface ProviderGateway {

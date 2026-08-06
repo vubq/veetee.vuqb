@@ -154,6 +154,60 @@ export const PROVIDER_KINDS = ['vad', 'asr', 'llm', 'tts', 'intent', 'memory'] a
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 export type ProviderAvailability = 'ready' | 'unavailable' | 'disabled'
 
+/** Source-aligned control-plane categories. Runtime selection remains limited
+ * to ProviderKind above; these records are the editable model catalog. */
+export const MODEL_TYPES = ['ASR', 'TTS', 'LLM', 'VLLM', 'Intent', 'Memory', 'VAD', 'Plugin', 'RAG'] as const
+export type ModelType = (typeof MODEL_TYPES)[number]
+export type ModelFieldType = 'string' | 'number' | 'boolean' | 'password' | 'dict' | 'array' | 'int' | 'integer' | 'float'
+
+export interface ModelProviderField {
+  key: string
+  label: string
+  type: ModelFieldType
+  default?: unknown
+  sensitive?: boolean
+  dictName?: string
+  [key: string]: unknown
+}
+
+export interface ModelProviderRecord {
+  id: string
+  ownerId: string
+  modelType: ModelType
+  providerCode: string
+  name: string
+  fields: ModelProviderField[]
+  sort: number
+  revision: number
+  etag: ETag
+  updatedAt: IsoDateTime
+}
+
+export interface ModelConfigRecord {
+  id: string
+  ownerId: string
+  modelType: ModelType
+  modelCode: string
+  modelName: string
+  providerCode: string
+  isDefault: boolean
+  isEnabled: boolean
+  configJson: Record<string, unknown>
+  docLink: string | null
+  remark: string | null
+  sort: number
+  revision: number
+  etag: ETag
+  updatedAt: IsoDateTime
+}
+
+export interface ModelConfigPage {
+  items: ModelConfigRecord[]
+  total: number
+  page: number
+  limit: number
+}
+
 export interface ProviderConfigSummary {
   id: string
   kind: ProviderKind
@@ -183,6 +237,7 @@ export interface ProviderConfigRecord {
   id: string
   installationId: string
   name: string
+  enabled: boolean
   revision: number
   config: Record<string, unknown>
   secretRefs: string[]

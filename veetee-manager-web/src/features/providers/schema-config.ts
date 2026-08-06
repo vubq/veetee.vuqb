@@ -69,7 +69,13 @@ export function humanizeSchemaKey(key: string): string {
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/[_-]+/g, ' ')
     .trim()
-  return words ? words.charAt(0).toUpperCase() + words.slice(1) : key
+  if (!words) return key
+  const acronyms = new Set(['api', 'asr', 'cpu', 'cuda', 'gpu', 'http', 'https', 'id', 'json', 'llm', 'mcp', 'onnx', 'ram', 'tts', 'uri', 'url', 'vad', 'vram'])
+  return words.split(/\s+/u).map((word, index) => {
+    const normalized = word.toLocaleLowerCase('en-US')
+    if (acronyms.has(normalized)) return normalized.toUpperCase()
+    return index === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word
+  }).join(' ')
 }
 
 export function primitiveSchemaFields(schema: Record<string, unknown>): PrimitiveSchemaField[] {

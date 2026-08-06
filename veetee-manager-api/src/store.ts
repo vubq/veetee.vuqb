@@ -1,5 +1,29 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import {
+  MODEL_TYPES,
+  cloneModelConfig,
+  cloneModelProvider,
+  modelConfigId,
+  modelEtag,
+  modelProviderId,
+  newModelConfig,
+  newModelProvider,
+  normalizeModelConfigInput,
+  normalizeModelProviderInput,
+  type ModelConfig,
+  type ModelConfigInput,
+  type ModelConfigPage,
+  type ModelConfigQuery,
+  type ModelProvider,
+  type ModelProviderInput,
+  type ModelProviderField,
+  type ModelTtsVoiceSeed,
+  type ModelType,
+} from './model-registry.js'
+
+export { MODEL_TYPES }
+export type { ModelConfig, ModelConfigInput, ModelConfigPage, ModelConfigQuery, ModelProvider, ModelProviderField, ModelProviderInput, ModelTtsVoiceSeed, ModelType }
 
 export type ProviderKind = 'vad' | 'asr' | 'llm' | 'tts' | 'intent' | 'memory'
 
@@ -37,6 +61,7 @@ export interface ProviderConfig {
   ownerId: string
   installationId: string
   name: string
+  enabled: boolean
   revision: number
   config: Record<string, unknown>
   secretRefs: string[]
@@ -374,12 +399,30 @@ export interface ModelMemoryView {
   memoryItems: Array<{ id: string; kind: string; content: string; enabled: boolean; updatedAt: string }>
 }
 
+export interface ModelRegistrySeed {
+  providers: ModelProviderInput[]
+  configs: ModelConfigInput[]
+  voices?: ModelTtsVoiceSeed[]
+}
+
 export interface Store {
   close?(): Promise<void>
+  listModelProviders(ownerId: string, query?: { modelType?: ModelType; name?: string }): Promise<ModelProvider[]>
+  createModelProvider(ownerId: string, input: ModelProviderInput): Promise<ModelProvider>
+  updateModelProvider(ownerId: string, id: string, input: Partial<ModelProviderInput>, ifMatch?: string): Promise<ModelProvider>
+  deleteModelProvider(ownerId: string, id: string, ifMatch?: string): Promise<void>
+  listModelConfigs(ownerId: string, query?: ModelConfigQuery): Promise<ModelConfigPage>
+  getModelConfig(ownerId: string, id: string): Promise<ModelConfig | undefined>
+  createModelConfig(ownerId: string, input: ModelConfigInput): Promise<ModelConfig>
+  updateModelConfig(ownerId: string, id: string, input: Partial<ModelConfigInput>, ifMatch?: string): Promise<ModelConfig>
+  deleteModelConfig(ownerId: string, id: string, ifMatch?: string): Promise<void>
+  setModelEnabled(ownerId: string, id: string, enabled: boolean): Promise<ModelConfig>
+  setDefaultModel(ownerId: string, id: string): Promise<ModelConfig>
   listInstallations(): Promise<ProviderInstallation[]>
   listProviderConfigs(ownerId: string, kind?: ProviderKind): Promise<ProviderConfig[]>
   createProviderConfig(ownerId: string, value: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<ProviderConfig>
   updateProviderConfig(ownerId: string, id: string, value: Partial<Pick<ProviderConfig, 'name' | 'config' | 'secretRefs'>>, ifMatch: string): Promise<ProviderConfig>
+  setProviderConfigEnabled(ownerId: string, id: string, enabled: boolean, ifMatch: string): Promise<ProviderConfig>
   deleteProviderConfig(ownerId: string, id: string, ifMatch: string): Promise<void>
   probeProviderConfig(ownerId: string, id: string): Promise<ProviderProbeResult>
   listVoiceProfiles(ownerId: string, options?: { locale?: string; providerConfigId?: string }): Promise<VoiceProfile[]>
@@ -422,6 +465,8 @@ export interface Store {
 
 export class InMemoryStore implements Store {
   private readonly installations: ProviderInstallation[]
+  private readonly modelProviders = new Map<string, ModelProvider>()
+  private readonly modelConfigs = new Map<string, ModelConfig>()
   private readonly providerConfigs = new Map<string, ProviderConfig>()
   private readonly providerConfigSecretRefs = new Map<string, Set<string>>()
   private readonly voiceProfiles = new Map<string, VoiceProfile>()
@@ -439,11 +484,12 @@ export class InMemoryStore implements Store {
   private readonly clock: () => Date
   private publication: RuntimePublication | undefined
 
-  constructor(installations: ProviderInstallation[], initial?: RuntimeSnapshot, options: PresenceStoreOptions = {}) {
+  constructor(installations: ProviderInstallation[], initial?: RuntimeSnapshot, options: PresenceStoreOptions = {}, registry?: ModelRegistrySeed) {
     this.installations = installations
     this.presenceTtlMs = (options.onlineTtlSeconds ?? DEFAULT_DEVICE_ONLINE_TTL_SECONDS) * 1000
     this.tombstoneTtlMs = Math.max(60, options.tombstoneTtlSeconds ?? 604800) * 1000
     this.clock = options.now ?? (() => new Date())
+    if (registry) this.seedModelRegistry(registry)
     if (initial) {
       const assistant: AssistantRecord = {
         id: initial.assistantId,
@@ -462,11 +508,141 @@ export class InMemoryStore implements Store {
         const installation = this.installations.find((item) => item.id === value.providerId)
         if (!installation) continue
         const providerConfig = normalizeProviderConfig(installation, value.config as Record<string, unknown>)
-        this.providerConfigs.set(value.providerId, { id: value.providerId, ownerId: 'local-owner', installationId: value.providerId, name: installation.displayNameKey, revision: 1, config: providerConfig, secretRefs: [], etag: etag(providerConfig), updatedAt: assistant.updatedAt })
+        this.providerConfigs.set(value.providerId, { id: value.providerId, ownerId: 'local-owner', installationId: value.providerId, name: installation.displayNameKey, enabled: true, revision: 1, config: providerConfig, secretRefs: [], etag: etag({ ...providerConfig, revision: 1, enabled: true }), updatedAt: assistant.updatedAt })
         this.providerConfigSecretRefs.set(value.providerId, new Set())
         void kind
       }
       this.publication = { snapshot: initial, etag: etag(initial), updatedAt: assistant.updatedAt }
+    }
+  }
+
+  async listModelProviders(ownerId: string, query: { modelType?: ModelType; name?: string } = {}): Promise<ModelProvider[]> {
+    const term = normalizeSearch(query.name ?? '')
+    return [...this.modelProviders.values()]
+      .filter((item) => item.ownerId === ownerId)
+      .filter((item) => !query.modelType || item.modelType === query.modelType)
+      .filter((item) => !term || normalizeSearch(`${item.name} ${item.providerCode} ${item.modelType}`).includes(term))
+      .sort((left, right) => left.modelType.localeCompare(right.modelType) || left.sort - right.sort || left.name.localeCompare(right.name, 'vi'))
+      .map(cloneModelProvider)
+  }
+
+  async createModelProvider(ownerId: string, input: ModelProviderInput): Promise<ModelProvider> {
+    const normalized = normalizeModelProviderInput(input)
+    const id = modelProviderId(normalized.modelType, normalized.providerCode)
+    if ([...this.modelProviders.values()].some((item) => item.ownerId === ownerId && (item.id === id || (item.modelType === normalized.modelType && item.providerCode.toLowerCase() === normalized.providerCode.toLowerCase())))) throw problem('NAME_CONFLICT', 'Model provider already exists', 409)
+    const item = newModelProvider(ownerId, normalized)
+    this.modelProviders.set(id, item)
+    return cloneModelProvider(item)
+  }
+
+  async updateModelProvider(ownerId: string, id: string, input: Partial<ModelProviderInput>, ifMatch?: string): Promise<ModelProvider> {
+    const current = this.modelProviders.get(id)
+    if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Model provider not found', 404)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Model provider changed', 409)
+    const nextInput = normalizeModelProviderInput({ modelType: input.modelType ?? current.modelType, providerCode: input.providerCode ?? current.providerCode, name: input.name ?? current.name, fields: input.fields ?? current.fields, sort: input.sort ?? current.sort })
+    const nextId = modelProviderId(nextInput.modelType, nextInput.providerCode)
+    const duplicate = [...this.modelProviders.values()].some((item) => item.ownerId === ownerId && item.id !== id && item.id === nextId)
+    if (duplicate) throw problem('NAME_CONFLICT', 'Model provider already exists', 409)
+    if (nextId !== id && [...this.modelConfigs.values()].some((item) => item.ownerId === ownerId && item.providerCode === current.providerCode && item.modelType === current.modelType)) throw problem('RESOURCE_IN_USE', 'Model provider is used by a model config', 409)
+    const revision = current.revision + 1
+    const now = new Date().toISOString()
+    const next: ModelProvider = { id: nextId, ownerId, ...nextInput, sort: nextInput.sort ?? 0, revision, etag: modelEtag({ id: nextId, ownerId, ...nextInput, sort: nextInput.sort ?? 0, revision }), updatedAt: now }
+    this.modelProviders.delete(id)
+    this.modelProviders.set(nextId, next)
+    return cloneModelProvider(next)
+  }
+
+  async deleteModelProvider(ownerId: string, id: string, ifMatch?: string): Promise<void> {
+    const current = this.modelProviders.get(id)
+    if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Model provider not found', 404)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Model provider changed', 409)
+    if ([...this.modelConfigs.values()].some((item) => item.ownerId === ownerId && item.modelType === current.modelType && item.providerCode === current.providerCode)) throw problem('RESOURCE_IN_USE', 'Model provider is used by a model config', 409)
+    this.modelProviders.delete(id)
+  }
+
+  async listModelConfigs(ownerId: string, query: ModelConfigQuery = {}): Promise<ModelConfigPage> {
+    const term = normalizeSearch(query.modelName ?? '')
+    const all = [...this.modelConfigs.values()]
+      .filter((item) => item.ownerId === ownerId)
+      .filter((item) => !query.modelType || item.modelType === query.modelType)
+      .filter((item) => !term || normalizeSearch(`${item.modelName} ${item.modelCode} ${item.providerCode}`).includes(term))
+      .sort((left, right) => left.sort - right.sort || left.modelName.localeCompare(right.modelName, 'vi'))
+    const page = Math.max(1, Math.trunc(query.page ?? 1))
+    const limit = Math.min(100, Math.max(1, Math.trunc(query.limit ?? 10)))
+    return { items: all.slice((page - 1) * limit, page * limit).map(cloneModelConfig), total: all.length, page, limit }
+  }
+
+  async getModelConfig(ownerId: string, id: string): Promise<ModelConfig | undefined> {
+    const item = this.modelConfigs.get(id)
+    return item && item.ownerId === ownerId ? cloneModelConfig(item) : undefined
+  }
+
+  async createModelConfig(ownerId: string, input: ModelConfigInput): Promise<ModelConfig> {
+    const normalized = normalizeModelConfigInput(input)
+    this.assertModelProvider(ownerId, normalized.modelType, normalized.providerCode)
+    const id = normalized.id?.trim() || modelConfigId(normalized.modelType, normalized.modelCode)
+    if (this.modelConfigs.has(id)) throw problem('NAME_CONFLICT', 'Model config already exists', 409)
+    const item = newModelConfig(ownerId, { ...normalized, id })
+    if (item.isDefault) this.clearDefault(ownerId, item.modelType)
+    this.modelConfigs.set(item.id, item)
+    return cloneModelConfig(item)
+  }
+
+  async updateModelConfig(ownerId: string, id: string, input: Partial<ModelConfigInput>, ifMatch?: string): Promise<ModelConfig> {
+    const current = this.modelConfigs.get(id)
+    if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Model config not found', 404)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Model config changed', 409)
+    const normalized = normalizeModelConfigInput({ modelType: input.modelType ?? current.modelType, providerCode: input.providerCode ?? current.providerCode, id, modelCode: input.modelCode ?? current.modelCode, modelName: input.modelName ?? current.modelName, isDefault: input.isDefault ?? current.isDefault, isEnabled: input.isEnabled ?? current.isEnabled, configJson: input.configJson ?? current.configJson, docLink: input.docLink ?? current.docLink, remark: input.remark ?? current.remark, sort: input.sort ?? current.sort })
+    this.assertModelProvider(ownerId, normalized.modelType, normalized.providerCode)
+    const revision = current.revision + 1
+    const next = newModelConfig(ownerId, { ...normalized, id }, revision)
+    if (next.isDefault) this.clearDefault(ownerId, next.modelType, id)
+    this.modelConfigs.set(id, next)
+    return cloneModelConfig(next)
+  }
+
+  async deleteModelConfig(ownerId: string, id: string, ifMatch?: string): Promise<void> {
+    const current = this.modelConfigs.get(id)
+    if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Model config not found', 404)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Model config changed', 409)
+    this.modelConfigs.delete(id)
+  }
+
+  async setModelEnabled(ownerId: string, id: string, enabled: boolean): Promise<ModelConfig> {
+    return this.updateModelConfig(ownerId, id, { isEnabled: enabled })
+  }
+
+  async setDefaultModel(ownerId: string, id: string): Promise<ModelConfig> {
+    const current = this.modelConfigs.get(id)
+    if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Model config not found', 404)
+    this.clearDefault(ownerId, current.modelType, id)
+    return this.updateModelConfig(ownerId, id, { isDefault: true })
+  }
+
+  private clearDefault(ownerId: string, modelType: ModelType, exceptId?: string): void {
+    for (const [id, item] of this.modelConfigs) {
+      if (item.ownerId !== ownerId || item.modelType !== modelType || id === exceptId || !item.isDefault) continue
+      this.modelConfigs.set(id, { ...item, isDefault: false, revision: item.revision + 1, etag: modelEtag({ ...item, isDefault: false, revision: item.revision + 1 }), updatedAt: new Date().toISOString() })
+    }
+  }
+
+  private assertModelProvider(ownerId: string, modelType: ModelType, providerCode: string): void {
+    if (![...this.modelProviders.values()].some((item) => item.ownerId === ownerId && item.modelType === modelType && item.providerCode === providerCode)) throw problem('CONFIG_INVALID', 'Model provider does not exist for this category', 422)
+  }
+
+  private seedModelRegistry(registry: ModelRegistrySeed): void {
+    for (const provider of registry.providers) {
+      try { const item = newModelProvider('local-owner', provider); this.modelProviders.set(item.id, item) } catch { /* invalid seed is ignored; parser validates runtime files */ }
+    }
+    for (const config of registry.configs) {
+      try {
+        const item = newModelConfig('local-owner', config)
+        // Source rows keep their own stable provider id (which may differ in
+        // casing or naming from the generated SYSTEM_<type>_<code> id). Match
+        // by the source business key, just like the relational adapter does.
+        const providerExists = [...this.modelProviders.values()].some((provider) => provider.modelType === item.modelType && provider.providerCode === item.providerCode)
+        if (providerExists) this.modelConfigs.set(item.id, item)
+      } catch { /* invalid seed is ignored */ }
     }
   }
 
@@ -481,11 +657,12 @@ export class InMemoryStore implements Store {
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
     const config = normalizeProviderConfig(installation, value.config)
     validateJsonObject(config, installation.configSchema)
+    this.assertProviderNameAvailable(ownerId, value.name)
     const secretRefs = [...(value.secretRefs ?? [])]
     validateSecretBindings(installation, secretRefs)
     for (const referenceId of secretRefs) if (!this.secretReferences.has(referenceId) || this.secretReferences.get(referenceId)?.ownerId !== ownerId || this.secretReferences.get(referenceId)?.status !== 'available') throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
     const now = new Date().toISOString()
-    const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name, revision: 1, config: structuredClone(config), secretRefs, etag: etag({ ...config, revision: 1 }), updatedAt: now, archivedAt: null }
+    const item: ProviderConfig = { id: randomUUID(), ownerId, installationId: value.installationId, name: value.name.trim(), enabled: true, revision: 1, config: structuredClone(config), secretRefs, etag: etag({ ...config, revision: 1, enabled: true }), updatedAt: now, archivedAt: null }
     this.providerConfigs.set(item.id, item)
     this.providerConfigSecretRefs.set(item.id, new Set(item.secretRefs))
     return structuredClone(item)
@@ -500,10 +677,12 @@ export class InMemoryStore implements Store {
     if (!installation) throw problem('PROVIDER_NOT_INSTALLED', 'Provider installation does not exist', 422)
     const config = normalizeProviderConfig(installation, value.config ?? current.config)
     validateJsonObject(config, installation.configSchema)
+    if (value.name !== undefined) this.assertProviderNameAvailable(ownerId, value.name, id)
     const secretRefs = [...(value.secretRefs ?? current.secretRefs)]
     validateSecretBindings(installation, secretRefs)
     for (const referenceId of secretRefs) if (!this.secretReferences.has(referenceId) || this.secretReferences.get(referenceId)?.ownerId !== ownerId || this.secretReferences.get(referenceId)?.status !== 'available') throw problem('SECRET_INVALID', 'One or more secret references are unavailable', 422)
-    const next: ProviderConfig = { ...current, ...value, config: structuredClone(config), secretRefs, revision: current.revision + 1, etag: etag({ ...config, revision: current.revision + 1 }), updatedAt: new Date().toISOString() }
+    const nextRevision = current.revision + 1
+    const next: ProviderConfig = { ...current, name: value.name?.trim() ?? current.name, config: structuredClone(config), secretRefs, revision: nextRevision, etag: etag({ ...config, revision: nextRevision, enabled: current.enabled }), updatedAt: new Date().toISOString() }
     this.providerConfigs.set(id, next)
     const historicalRefs = this.providerConfigSecretRefs.get(id) ?? new Set<string>()
     for (const referenceId of next.secretRefs) historicalRefs.add(referenceId)
@@ -511,12 +690,23 @@ export class InMemoryStore implements Store {
     return structuredClone(next)
   }
 
+  async setProviderConfigEnabled(ownerId: string, id: string, enabled: boolean, ifMatch: string): Promise<ProviderConfig> {
+    const current = this.providerConfigs.get(id)
+    if (!current || current.ownerId !== ownerId || current.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
+    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
+    if (!enabled && this.providerConfigInUse(ownerId, id)) {
+      throw problem('RESOURCE_IN_USE', 'Provider config is selected by an assistant', 409)
+    }
+    const next: ProviderConfig = { ...current, enabled, etag: etag({ ...current.config, revision: current.revision, enabled }), updatedAt: new Date().toISOString() }
+    this.providerConfigs.set(id, next)
+    return structuredClone(next)
+  }
+
   async deleteProviderConfig(ownerId: string, id: string, ifMatch: string): Promise<void> {
     const current = this.providerConfigs.get(id)
     if (!current || current.ownerId !== ownerId || current.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
     if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
-    const selected = [...this.assistants.values()].some((assistant) => Object.values(assistant.providerSelections).some((value) => value?.providerConfigId === id))
-    if (selected) throw problem('RESOURCE_IN_USE', 'Provider config is selected by an assistant', 409)
+    if (this.providerConfigInUse(ownerId, id)) throw problem('RESOURCE_IN_USE', 'Provider config is selected by an assistant', 409)
     current.archivedAt = new Date().toISOString()
     current.updatedAt = current.archivedAt
     this.providerConfigs.set(id, current)
@@ -635,6 +825,7 @@ export class InMemoryStore implements Store {
       const installation = selected ? this.installations.find((item) => item.id === selected.installationId) : undefined
       if (!selected || selected.ownerId !== ownerId || !installation) throw problem('CONFIG_INVALID', 'Provider config is not available for this owner', 422)
       if (installation.kind !== value.kind) throw problem('CONFIG_INVALID', 'Provider config kind does not match selection kind', 422)
+      if (!selected.enabled) throw problem('CONFIG_INVALID', 'Provider config is disabled', 422)
     }
     current.providerSelections = { ...current.providerSelections, [value.kind]: value.mode === 'selected' ? { mode: value.mode, providerConfigId: value.providerConfigId } : { mode: value.mode } }
     current.draftRevision += 1
@@ -1084,6 +1275,28 @@ export class InMemoryStore implements Store {
 
   private kind(id: string): ProviderKind | undefined { return this.installations.find((item) => item.id === id)?.kind }
 
+  /**
+   * A config remains in use while it is referenced by the current draft or by
+   * the published runtime snapshot. Older immutable revisions alone do not
+   * keep a config locked forever.
+   */
+  private providerConfigInUse(ownerId: string, id: string): boolean {
+    for (const assistant of this.assistants.values()) {
+      if (assistant.ownerId !== ownerId) continue
+      if (Object.values(assistant.providerSelections).some((value) => value?.providerConfigId === id || value?.providerId === id)) return true
+      if (assistant.publishedRevision !== null && this.publication?.snapshot.assistantId === assistant.id
+        && Object.values(this.publication.snapshot.providers).some((value) => value?.providerConfigId === id || value?.providerId === id)) return true
+    }
+    return false
+  }
+
+  private assertProviderNameAvailable(ownerId: string, name: string, exceptId?: string): void {
+    const normalized = name.trim().toLocaleLowerCase()
+    if (!normalized) throw problem('CONFIG_INVALID', 'Provider config name is required', 422)
+    const duplicate = [...this.providerConfigs.values()].some((item) => item.ownerId === ownerId && !item.archivedAt && item.id !== exceptId && item.name.trim().toLocaleLowerCase() === normalized)
+    if (duplicate) throw problem('NAME_CONFLICT', 'A provider config with this name already exists', 409)
+  }
+
   private withAssistantSummary(current: AssistantRecord): Assistant {
     const devices = [...this.devices.values()].filter((device) => device.ownerId === current.ownerId && device.assistantId === current.id)
     const now = this.clock()
@@ -1111,7 +1324,7 @@ export class InMemoryStore implements Store {
     return {
       assistantId: current.id,
       selections,
-      availableConfigs: [...this.providerConfigs.values()].filter((item) => item.ownerId === current.ownerId && !item.archivedAt).map((item) => { const installation = this.installations.find((candidate) => candidate.id === item.installationId); return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayName ?? installation?.displayNameKey ?? item.installationId, availability: 'ready' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] } }),
+      availableConfigs: [...this.providerConfigs.values()].filter((item) => item.ownerId === current.ownerId && !item.archivedAt).map((item) => { const installation = this.installations.find((candidate) => candidate.id === item.installationId); return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayName ?? installation?.displayNameKey ?? item.installationId, availability: item.enabled ? 'ready' as const : 'disabled' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] } }),
       memory: { enabled: current.role.memoryEnabled !== false, itemCount: 0 },
       memoryItems: [],
     }
@@ -1146,10 +1359,64 @@ export function parseCatalog(raw: unknown): ProviderInstallation[] {
   })
 }
 
+export function parseModelRegistry(raw: unknown): ModelRegistrySeed {
+  if (!isRecord(raw) || raw.schemaVersion !== 1 || !Array.isArray(raw.providers) || !Array.isArray(raw.configs)) throw new Error('model registry must contain schemaVersion 1, providers and configs')
+  const providers = raw.providers.map((value, index) => {
+    if (!isRecord(value)) throw new Error(`model registry provider[${index}] must be an object`)
+    const fieldsRaw = Array.isArray(value.fields) ? value.fields : []
+    const fields = fieldsRaw.map((field, fieldIndex) => {
+      if (!isRecord(field)) throw new Error(`model registry provider[${index}].fields[${fieldIndex}] must be an object`)
+      return {
+        ...structuredClone(field),
+        key: catalogString(field.key, `model registry provider[${index}].fields[${fieldIndex}].key`),
+        label: catalogString(field.label, `model registry provider[${index}].fields[${fieldIndex}].label`),
+        type: catalogString(field.type, `model registry provider[${index}].fields[${fieldIndex}].type`) as ModelProviderField['type'],
+      }
+    })
+    return normalizeModelProviderInput({ ...(typeof value.id === 'string' ? { id: value.id } : {}), modelType: catalogString(value.modelType, `model registry provider[${index}].modelType`) as ModelType, providerCode: catalogString(value.providerCode, `model registry provider[${index}].providerCode`), name: catalogString(value.name, `model registry provider[${index}].name`), fields, sort: typeof value.sort === 'number' ? value.sort : 0 })
+  })
+  const configs = raw.configs.map((value, index) => {
+    if (!isRecord(value)) throw new Error(`model registry config[${index}] must be an object`)
+    const configJson = isRecord(value.configJson) ? value.configJson : {}
+    return normalizeModelConfigInput({ modelType: catalogString(value.modelType, `model registry config[${index}].modelType`) as ModelType, providerCode: catalogString(value.providerCode, `model registry config[${index}].providerCode`), ...(typeof value.id === 'string' ? { id: value.id } : {}), modelCode: catalogString(value.modelCode, `model registry config[${index}].modelCode`), modelName: catalogString(value.modelName, `model registry config[${index}].modelName`), isDefault: value.isDefault === true, isEnabled: value.isEnabled !== false, configJson, docLink: typeof value.docLink === 'string' ? value.docLink : null, remark: typeof value.remark === 'string' ? value.remark : null, sort: typeof value.sort === 'number' ? value.sort : 0 })
+  })
+  const providerKeys = new Set(providers.map((item) => `${item.modelType}:${item.providerCode}`))
+  for (const config of configs) if (!providerKeys.has(`${config.modelType}:${config.providerCode}`)) throw new Error(`model registry config references missing provider: ${config.modelType}/${config.providerCode}`)
+  const voices = Array.isArray(raw.voices) ? raw.voices.map((value, index) => {
+    if (!isRecord(value)) throw new Error(`model registry voice[${index}] must be an object`)
+    const text = (key: string): string => typeof value[key] === 'string' ? value[key] as string : ''
+    const id = catalogString(value.id, `model registry voice[${index}].id`)
+    const ttsModelId = catalogString(value.ttsModelId, `model registry voice[${index}].ttsModelId`)
+    const name = text('name').trim()
+    const ttsVoice = text('ttsVoice').trim()
+    const languages = text('languages').trim()
+    if (!name || !languages) throw new Error(`model registry voice[${index}] requires name and languages`)
+    return {
+      id,
+      ttsModelId,
+      name,
+      ttsVoice,
+      languages,
+      voiceDemo: typeof value.voiceDemo === 'string' ? value.voiceDemo : null,
+      remark: typeof value.remark === 'string' ? value.remark : null,
+      referenceAudio: typeof value.referenceAudio === 'string' ? value.referenceAudio : null,
+      referenceText: typeof value.referenceText === 'string' ? value.referenceText : null,
+      sort: typeof value.sort === 'number' ? Math.max(0, Math.trunc(value.sort)) : 0,
+    }
+  }) : []
+  const configIds = new Set(configs.map((item) => item.id).filter((id): id is string => typeof id === 'string'))
+  for (const voice of voices) if (!configIds.has(voice.ttsModelId)) throw new Error(`model registry voice references missing TTS model: ${voice.ttsModelId}`)
+  return { providers, configs, voices }
+}
+
 const providerKinds = new Set<ProviderKind>(['vad', 'asr', 'llm', 'tts', 'intent', 'memory'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizeSearch(value: string): string {
+  return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLocaleLowerCase('vi')
 }
 
 function catalogString(value: unknown, field: string): string {

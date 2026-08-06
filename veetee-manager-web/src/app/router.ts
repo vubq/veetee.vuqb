@@ -9,8 +9,8 @@ const AssistantModelMemoryView = () => import('@/views/AssistantModelMemoryView.
 const AssistantRoleView = () => import('@/views/AssistantRoleView.vue')
 const AssistantDevicesView = () => import('@/views/AssistantDevicesView.vue')
 const AssistantHistoryView = () => import('@/views/AssistantHistoryView.vue')
-const ProviderOverviewView = () => import('@/views/ProviderOverviewView.vue')
-const ProviderKindView = () => import('@/views/ProviderKindView.vue')
+const ModelConfigurationView = () => import('@/views/ModelConfigurationView.vue')
+const ModelProviderManagementView = () => import('@/views/ModelProviderManagementView.vue')
 const ProviderVoiceCatalogView = () => import('@/views/ProviderVoiceCatalogView.vue')
 
 const routes: RouteRecordRaw[] = [
@@ -46,9 +46,11 @@ const routes: RouteRecordRaw[] = [
     component: AssistantHistoryView,
     meta: { title: 'Lịch sử hội thoại' },
   },
-  { path: '/providers', name: 'providers', component: ProviderOverviewView, meta: { title: 'Dịch vụ AI' } },
+  { path: '/providers', redirect: '/model-config' },
+  { path: '/model-config', name: 'model-config', component: ModelConfigurationView, meta: { title: 'Model Configuration' } },
+  { path: '/provider-management', name: 'provider-management', component: ModelProviderManagementView, meta: { title: 'Provider Management' } },
   { path: '/providers/tts/voices', name: 'provider-voices', component: ProviderVoiceCatalogView, meta: { title: 'Thư viện giọng nói' } },
-  { path: '/providers/:kind', name: 'provider-kind', component: ProviderKindView, meta: { title: 'Cấu hình dịch vụ' } },
+  { path: '/providers/:kind', redirect: '/model-config' },
 ]
 
 if (import.meta.env.DEV && !import.meta.env.VITE_MANAGER_API_URL) {

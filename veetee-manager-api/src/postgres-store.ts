@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, gt, inArray, isNull, isNotNull, lt, lte, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, isNotNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import {
   assistantRevisionTable,
   assistantTable,
@@ -17,6 +17,9 @@ import {
   retentionDeleteJobTable,
   retentionPolicyTable,
   secretReferenceTable,
+  modelProviderTable,
+  modelConfigTable,
+  ttsVoiceTable,
 } from './db/schema.js'
 import { openDatabase, readDatabaseUrl, type DatabaseHandle } from './db/client.js'
 import {
@@ -42,6 +45,14 @@ import {
   type DevicePresenceResult,
   type ManagerSession,
   type ModelMemoryView,
+  type ModelConfig,
+  type ModelConfigInput,
+  type ModelConfigPage,
+  type ModelConfigQuery,
+  type ModelProvider,
+  type ModelProviderInput,
+  type ModelRegistrySeed,
+  type ModelType,
   type PairingChallenge,
   type ProviderConfig,
   type ProviderProbeResult,
@@ -62,6 +73,7 @@ import {
   validateVoiceValue,
   validateProviderSelectionShape,
 } from './store.js'
+import { cloneModelConfig, cloneModelProvider, modelEtag, newModelConfig, newModelProvider, normalizeModelConfigInput, normalizeModelProviderInput } from './model-registry.js'
 
 type JsonObject = Record<string, unknown>
 type AssistantRow = typeof assistantTable.$inferSelect
@@ -76,11 +88,14 @@ type RetentionPolicyRow = typeof retentionPolicyTable.$inferSelect
 type ConversationRow = typeof conversationTable.$inferSelect
 type ConversationTurnRow = typeof conversationTurnTable.$inferSelect
 type RetentionDeleteJobRow = typeof retentionDeleteJobTable.$inferSelect
+type ModelProviderRow = typeof modelProviderTable.$inferSelect
+type ModelConfigRow = typeof modelConfigTable.$inferSelect
 type AssistantSummary = Pick<Assistant, 'deviceCount' | 'onlineDeviceCount' | 'lastConversationAt'>
 
 export interface PostgresStoreOptions {
   catalog: ProviderInstallation[]
   initial?: RuntimeSnapshot
+  modelRegistry?: ModelRegistrySeed
   databaseUrlFile: string | undefined
   presenceTtlSeconds?: number
   tombstoneTtlSeconds?: number
@@ -108,6 +123,7 @@ export class PostgresStore implements Store {
     )
     try {
       await store.assertMigrated()
+      if (options.modelRegistry) await store.seedModelRegistry(options.modelRegistry)
       if (options.initial) await store.seedIfEmpty(options.initial)
       return store
     } catch (error) {
@@ -122,6 +138,112 @@ export class PostgresStore implements Store {
 
   async listInstallations(): Promise<ProviderInstallation[]> {
     return this.installations.map((item) => structuredClone(item))
+  }
+
+  async listModelProviders(ownerId: string, query: { modelType?: ModelType; name?: string } = {}): Promise<ModelProvider[]> {
+    void ownerId
+    const rows = await this.handle.db.select().from(modelProviderTable).where(query.modelType ? eq(modelProviderTable.modelType, query.modelType) : undefined).orderBy(asc(modelProviderTable.modelType), asc(modelProviderTable.sort), asc(modelProviderTable.name))
+    const term = query.name?.trim().toLocaleLowerCase()
+    return rows.filter((row) => !term || `${row.name ?? ''} ${row.providerCode ?? ''} ${row.modelType ?? ''}`.toLocaleLowerCase().includes(term)).map((row) => cloneModelProvider(this.mapModelProvider(row)))
+  }
+
+  async createModelProvider(ownerId: string, input: ModelProviderInput): Promise<ModelProvider> {
+    const item = newModelProvider(ownerId, normalizeModelProviderInput(input))
+    try {
+      const now = new Date()
+      await this.handle.db.insert(modelProviderTable).values({ id: item.id, modelType: item.modelType, providerCode: item.providerCode, name: item.name, fields: item.fields as unknown as JsonObject[], sort: item.sort, creator: 1, createDate: now, updater: 1, updateDate: now })
+    } catch (error) { if (isUniqueViolation(error)) throw problem('NAME_CONFLICT', 'Model provider already exists', 409); throw error }
+    return cloneModelProvider(item)
+  }
+
+  async updateModelProvider(ownerId: string, id: string, input: Partial<ModelProviderInput>, ifMatch?: string): Promise<ModelProvider> {
+    const row = await this.findModelProvider(ownerId, id)
+    if (!row) throw problem('NOT_FOUND', 'Model provider not found', 404)
+    const current = this.mapModelProvider(row)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Model provider changed', 409)
+    const normalized = normalizeModelProviderInput({ modelType: input.modelType ?? current.modelType, providerCode: input.providerCode ?? current.providerCode, name: input.name ?? current.name, fields: input.fields ?? current.fields, sort: input.sort ?? current.sort })
+    const nextId = id
+    if (normalized.providerCode !== current.providerCode || normalized.modelType !== current.modelType) {
+      const used = await this.handle.db.select({ id: modelConfigTable.id }).from(modelConfigTable).where(and(eq(modelConfigTable.modelType, current.modelType), sql`${modelConfigTable.configJson}->>'type' = ${current.providerCode}`)).limit(1)
+      if (used.length) throw problem('RESOURCE_IN_USE', 'Model provider is used by a model config', 409)
+    }
+    const next = { ...newModelProvider(ownerId, { ...normalized, id: nextId }, current.revision + 1), id: nextId }
+    const updated = await this.handle.db.update(modelProviderTable).set({ id: nextId, modelType: next.modelType, providerCode: next.providerCode, name: next.name, fields: next.fields as unknown as JsonObject[], sort: next.sort, updater: 1, updateDate: new Date() }).where(eq(modelProviderTable.id, id)).returning()
+    if (!updated.length) throw problem('REVISION_CONFLICT', 'Model provider changed', 409)
+    return cloneModelProvider(next)
+  }
+
+  async deleteModelProvider(ownerId: string, id: string, ifMatch?: string): Promise<void> {
+    const row = await this.findModelProvider(ownerId, id)
+    if (!row) throw problem('NOT_FOUND', 'Model provider not found', 404)
+    const current = this.mapModelProvider(row)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Model provider changed', 409)
+    const used = await this.handle.db.select({ id: modelConfigTable.id }).from(modelConfigTable).where(and(eq(modelConfigTable.modelType, current.modelType), sql`${modelConfigTable.configJson}->>'type' = ${current.providerCode}`)).limit(1)
+    if (used.length) throw problem('RESOURCE_IN_USE', 'Model provider is used by a model config', 409)
+    await this.handle.db.delete(modelProviderTable).where(eq(modelProviderTable.id, id))
+  }
+
+  async listModelConfigs(ownerId: string, query: ModelConfigQuery = {}): Promise<ModelConfigPage> {
+    void ownerId
+    const rows = await this.handle.db.select().from(modelConfigTable).where(query.modelType ? eq(modelConfigTable.modelType, query.modelType) : undefined).orderBy(asc(modelConfigTable.sort), asc(modelConfigTable.modelName))
+    const term = query.modelName?.trim().toLocaleLowerCase()
+    const filtered = rows.filter((row) => !term || `${row.modelName ?? ''} ${row.modelCode ?? ''} ${asJsonObject(row.configJson ?? {}).type ?? ''}`.toLocaleLowerCase().includes(term))
+    const page = Math.max(1, Math.trunc(query.page ?? 1))
+    const limit = Math.min(100, Math.max(1, Math.trunc(query.limit ?? 10)))
+    return { items: filtered.slice((page - 1) * limit, page * limit).map((row) => cloneModelConfig(this.mapModelConfig(row))), total: filtered.length, page, limit }
+  }
+
+  async getModelConfig(ownerId: string, id: string): Promise<ModelConfig | undefined> {
+    const row = await this.findModelConfig(ownerId, id)
+    return row ? cloneModelConfig(this.mapModelConfig(row)) : undefined
+  }
+
+  async createModelConfig(ownerId: string, input: ModelConfigInput): Promise<ModelConfig> {
+    const normalized = normalizeModelConfigInput(input)
+    await this.assertModelProvider(ownerId, normalized.modelType, normalized.providerCode)
+    const item = newModelConfig(ownerId, normalized)
+    try {
+      await this.handle.db.transaction(async (tx) => {
+        if (item.isDefault) await tx.update(modelConfigTable).set({ isDefault: 0, updater: 1, updateDate: new Date() }).where(and(eq(modelConfigTable.modelType, item.modelType), eq(modelConfigTable.isDefault, 1)))
+        const now = new Date()
+        await tx.insert(modelConfigTable).values({ id: item.id, modelType: item.modelType, modelCode: item.modelCode, modelName: item.modelName, isDefault: item.isDefault ? 1 : 0, isEnabled: item.isEnabled ? 1 : 0, configJson: item.configJson, docLink: item.docLink, remark: item.remark, sort: item.sort, creator: 1, createDate: now, updater: 1, updateDate: now })
+      })
+    } catch (error) { if (isUniqueViolation(error)) throw problem('NAME_CONFLICT', 'Model config already exists', 409); throw error }
+    return cloneModelConfig(item)
+  }
+
+  async updateModelConfig(ownerId: string, id: string, input: Partial<ModelConfigInput>, ifMatch?: string): Promise<ModelConfig> {
+    const row = await this.findModelConfig(ownerId, id)
+    if (!row) throw problem('NOT_FOUND', 'Model config not found', 404)
+    const current = this.mapModelConfig(row)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Model config changed', 409)
+    const normalized = normalizeModelConfigInput({ modelType: input.modelType ?? current.modelType, providerCode: input.providerCode ?? current.providerCode, id, modelCode: input.modelCode ?? current.modelCode, modelName: input.modelName ?? current.modelName, isDefault: input.isDefault ?? current.isDefault, isEnabled: input.isEnabled ?? current.isEnabled, configJson: input.configJson ?? current.configJson, docLink: input.docLink ?? current.docLink, remark: input.remark ?? current.remark, sort: input.sort ?? current.sort })
+    await this.assertModelProvider(ownerId, normalized.modelType, normalized.providerCode)
+    const next = newModelConfig(ownerId, normalized, current.revision + 1)
+    await this.handle.db.transaction(async (tx) => {
+      if (next.isDefault) await tx.update(modelConfigTable).set({ isDefault: 0, updater: 1, updateDate: new Date() }).where(and(eq(modelConfigTable.modelType, next.modelType), eq(modelConfigTable.isDefault, 1), ne(modelConfigTable.id, id)))
+      const updated = await tx.update(modelConfigTable).set({ modelType: next.modelType, modelCode: next.modelCode, modelName: next.modelName, isDefault: next.isDefault ? 1 : 0, isEnabled: next.isEnabled ? 1 : 0, configJson: next.configJson, docLink: next.docLink, remark: next.remark, sort: next.sort, updater: 1, updateDate: new Date() }).where(eq(modelConfigTable.id, id)).returning({ id: modelConfigTable.id })
+      if (!updated.length) throw problem('REVISION_CONFLICT', 'Model config changed', 409)
+    })
+    return cloneModelConfig(next)
+  }
+
+  async deleteModelConfig(ownerId: string, id: string, ifMatch?: string): Promise<void> {
+    const row = await this.findModelConfig(ownerId, id)
+    if (!row) throw problem('NOT_FOUND', 'Model config not found', 404)
+    const current = this.mapModelConfig(row)
+    if (ifMatch && current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Model config changed', 409)
+    await this.handle.db.delete(modelConfigTable).where(eq(modelConfigTable.id, id))
+  }
+
+  async setModelEnabled(ownerId: string, id: string, enabled: boolean): Promise<ModelConfig> {
+    const current = await this.getModelConfig(ownerId, id)
+    if (current?.isDefault && !enabled) throw problem('RESOURCE_IN_USE', 'Default model cannot be disabled', 409)
+    return this.updateModelConfig(ownerId, id, { isEnabled: enabled })
+  }
+
+  async setDefaultModel(ownerId: string, id: string): Promise<ModelConfig> {
+    return this.updateModelConfig(ownerId, id, { isDefault: true, isEnabled: true })
   }
 
   async listProviderConfigs(ownerId: string, kind?: ProviderKind): Promise<ProviderConfig[]> {
@@ -141,6 +263,7 @@ export class PostgresStore implements Store {
     const installation = this.findInstallation(value.installationId)
     const config = normalizeProviderConfig(installation, value.config)
     validateJsonObject(config, installation.configSchema)
+    await this.assertProviderNameAvailable(ownerId, value.name)
     const secretRefs = [...(value.secretRefs ?? [])]
     validateSecretBindings(installation, secretRefs)
     await this.assertSecretRefs(ownerId, secretRefs)
@@ -148,8 +271,9 @@ export class PostgresStore implements Store {
     const now = new Date()
     const revision = 1
     const revisionEtag = etag({ ...config, revision })
+    const statusEtag = etag({ ...config, revision, enabled: true })
     await this.handle.db.transaction(async (tx) => {
-      await tx.insert(providerConfigTable).values({ id, ownerId, installationId: value.installationId, name: value.name, currentRevision: revision, currentEtag: revisionEtag, createdAt: now, updatedAt: now, archivedAt: null })
+      await tx.insert(providerConfigTable).values({ id, ownerId, installationId: value.installationId, name: value.name.trim(), enabled: true, currentRevision: revision, currentEtag: statusEtag, createdAt: now, updatedAt: now, archivedAt: null })
       await tx.insert(providerConfigRevisionTable).values({ providerConfigId: id, revision, config: structuredClone(config), secretRefs, etag: revisionEtag, createdAt: now })
     })
     const identity = await this.findProviderIdentity(ownerId, id)
@@ -164,19 +288,21 @@ export class PostgresStore implements Store {
     if (identity.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
     const current = await this.findProviderRevision(id, identity.currentRevision)
     if (!current) throw new Error('provider config current revision is missing')
-    if (current.etag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
+    if (identity.currentEtag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
     const installation = this.findInstallation(identity.installationId)
     const config = normalizeProviderConfig(installation, value.config ?? asJsonObject(current.config))
     validateJsonObject(config, installation.configSchema)
+    if (value.name !== undefined) await this.assertProviderNameAvailable(ownerId, value.name, id)
     const secretRefs = [...(value.secretRefs ?? asSecretRefs(current.secretRefs))]
     validateSecretBindings(installation, secretRefs)
     await this.assertSecretRefs(ownerId, secretRefs)
     const revision = identity.currentRevision + 1
     const nextEtag = etag({ ...config, revision })
+    const nextStatusEtag = etag({ ...config, revision, enabled: identity.enabled })
     const now = new Date()
     await this.handle.db.transaction(async (tx) => {
       await tx.insert(providerConfigRevisionTable).values({ providerConfigId: id, revision, config: structuredClone(config), secretRefs, etag: nextEtag, createdAt: now })
-      const updated = await tx.update(providerConfigTable).set({ name: value.name ?? identity.name, currentRevision: revision, currentEtag: nextEtag, updatedAt: now }).where(and(eq(providerConfigTable.id, id), eq(providerConfigTable.ownerId, ownerId), eq(providerConfigTable.currentRevision, identity.currentRevision), eq(providerConfigTable.currentEtag, ifMatch))).returning()
+      const updated = await tx.update(providerConfigTable).set({ name: value.name?.trim() ?? identity.name, currentRevision: revision, currentEtag: nextStatusEtag, updatedAt: now }).where(and(eq(providerConfigTable.id, id), eq(providerConfigTable.ownerId, ownerId), eq(providerConfigTable.currentRevision, identity.currentRevision), eq(providerConfigTable.currentEtag, ifMatch))).returning()
       if (!updated.length) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
     })
     const nextIdentity = await this.findProviderIdentity(ownerId, id)
@@ -185,16 +311,29 @@ export class PostgresStore implements Store {
     return this.mapProviderConfig(nextIdentity, nextRevision)
   }
 
+  async setProviderConfigEnabled(ownerId: string, id: string, enabled: boolean, ifMatch: string): Promise<ProviderConfig> {
+    const identity = await this.findProviderIdentity(ownerId, id)
+    if (!identity || identity.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
+    if (identity.currentEtag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
+    if (!enabled && await this.providerConfigInUse(ownerId, id)) throw problem('RESOURCE_IN_USE', 'Provider config is selected by an assistant', 409)
+    const revision = await this.findProviderRevision(id, identity.currentRevision)
+    if (!revision) throw new Error('provider config current revision is missing')
+    const nextEtag = etag({ ...asJsonObject(revision.config), revision: identity.currentRevision, enabled })
+    const updated = await this.handle.db.update(providerConfigTable)
+      .set({ enabled, currentEtag: nextEtag, updatedAt: new Date() })
+      .where(and(eq(providerConfigTable.id, id), eq(providerConfigTable.ownerId, ownerId), eq(providerConfigTable.currentEtag, ifMatch), isNull(providerConfigTable.archivedAt)))
+      .returning()
+    if (!updated.length) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
+    const [updatedRow] = updated
+    if (!updatedRow) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
+    return this.mapProviderConfig(updatedRow, revision)
+  }
+
   async deleteProviderConfig(ownerId: string, id: string, ifMatch: string): Promise<void> {
     const identity = await this.findProviderIdentity(ownerId, id)
     if (!identity || identity.archivedAt) throw problem('NOT_FOUND', 'Provider config not found', 404)
     if (identity.currentEtag !== ifMatch) throw problem('REVISION_CONFLICT', 'Provider config changed', 409)
-    const rows = await this.handle.db.select({ providerSelections: assistantRevisionTable.providerSelections })
-      .from(assistantRevisionTable)
-      .innerJoin(assistantTable, eq(assistantRevisionTable.assistantId, assistantTable.id))
-      .where(eq(assistantTable.ownerId, ownerId))
-    const selected = rows.some((row) => Object.values(asProviderSelections(row.providerSelections)).some((value) => value.providerConfigId === id))
-    if (selected) throw problem('RESOURCE_IN_USE', 'Provider config is selected by an assistant', 409)
+    if (await this.providerConfigInUse(ownerId, id)) throw problem('RESOURCE_IN_USE', 'Provider config is selected by an assistant', 409)
     const now = new Date()
     const updated = await this.handle.db.update(providerConfigTable)
       .set({ archivedAt: now, updatedAt: now })
@@ -348,6 +487,7 @@ export class PostgresStore implements Store {
       const installation = selected ? this.installations.find((item) => item.id === selected.installationId) : undefined
       if (!selected || !installation) throw problem('CONFIG_INVALID', 'Provider config is not available for this owner', 422)
       if (installation.kind !== value.kind) throw problem('CONFIG_INVALID', 'Provider config kind does not match selection kind', 422)
+      if (!selected.enabled) throw problem('CONFIG_INVALID', 'Provider config is disabled', 422)
     }
     const selections = { ...asProviderSelections(current.providerSelections), [value.kind]: value.mode === 'selected' ? { mode: value.mode, providerConfigId: value.providerConfigId } : { mode: value.mode } }
     const revision = identity.draftRevision + 1
@@ -831,12 +971,47 @@ export class PostgresStore implements Store {
         const providerConfigId = randomUUID()
         const providerConfig = normalizeProviderConfig(installation, asJsonObject(value.config))
         const providerEtag = etag({ ...providerConfig, revision: 1 })
-        await tx.insert(providerConfigTable).values({ id: providerConfigId, ownerId: 'local-owner', installationId: installation.id, name: `${installation.displayName ?? installation.displayNameKey} mặc định`, currentRevision: 1, currentEtag: providerEtag, createdAt: now, updatedAt: now, archivedAt: null })
+        await tx.insert(providerConfigTable).values({ id: providerConfigId, ownerId: 'local-owner', installationId: installation.id, name: `${installation.displayName ?? installation.displayNameKey} mặc định`, enabled: true, currentRevision: 1, currentEtag: etag({ ...providerConfig, revision: 1, enabled: true }), createdAt: now, updatedAt: now, archivedAt: null })
         await tx.insert(providerConfigRevisionTable).values({ providerConfigId, revision: 1, config: providerConfig, secretRefs: [], etag: providerEtag, createdAt: now })
         providerSelections[kind] = { mode: 'selected', providerConfigId }
       }
       await tx.insert(assistantRevisionTable).values({ assistantId: id, revision: snapshot.revision, role, providerSelections, etag: revisionEtag, createdAt: now })
       await tx.insert(runtimePublicationTable).values({ assistantId: id, revision: snapshot.revision, snapshot, etag: revisionEtag, updatedAt: now })
+    })
+  }
+
+  private async seedModelRegistry(registry: ModelRegistrySeed): Promise<void> {
+    const [existing] = await this.handle.db.select({ id: modelProviderTable.id }).from(modelProviderTable).limit(1)
+    if (existing) return
+    const ownerId = 'local-owner'
+    const now = new Date()
+    await this.handle.db.transaction(async (tx) => {
+      for (const provider of registry.providers) {
+        const item = newModelProvider(ownerId, provider)
+        await tx.insert(modelProviderTable).values({ id: item.id, modelType: item.modelType, providerCode: item.providerCode, name: item.name, fields: item.fields as unknown as JsonObject[], sort: item.sort, creator: 1, createDate: now, updater: 1, updateDate: now })
+      }
+      for (const config of registry.configs) {
+        const item = newModelConfig(ownerId, config)
+        await tx.insert(modelConfigTable).values({ id: item.id, modelType: item.modelType, modelCode: item.modelCode, modelName: item.modelName, isDefault: item.isDefault ? 1 : 0, isEnabled: item.isEnabled ? 1 : 0, configJson: item.configJson, docLink: item.docLink, remark: item.remark, sort: item.sort, creator: 1, createDate: now, updater: 1, updateDate: now })
+      }
+      for (const voice of registry.voices ?? []) {
+        await tx.insert(ttsVoiceTable).values({
+          id: voice.id,
+          ttsModelId: voice.ttsModelId,
+          name: voice.name,
+          ttsVoice: voice.ttsVoice,
+          languages: voice.languages,
+          voiceDemo: voice.voiceDemo ?? null,
+          remark: voice.remark ?? null,
+          referenceAudio: voice.referenceAudio ?? null,
+          referenceText: voice.referenceText ?? null,
+          sort: voice.sort ?? 0,
+          creator: 1,
+          createDate: now,
+          updater: 1,
+          updateDate: now,
+        })
+      }
     })
   }
 
@@ -853,6 +1028,52 @@ export class PostgresStore implements Store {
   private async findProviderIdentity(ownerId: string, id: string): Promise<ProviderConfigRow | undefined> {
     const [row] = await this.handle.db.select().from(providerConfigTable).where(and(eq(providerConfigTable.ownerId, ownerId), eq(providerConfigTable.id, id))).limit(1)
     return row
+  }
+
+  private async findModelProvider(ownerId: string, id: string): Promise<ModelProviderRow | undefined> {
+    void ownerId
+    const [row] = await this.handle.db.select().from(modelProviderTable).where(eq(modelProviderTable.id, id)).limit(1)
+    return row
+  }
+
+  private async findModelConfig(ownerId: string, id: string): Promise<ModelConfigRow | undefined> {
+    void ownerId
+    const [row] = await this.handle.db.select().from(modelConfigTable).where(eq(modelConfigTable.id, id)).limit(1)
+    return row
+  }
+
+  private async assertModelProvider(ownerId: string, modelType: ModelType, providerCode: string): Promise<void> {
+    void ownerId
+    const [row] = await this.handle.db.select({ id: modelProviderTable.id }).from(modelProviderTable).where(and(eq(modelProviderTable.modelType, modelType), eq(modelProviderTable.providerCode, providerCode))).limit(1)
+    if (!row) throw problem('CONFIG_INVALID', 'Model provider does not exist for this category', 422)
+  }
+
+  private async assertProviderNameAvailable(ownerId: string, name: string, exceptId?: string): Promise<void> {
+    const normalized = name.trim()
+    if (!normalized) throw problem('CONFIG_INVALID', 'Provider config name is required', 422)
+    const conditions = [eq(providerConfigTable.ownerId, ownerId), sql`lower(${providerConfigTable.name}) = lower(${normalized})`, isNull(providerConfigTable.archivedAt)]
+    if (exceptId) conditions.push(ne(providerConfigTable.id, exceptId))
+    const [duplicate] = await this.handle.db.select({ id: providerConfigTable.id }).from(providerConfigTable).where(and(...conditions)).limit(1)
+    if (duplicate) throw problem('NAME_CONFLICT', 'A provider config with this name already exists', 409)
+  }
+
+  /**
+   * Only the current draft and published revisions are active references.
+   * Immutable historical revisions must remain auditable without preventing
+   * an operator from archiving an actually unused provider config.
+   */
+  private async providerConfigInUse(ownerId: string, id: string): Promise<boolean> {
+    const rows = await this.handle.db.select({ providerSelections: assistantRevisionTable.providerSelections })
+      .from(assistantRevisionTable)
+      .innerJoin(assistantTable, eq(assistantRevisionTable.assistantId, assistantTable.id))
+      .where(and(
+        eq(assistantTable.ownerId, ownerId),
+        or(
+          eq(assistantRevisionTable.revision, assistantTable.draftRevision),
+          and(isNotNull(assistantTable.publishedRevision), eq(assistantRevisionTable.revision, assistantTable.publishedRevision)),
+        ),
+      ))
+    return rows.some((row) => Object.values(asProviderSelections(row.providerSelections)).some((value) => value.providerConfigId === id || value.providerId === id))
   }
 
   private async findProviderRevision(id: string, revision: number): Promise<ProviderConfigRevisionRow | undefined> {
@@ -935,7 +1156,20 @@ export class PostgresStore implements Store {
   }
 
   private mapProviderConfig(identity: ProviderConfigRow, revision: ProviderConfigRevisionRow): ProviderConfig {
-    return { id: identity.id, ownerId: identity.ownerId, installationId: identity.installationId, name: identity.name, revision: revision.revision, config: asJsonObject(revision.config), secretRefs: asSecretRefs(revision.secretRefs), etag: revision.etag, updatedAt: revision.createdAt.toISOString(), archivedAt: identity.archivedAt?.toISOString() ?? null }
+    return { id: identity.id, ownerId: identity.ownerId, installationId: identity.installationId, name: identity.name, enabled: identity.enabled, revision: revision.revision, config: asJsonObject(revision.config), secretRefs: asSecretRefs(revision.secretRefs), etag: identity.currentEtag, updatedAt: identity.updatedAt.toISOString(), archivedAt: identity.archivedAt?.toISOString() ?? null }
+  }
+
+  private mapModelProvider(row: ModelProviderRow): ModelProvider {
+    const updatedAt = row.updateDate ?? row.createDate ?? new Date(0)
+    const source = { id: row.id, modelType: row.modelType, providerCode: row.providerCode, name: row.name, fields: row.fields, sort: row.sort, creator: row.creator, createDate: row.createDate, updater: row.updater, updateDate: row.updateDate }
+    return { id: row.id, ownerId: 'local-owner', modelType: (row.modelType ?? 'LLM') as ModelType, providerCode: row.providerCode ?? '', name: row.name ?? row.providerCode ?? row.id, fields: Array.isArray(row.fields) ? structuredClone(row.fields) as unknown as ModelProvider['fields'] : [], sort: row.sort ?? 0, revision: 1, etag: modelEtag(source), updatedAt: updatedAt.toISOString(), creator: row.creator ?? null, createDate: row.createDate?.toISOString() ?? null, updater: row.updater ?? null, updateDate: row.updateDate?.toISOString() ?? null }
+  }
+
+  private mapModelConfig(row: ModelConfigRow): ModelConfig {
+    const configJson = asJsonObject(row.configJson ?? {})
+    const updatedAt = row.updateDate ?? row.createDate ?? new Date(0)
+    const source = { id: row.id, modelType: row.modelType, modelCode: row.modelCode, modelName: row.modelName, isDefault: row.isDefault, isEnabled: row.isEnabled, configJson, docLink: row.docLink, remark: row.remark, sort: row.sort, creator: row.creator, createDate: row.createDate, updater: row.updater, updateDate: row.updateDate }
+    return { id: row.id, ownerId: 'local-owner', modelType: (row.modelType ?? 'LLM') as ModelType, modelCode: row.modelCode ?? row.id, modelName: row.modelName ?? row.modelCode ?? row.id, providerCode: typeof configJson.type === 'string' ? configJson.type : '', isDefault: row.isDefault === 1, isEnabled: row.isEnabled === 1, configJson, docLink: row.docLink, remark: row.remark, sort: row.sort ?? 0, revision: 1, etag: modelEtag(source), updatedAt: updatedAt.toISOString(), creator: row.creator ?? null, createDate: row.createDate?.toISOString() ?? null, updater: row.updater ?? null, updateDate: row.updateDate?.toISOString() ?? null }
   }
 
   private mapVoiceProfile(row: VoiceProfileRow): VoiceProfile {
@@ -986,7 +1220,7 @@ export class PostgresStore implements Store {
     const configs = await this.listProviderConfigs(current.ownerId)
     const availableConfigs = configs.map((item) => {
       const installation = this.installations.find((candidate) => candidate.id === item.installationId)
-      return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayName ?? installation?.displayNameKey ?? item.installationId, availability: 'ready' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] }
+      return { id: item.id, kind: installation?.kind ?? 'memory', name: item.name, providerName: installation?.displayName ?? installation?.displayNameKey ?? item.installationId, availability: item.enabled ? 'ready' as const : 'disabled' as const, supportedLocales: Array.isArray(installation?.manifest.locales) ? installation.manifest.locales.filter((value): value is string => typeof value === 'string') : ['*'] }
     })
     return { assistantId: current.id, selections, availableConfigs, memory: { enabled: current.role.memoryEnabled !== false, itemCount: 0 }, memoryItems: [] }
   }
@@ -1085,4 +1319,8 @@ function validateConversationTurnInput(value: ConversationTurnInput): void {
   if (!value.turnId || !value.locale || !Number.isInteger(value.configRevision) || value.configRevision < 1 || !Number.isInteger(value.sequence) || value.sequence < 1) throw problem('HISTORY_INVALID', 'conversation turn identity is invalid', 422)
   if (!Number.isFinite(Date.parse(value.startedAt)) || !Number.isFinite(Date.parse(value.endedAt)) || !Number.isFinite(Date.parse(value.conversationStartedAt))) throw problem('HISTORY_INVALID', 'conversation turn timestamps are invalid', 422)
   if (value.transcript.length > 128 || value.toolCalls.length > 64) throw problem('HISTORY_LIMIT_EXCEEDED', 'conversation event is too large', 413)
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as { code?: unknown }).code === '23505')
 }

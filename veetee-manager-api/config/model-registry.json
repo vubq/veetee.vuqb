@@ -1,0 +1,3463 @@
+{
+  "schemaVersion": 1,
+  "source": "veetee-model-control-plane",
+  "providers": [
+    {
+      "id": "SYSTEM_VAD_SileroVAD",
+      "modelType": "VAD",
+      "providerCode": "silero",
+      "name": "SileroVAD语音活动检测",
+      "fields": [
+        {
+          "key": "threshold",
+          "label": "检测阈值",
+          "type": "number"
+        },
+        {
+          "key": "model_dir",
+          "label": "模型目录",
+          "type": "string"
+        },
+        {
+          "key": "min_silence_duration_ms",
+          "label": "最小静音时长",
+          "type": "number"
+        }
+      ],
+      "sort": 1
+    },
+    {
+      "id": "SYSTEM_ASR_FunASR",
+      "modelType": "ASR",
+      "providerCode": "fun_local",
+      "name": "FunASR语音识别",
+      "fields": [
+        {
+          "key": "model_dir",
+          "label": "模型目录",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 1
+    },
+    {
+      "id": "SYSTEM_ASR_PhoWhisper",
+      "modelType": "ASR",
+      "providerCode": "phowhisper",
+      "name": "PhoWhisper tiếng Việt",
+      "fields": [
+        { "key": "modelPath", "label": "Đường dẫn model", "type": "string" },
+        { "key": "device", "label": "Thiết bị tính toán", "type": "string", "default": "cuda" },
+        { "key": "computeType", "label": "Kiểu tính toán", "type": "string", "default": "int8_float16" },
+        { "key": "cpuThreads", "label": "Số luồng CPU", "type": "integer", "default": 4 },
+        { "key": "numWorkers", "label": "Số worker", "type": "integer", "default": 1 },
+        { "key": "sampleRate", "label": "Sample rate", "type": "integer", "default": 16000 },
+        { "key": "beamSize", "label": "Beam size", "type": "integer", "default": 1 },
+        { "key": "vadFilter", "label": "Lọc VAD trong ASR", "type": "boolean", "default": false }
+      ],
+      "sort": 0
+    },
+    {
+      "id": "SYSTEM_ASR_SherpaASR",
+      "modelType": "ASR",
+      "providerCode": "sherpa_onnx_local",
+      "name": "SherpaASR语音识别",
+      "fields": [
+        {
+          "key": "model_dir",
+          "label": "模型目录",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 2
+    },
+    {
+      "id": "SYSTEM_ASR_DoubaoASR",
+      "modelType": "ASR",
+      "providerCode": "doubao",
+      "name": "火山引擎语音识别",
+      "fields": [
+        {
+          "key": "appid",
+          "label": "应用ID",
+          "type": "string"
+        },
+        {
+          "key": "access_token",
+          "label": "访问令牌",
+          "type": "string"
+        },
+        {
+          "key": "cluster",
+          "label": "集群",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 3
+    },
+    {
+      "id": "SYSTEM_LLM_openai",
+      "modelType": "LLM",
+      "providerCode": "openai",
+      "name": "OpenAI接口",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "基础URL",
+          "type": "string"
+        },
+        {
+          "key": "model_name",
+          "label": "模型名称",
+          "type": "string"
+        },
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        },
+        {
+          "key": "temperature",
+          "label": "温度",
+          "type": "number"
+        },
+        {
+          "key": "max_tokens",
+          "label": "最大令牌数",
+          "type": "number"
+        },
+        {
+          "key": "top_p",
+          "label": "top_p值",
+          "type": "number"
+        },
+        {
+          "key": "top_k",
+          "label": "top_k值",
+          "type": "number"
+        },
+        {
+          "key": "frequency_penalty",
+          "label": "频率惩罚",
+          "type": "number"
+        }
+      ],
+      "sort": 1
+    },
+    {
+      "id": "SYSTEM_LLM_Groq",
+      "modelType": "LLM",
+      "providerCode": "groq",
+      "name": "Groq streaming",
+      "fields": [
+        { "key": "base_url", "label": "Base URL", "type": "string", "default": "https://api.groq.com/openai/v1" },
+        { "key": "model_name", "label": "Model name", "type": "string", "default": "llama-3.3-70b-versatile" },
+        { "key": "secret_ref", "label": "Secret reference", "type": "password", "sensitive": true },
+        { "key": "temperature", "label": "Temperature", "type": "number", "default": 0.3 },
+        { "key": "max_tokens", "label": "Max tokens", "type": "integer", "default": 2048 },
+        { "key": "stream", "label": "Streaming", "type": "boolean", "default": true },
+        { "key": "tool_choice", "label": "Tool choice", "type": "string", "default": "auto" }
+      ],
+      "sort": 0
+    },
+    {
+      "id": "SYSTEM_LLM_AliBL",
+      "modelType": "LLM",
+      "providerCode": "AliBL",
+      "name": "阿里百炼接口",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "基础URL",
+          "type": "string"
+        },
+        {
+          "key": "app_id",
+          "label": "应用ID",
+          "type": "string"
+        },
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        },
+        {
+          "key": "is_no_prompt",
+          "label": "是否不使用本地prompt",
+          "type": "boolean"
+        },
+        {
+          "key": "ali_memory_id",
+          "label": "记忆ID",
+          "type": "string"
+        }
+      ],
+      "sort": 2
+    },
+    {
+      "id": "SYSTEM_LLM_ollama",
+      "modelType": "LLM",
+      "providerCode": "ollama",
+      "name": "Ollama接口",
+      "fields": [
+        {
+          "key": "model_name",
+          "label": "模型名称",
+          "type": "string"
+        },
+        {
+          "key": "base_url",
+          "label": "服务地址",
+          "type": "string"
+        }
+      ],
+      "sort": 3
+    },
+    {
+      "id": "SYSTEM_LLM_dify",
+      "modelType": "LLM",
+      "providerCode": "dify",
+      "name": "Dify接口",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "基础URL",
+          "type": "string"
+        },
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        },
+        {
+          "key": "mode",
+          "label": "对话模式",
+          "type": "string"
+        }
+      ],
+      "sort": 4
+    },
+    {
+      "id": "SYSTEM_LLM_gemini",
+      "modelType": "LLM",
+      "providerCode": "gemini",
+      "name": "Gemini接口",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        },
+        {
+          "key": "model_name",
+          "label": "模型名称",
+          "type": "string"
+        },
+        {
+          "key": "http_proxy",
+          "label": "HTTP代理",
+          "type": "string"
+        },
+        {
+          "key": "https_proxy",
+          "label": "HTTPS代理",
+          "type": "string"
+        }
+      ],
+      "sort": 5
+    },
+    {
+      "id": "SYSTEM_LLM_coze",
+      "modelType": "LLM",
+      "providerCode": "coze",
+      "name": "Coze接口",
+      "fields": [
+        {
+          "key": "bot_id",
+          "label": "机器人ID",
+          "type": "string"
+        },
+        {
+          "key": "user_id",
+          "label": "用户ID",
+          "type": "string"
+        },
+        {
+          "key": "personal_access_token",
+          "label": "个人访问令牌",
+          "type": "string"
+        }
+      ],
+      "sort": 6
+    },
+    {
+      "id": "SYSTEM_LLM_fastgpt",
+      "modelType": "LLM",
+      "providerCode": "fastgpt",
+      "name": "FastGPT接口",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "基础URL",
+          "type": "string"
+        },
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        },
+        {
+          "key": "variables",
+          "label": "变量",
+          "type": "dict",
+          "dict_name": "variables"
+        }
+      ],
+      "sort": 7
+    },
+    {
+      "id": "SYSTEM_LLM_xinference",
+      "modelType": "LLM",
+      "providerCode": "xinference",
+      "name": "Xinference接口",
+      "fields": [
+        {
+          "key": "model_name",
+          "label": "模型名称",
+          "type": "string"
+        },
+        {
+          "key": "base_url",
+          "label": "服务地址",
+          "type": "string"
+        }
+      ],
+      "sort": 8
+    },
+    {
+      "id": "SYSTEM_TTS_edge",
+      "modelType": "TTS",
+      "providerCode": "edge",
+      "name": "Edge TTS",
+      "fields": [
+        {
+          "key": "voice",
+          "label": "音色",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 1
+    },
+    {
+      "id": "SYSTEM_TTS_VieNeu",
+      "modelType": "TTS",
+      "providerCode": "vieneu",
+      "name": "VieNeu tiếng Việt",
+      "fields": [
+        { "key": "backboneRepo", "label": "Backbone repo", "type": "string", "default": "VieNeu-TTS-v3-turbo" },
+        { "key": "mode", "label": "Mode", "type": "string", "default": "v3turbo" },
+        { "key": "device", "label": "Thiết bị tính toán", "type": "string", "default": "cpu" },
+        { "key": "dtype", "label": "Dtype", "type": "string", "default": "int8" },
+        { "key": "sampleRate", "label": "Sample rate", "type": "integer", "default": 24000 },
+        { "key": "sourceSampleRate", "label": "Sample rate nguồn", "type": "integer", "default": 48000 },
+        { "key": "prewarm", "label": "Nạp model khi khởi động", "type": "boolean", "default": true },
+        { "key": "voiceId", "label": "Voice ID", "type": "string", "default": "minh_duc" }
+      ],
+      "sort": 0
+    },
+    {
+      "id": "SYSTEM_TTS_doubao",
+      "modelType": "TTS",
+      "providerCode": "doubao",
+      "name": "火山引擎TTS",
+      "fields": [
+        {
+          "key": "api_url",
+          "label": "API地址",
+          "type": "string"
+        },
+        {
+          "key": "voice",
+          "label": "音色",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "authorization",
+          "label": "授权",
+          "type": "string"
+        },
+        {
+          "key": "appid",
+          "label": "应用ID",
+          "type": "string"
+        },
+        {
+          "key": "access_token",
+          "label": "访问令牌",
+          "type": "string"
+        },
+        {
+          "key": "cluster",
+          "label": "集群",
+          "type": "string"
+        }
+      ],
+      "sort": 2
+    },
+    {
+      "id": "SYSTEM_TTS_siliconflow",
+      "modelType": "TTS",
+      "providerCode": "siliconflow",
+      "name": "硅基流动TTS",
+      "fields": [
+        {
+          "key": "model",
+          "label": "模型",
+          "type": "string"
+        },
+        {
+          "key": "voice",
+          "label": "音色",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "access_token",
+          "label": "访问令牌",
+          "type": "string"
+        },
+        {
+          "key": "response_format",
+          "label": "响应格式",
+          "type": "string"
+        }
+      ],
+      "sort": 3
+    },
+    {
+      "id": "SYSTEM_TTS_cozecn",
+      "modelType": "TTS",
+      "providerCode": "cozecn",
+      "name": "COZECN TTS",
+      "fields": [
+        {
+          "key": "voice",
+          "label": "音色",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "access_token",
+          "label": "访问令牌",
+          "type": "string"
+        },
+        {
+          "key": "response_format",
+          "label": "响应格式",
+          "type": "string"
+        }
+      ],
+      "sort": 4
+    },
+    {
+      "id": "SYSTEM_TTS_fishspeech",
+      "modelType": "TTS",
+      "providerCode": "fishspeech",
+      "name": "FishSpeech TTS",
+      "fields": [
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "response_format",
+          "label": "响应格式",
+          "type": "string"
+        },
+        {
+          "key": "reference_id",
+          "label": "参考ID",
+          "type": "string"
+        },
+        {
+          "key": "reference_audio",
+          "label": "参考音频",
+          "type": "dict",
+          "dict_name": "reference_audio"
+        },
+        {
+          "key": "reference_text",
+          "label": "参考文本",
+          "type": "dict",
+          "dict_name": "reference_text"
+        },
+        {
+          "key": "normalize",
+          "label": "是否标准化",
+          "type": "boolean"
+        },
+        {
+          "key": "max_new_tokens",
+          "label": "最大新令牌数",
+          "type": "number"
+        },
+        {
+          "key": "chunk_length",
+          "label": "块长度",
+          "type": "number"
+        },
+        {
+          "key": "top_p",
+          "label": "top_p值",
+          "type": "number"
+        },
+        {
+          "key": "repetition_penalty",
+          "label": "重复惩罚",
+          "type": "number"
+        },
+        {
+          "key": "temperature",
+          "label": "温度",
+          "type": "number"
+        },
+        {
+          "key": "streaming",
+          "label": "是否流式",
+          "type": "boolean"
+        },
+        {
+          "key": "use_memory_cache",
+          "label": "是否使用内存缓存",
+          "type": "string"
+        },
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number"
+        },
+        {
+          "key": "channels",
+          "label": "通道数",
+          "type": "number"
+        },
+        {
+          "key": "rate",
+          "label": "采样率",
+          "type": "number"
+        },
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        },
+        {
+          "key": "api_url",
+          "label": "API地址",
+          "type": "string"
+        }
+      ],
+      "sort": 5
+    },
+    {
+      "id": "SYSTEM_TTS_gpt_sovits_v2",
+      "modelType": "TTS",
+      "providerCode": "gpt_sovits_v2",
+      "name": "GPT-SoVITS V2",
+      "fields": [
+        {
+          "key": "url",
+          "label": "服务地址",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "text_lang",
+          "label": "文本语言",
+          "type": "string"
+        },
+        {
+          "key": "ref_audio_path",
+          "label": "参考音频路径",
+          "type": "string"
+        },
+        {
+          "key": "prompt_text",
+          "label": "提示文本",
+          "type": "string"
+        },
+        {
+          "key": "prompt_lang",
+          "label": "提示语言",
+          "type": "string"
+        },
+        {
+          "key": "top_k",
+          "label": "top_k值",
+          "type": "number"
+        },
+        {
+          "key": "top_p",
+          "label": "top_p值",
+          "type": "number"
+        },
+        {
+          "key": "temperature",
+          "label": "温度",
+          "type": "number"
+        },
+        {
+          "key": "text_split_method",
+          "label": "文本分割方法",
+          "type": "string"
+        },
+        {
+          "key": "batch_size",
+          "label": "批处理大小",
+          "type": "number"
+        },
+        {
+          "key": "batch_threshold",
+          "label": "批处理阈值",
+          "type": "number"
+        },
+        {
+          "key": "split_bucket",
+          "label": "是否分桶",
+          "type": "boolean"
+        },
+        {
+          "key": "return_fragment",
+          "label": "是否返回片段",
+          "type": "boolean"
+        },
+        {
+          "key": "speed_factor",
+          "label": "速度因子",
+          "type": "number"
+        },
+        {
+          "key": "streaming_mode",
+          "label": "是否流式模式",
+          "type": "boolean"
+        },
+        {
+          "key": "seed",
+          "label": "种子",
+          "type": "number"
+        },
+        {
+          "key": "parallel_infer",
+          "label": "是否并行推理",
+          "type": "boolean"
+        },
+        {
+          "key": "repetition_penalty",
+          "label": "重复惩罚",
+          "type": "number"
+        },
+        {
+          "key": "aux_ref_audio_paths",
+          "label": "辅助参考音频路径",
+          "type": "dict",
+          "dict_name": "aux_ref_audio_paths"
+        }
+      ],
+      "sort": 6
+    },
+    {
+      "id": "SYSTEM_TTS_gpt_sovits_v3",
+      "modelType": "TTS",
+      "providerCode": "gpt_sovits_v3",
+      "name": "GPT-SoVITS V3",
+      "fields": [
+        {
+          "key": "url",
+          "label": "服务地址",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "text_language",
+          "label": "文本语言",
+          "type": "string"
+        },
+        {
+          "key": "refer_wav_path",
+          "label": "参考音频路径",
+          "type": "string"
+        },
+        {
+          "key": "prompt_language",
+          "label": "提示语言",
+          "type": "string"
+        },
+        {
+          "key": "prompt_text",
+          "label": "提示文本",
+          "type": "string"
+        },
+        {
+          "key": "top_k",
+          "label": "top_k值",
+          "type": "number"
+        },
+        {
+          "key": "top_p",
+          "label": "top_p值",
+          "type": "number"
+        },
+        {
+          "key": "temperature",
+          "label": "温度",
+          "type": "number"
+        },
+        {
+          "key": "cut_punc",
+          "label": "切分标点",
+          "type": "string"
+        },
+        {
+          "key": "speed",
+          "label": "速度",
+          "type": "number"
+        },
+        {
+          "key": "inp_refs",
+          "label": "输入参考",
+          "type": "dict",
+          "dict_name": "inp_refs"
+        },
+        {
+          "key": "sample_steps",
+          "label": "采样步数",
+          "type": "number"
+        },
+        {
+          "key": "if_sr",
+          "label": "是否使用SR",
+          "type": "boolean"
+        }
+      ],
+      "sort": 7
+    },
+    {
+      "id": "SYSTEM_TTS_aliyun",
+      "modelType": "TTS",
+      "providerCode": "aliyun",
+      "name": "阿里云TTS",
+      "fields": [
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "appkey",
+          "label": "应用密钥",
+          "type": "string"
+        },
+        {
+          "key": "token",
+          "label": "访问令牌",
+          "type": "string"
+        },
+        {
+          "key": "voice",
+          "label": "音色",
+          "type": "string"
+        },
+        {
+          "key": "access_key_id",
+          "label": "访问密钥ID",
+          "type": "string"
+        },
+        {
+          "key": "access_key_secret",
+          "label": "访问密钥密码",
+          "type": "string"
+        }
+      ],
+      "sort": 9
+    },
+    {
+      "id": "SYSTEM_TTS_openai",
+      "modelType": "TTS",
+      "providerCode": "openai",
+      "name": "OpenAI TTS",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        },
+        {
+          "key": "api_url",
+          "label": "API地址",
+          "type": "string"
+        },
+        {
+          "key": "model",
+          "label": "模型",
+          "type": "string"
+        },
+        {
+          "key": "voice",
+          "label": "音色",
+          "type": "string"
+        },
+        {
+          "key": "speed",
+          "label": "速度",
+          "type": "number"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 11
+    },
+    {
+      "id": "SYSTEM_TTS_custom",
+      "modelType": "TTS",
+      "providerCode": "custom",
+      "name": "自定义TTS",
+      "fields": [
+        {
+          "key": "url",
+          "label": "服务地址",
+          "type": "string"
+        },
+        {
+          "key": "params",
+          "label": "请求参数",
+          "type": "dict",
+          "dict_name": "params"
+        },
+        {
+          "key": "headers",
+          "label": "请求头",
+          "type": "dict",
+          "dict_name": "headers"
+        },
+        {
+          "key": "format",
+          "label": "音频格式",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 12
+    },
+    {
+      "id": "SYSTEM_Memory_mem0ai",
+      "modelType": "Memory",
+      "providerCode": "mem0ai",
+      "name": "Mem0AI记忆",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        }
+      ],
+      "sort": 1
+    },
+    {
+      "id": "SYSTEM_Memory_nomem",
+      "modelType": "Memory",
+      "providerCode": "nomem",
+      "name": "无记忆",
+      "fields": [],
+      "sort": 2
+    },
+    {
+      "id": "SYSTEM_Memory_mem_local_short",
+      "modelType": "Memory",
+      "providerCode": "mem_local_short",
+      "name": "本地短记忆",
+      "fields": [],
+      "sort": 3
+    },
+    {
+      "id": "SYSTEM_Intent_nointent",
+      "modelType": "Intent",
+      "providerCode": "nointent",
+      "name": "无意图识别",
+      "fields": [],
+      "sort": 1
+    },
+    {
+      "id": "SYSTEM_Intent_intent_llm",
+      "modelType": "Intent",
+      "providerCode": "intent_llm",
+      "name": "LLM意图识别",
+      "fields": [
+        {
+          "key": "llm",
+          "label": "LLM模型",
+          "type": "string"
+        }
+      ],
+      "sort": 2
+    },
+    {
+      "id": "SYSTEM_Intent_function_call",
+      "modelType": "Intent",
+      "providerCode": "function_call",
+      "name": "函数调用意图识别",
+      "fields": [
+        {
+          "key": "functions",
+          "label": "函数列表",
+          "type": "dict",
+          "dict_name": "functions"
+        }
+      ],
+      "sort": 3
+    },
+    {
+      "id": "SYSTEM_ASR_TencentASR",
+      "modelType": "ASR",
+      "providerCode": "tencent",
+      "name": "腾讯语音识别",
+      "fields": [
+        {
+          "key": "appid",
+          "label": "应用ID",
+          "type": "string"
+        },
+        {
+          "key": "secret_id",
+          "label": "Secret ID",
+          "type": "string"
+        },
+        {
+          "key": "secret_key",
+          "label": "Secret Key",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 4
+    },
+    {
+      "id": "SYSTEM_TTS_TencentTTS",
+      "modelType": "TTS",
+      "providerCode": "tencent",
+      "name": "腾讯语音合成",
+      "fields": [
+        {
+          "key": "appid",
+          "label": "应用ID",
+          "type": "string"
+        },
+        {
+          "key": "secret_id",
+          "label": "Secret ID",
+          "type": "string"
+        },
+        {
+          "key": "secret_key",
+          "label": "Secret Key",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "region",
+          "label": "区域",
+          "type": "string"
+        },
+        {
+          "key": "voice",
+          "label": "音色ID",
+          "type": "string"
+        }
+      ],
+      "sort": 5
+    },
+    {
+      "id": "SYSTEM_ASR_FunASRServer",
+      "modelType": "ASR",
+      "providerCode": "fun_server",
+      "name": "FunASR服务语音识别",
+      "fields": [
+        {
+          "key": "host",
+          "label": "服务地址",
+          "type": "string"
+        },
+        {
+          "key": "port",
+          "label": "端口号",
+          "type": "number"
+        }
+      ],
+      "sort": 4
+    },
+    {
+      "id": "SYSTEM_ASR_AliyunASR",
+      "modelType": "ASR",
+      "providerCode": "aliyun",
+      "name": "阿里云语音识别",
+      "fields": [
+        {
+          "key": "appkey",
+          "label": "应用AppKey",
+          "type": "string"
+        },
+        {
+          "key": "token",
+          "label": "临时Token",
+          "type": "string"
+        },
+        {
+          "key": "access_key_id",
+          "label": "AccessKey ID",
+          "type": "string"
+        },
+        {
+          "key": "access_key_secret",
+          "label": "AccessKey Secret",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 5
+    },
+    {
+      "id": "SYSTEM_ASR_BaiduASR",
+      "modelType": "ASR",
+      "providerCode": "baidu",
+      "name": "百度语音识别",
+      "fields": [
+        {
+          "key": "app_id",
+          "label": "应用AppID",
+          "type": "string"
+        },
+        {
+          "key": "api_key",
+          "label": "API Key",
+          "type": "string"
+        },
+        {
+          "key": "secret_key",
+          "label": "Secret Key",
+          "type": "string"
+        },
+        {
+          "key": "dev_pid",
+          "label": "语言参数",
+          "type": "number"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 7
+    },
+    {
+      "id": "SYSTEM_TTS_HSDSTTS",
+      "modelType": "TTS",
+      "providerCode": "huoshan_double_stream",
+      "name": "火山双流式语音合成",
+      "fields": [
+        {
+          "key": "ws_url",
+          "label": "WebSocket地址",
+          "type": "string"
+        },
+        {
+          "key": "appid",
+          "label": "应用ID",
+          "type": "string"
+        },
+        {
+          "key": "access_token",
+          "label": "访问令牌",
+          "type": "string"
+        },
+        {
+          "key": "resource_id",
+          "label": "资源ID",
+          "type": "string"
+        },
+        {
+          "key": "speaker",
+          "label": "默认音色",
+          "type": "string"
+        }
+      ],
+      "sort": 13
+    },
+    {
+      "id": "SYSTEM_PLUGIN_WEATHER",
+      "modelType": "Plugin",
+      "providerCode": "get_weather",
+      "name": "天气查询",
+      "fields": [
+        {
+          "key": "api_key",
+          "type": "string",
+          "label": "天气插件 API 密钥",
+          "default": ""
+        },
+        {
+          "key": "default_location",
+          "type": "string",
+          "label": "默认查询城市",
+          "default": ""
+        },
+        {
+          "key": "api_host",
+          "type": "string",
+          "label": "开发者 API Host",
+          "default": ""
+        }
+      ],
+      "sort": 10
+    },
+    {
+      "id": "SYSTEM_PLUGIN_MUSIC",
+      "modelType": "Plugin",
+      "providerCode": "play_music",
+      "name": "服务器音乐播放",
+      "fields": [],
+      "sort": 20
+    },
+    {
+      "id": "SYSTEM_PLUGIN_NEWS_CHINANEWS",
+      "modelType": "Plugin",
+      "providerCode": "get_news_from_chinanews",
+      "name": "中新网新闻",
+      "fields": [
+        {
+          "key": "default_rss_url",
+          "type": "string",
+          "label": "默认 RSS 源",
+          "default": ""
+        },
+        {
+          "key": "society_rss_url",
+          "type": "string",
+          "label": "社会新闻 RSS 地址",
+          "default": "https://www.chinanews.com.cn/rss/society.xml"
+        },
+        {
+          "key": "world_rss_url",
+          "type": "string",
+          "label": "国际新闻 RSS 地址",
+          "default": "https://www.chinanews.com.cn/rss/world.xml"
+        },
+        {
+          "key": "finance_rss_url",
+          "type": "string",
+          "label": "财经新闻 RSS 地址",
+          "default": "https://www.chinanews.com.cn/rss/finance.xml"
+        }
+      ],
+      "sort": 30
+    },
+    {
+      "id": "SYSTEM_PLUGIN_NEWS_NEWSNOW",
+      "modelType": "Plugin",
+      "providerCode": "get_news_from_newsnow",
+      "name": "newsnow新闻聚合",
+      "fields": [
+        {
+          "key": "url",
+          "type": "string",
+          "label": "接口地址",
+          "default": "https://newsnow.busiyi.world/api/s?id="
+        },
+        {
+          "key": "news_sources",
+          "type": "string",
+          "label": "新闻源配置",
+          "default": "澎湃新闻;百度热搜;财联社"
+        }
+      ],
+      "sort": 40
+    },
+    {
+      "id": "SYSTEM_PLUGIN_HA_GET_STATE",
+      "modelType": "Plugin",
+      "providerCode": "hass_get_state",
+      "name": "HomeAssistant设备状态查询",
+      "fields": [
+        {
+          "key": "base_url",
+          "type": "string",
+          "label": "HA 服务器地址",
+          "default": ""
+        },
+        {
+          "key": "api_key",
+          "type": "string",
+          "label": "HA API 访问令牌",
+          "default": ""
+        },
+        {
+          "key": "devices",
+          "type": "array",
+          "label": "设备列表（名称,实体ID;…）",
+          "default": []
+        }
+      ],
+      "sort": 50
+    },
+    {
+      "id": "SYSTEM_PLUGIN_HA_SET_STATE",
+      "modelType": "Plugin",
+      "providerCode": "hass_set_state",
+      "name": "HomeAssistant设备状态修改",
+      "fields": [],
+      "sort": 60
+    },
+    {
+      "id": "SYSTEM_PLUGIN_HA_PLAY_MUSIC",
+      "modelType": "Plugin",
+      "providerCode": "hass_play_music",
+      "name": "HomeAssistant音乐播放",
+      "fields": [],
+      "sort": 70
+    },
+    {
+      "id": "SYSTEM_VLLM_openai",
+      "modelType": "VLLM",
+      "providerCode": "openai",
+      "name": "OpenAI接口",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "基础URL",
+          "type": "string"
+        },
+        {
+          "key": "model_name",
+          "label": "模型名称",
+          "type": "string"
+        },
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        }
+      ],
+      "sort": 9
+    },
+    {
+      "id": "SYSTEM_ASR_OpenaiASR",
+      "modelType": "ASR",
+      "providerCode": "openai",
+      "name": "OpenAI语音识别",
+      "fields": [
+        {
+          "key": "base_url",
+          "type": "string",
+          "label": "基础URL"
+        },
+        {
+          "key": "model_name",
+          "type": "string",
+          "label": "模型名称"
+        },
+        {
+          "key": "api_key",
+          "type": "string",
+          "label": "API密钥"
+        },
+        {
+          "key": "output_dir",
+          "type": "string",
+          "label": "输出目录"
+        }
+      ],
+      "sort": 9
+    },
+    {
+      "id": "SYSTEM_ASR_AliyunStreamASR",
+      "modelType": "ASR",
+      "providerCode": "aliyun_stream",
+      "name": "阿里云语音识别(流式)",
+      "fields": [
+        {
+          "key": "appkey",
+          "label": "应用AppKey",
+          "type": "string"
+        },
+        {
+          "key": "token",
+          "label": "临时Token",
+          "type": "string"
+        },
+        {
+          "key": "access_key_id",
+          "label": "AccessKey ID",
+          "type": "string"
+        },
+        {
+          "key": "access_key_secret",
+          "label": "AccessKey Secret",
+          "type": "string"
+        },
+        {
+          "key": "host",
+          "label": "服务地址",
+          "type": "string"
+        },
+        {
+          "key": "max_sentence_silence",
+          "label": "断句检测时间",
+          "type": "number"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 6
+    },
+    {
+      "id": "SYSTEM_TTS_AliyunStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "aliyun_stream",
+      "name": "阿里云语音合成(流式)",
+      "fields": [
+        {
+          "key": "appkey",
+          "label": "应用AppKey",
+          "type": "string"
+        },
+        {
+          "key": "token",
+          "label": "临时Token",
+          "type": "string"
+        },
+        {
+          "key": "access_key_id",
+          "label": "AccessKey ID",
+          "type": "string"
+        },
+        {
+          "key": "access_key_secret",
+          "label": "AccessKey Secret",
+          "type": "string"
+        },
+        {
+          "key": "host",
+          "label": "服务地址",
+          "type": "string"
+        },
+        {
+          "key": "voice",
+          "label": "默认音色",
+          "type": "string"
+        },
+        {
+          "key": "format",
+          "label": "音频格式",
+          "type": "string"
+        },
+        {
+          "key": "sample_rate",
+          "label": "采样率",
+          "type": "number"
+        },
+        {
+          "key": "volume",
+          "label": "音量",
+          "type": "number"
+        },
+        {
+          "key": "speech_rate",
+          "label": "语速",
+          "type": "number"
+        },
+        {
+          "key": "pitch_rate",
+          "label": "音调",
+          "type": "number"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 15
+    },
+    {
+      "id": "SYSTEM_TTS_IndexStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "index_stream",
+      "name": "Index-TTS-vLLM流式语音合成",
+      "fields": [
+        {
+          "key": "api_url",
+          "label": "API服务地址",
+          "type": "string"
+        },
+        {
+          "key": "voice",
+          "label": "默认音色",
+          "type": "string"
+        },
+        {
+          "key": "audio_format",
+          "label": "音频格式",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 16
+    },
+    {
+      "id": "SYSTEM_TTS_PaddleSpeechTTS",
+      "modelType": "TTS",
+      "providerCode": "paddle_speech",
+      "name": "PaddleSpeechTTS",
+      "fields": [
+        {
+          "key": "protocol",
+          "label": "协议类型",
+          "type": "string",
+          "options": [
+            "websocket",
+            "http"
+          ]
+        },
+        {
+          "key": "url",
+          "label": "服务地址",
+          "type": "string"
+        },
+        {
+          "key": "spk_id",
+          "label": "音色",
+          "type": "int"
+        },
+        {
+          "key": "sample_rate",
+          "label": "采样率",
+          "type": "float"
+        },
+        {
+          "key": "speed",
+          "label": "语速",
+          "type": "float"
+        },
+        {
+          "key": "volume",
+          "label": "音量",
+          "type": "float"
+        },
+        {
+          "key": "save_path",
+          "label": "保存路径",
+          "type": "string"
+        }
+      ],
+      "sort": 17
+    },
+    {
+      "id": "SYSTEM_ASR_VoskASR",
+      "modelType": "ASR",
+      "providerCode": "vosk",
+      "name": "VOSK离线语音识别",
+      "fields": [
+        {
+          "key": "model_path",
+          "type": "string",
+          "label": "模型路径"
+        },
+        {
+          "key": "output_dir",
+          "type": "string",
+          "label": "输出目录"
+        }
+      ],
+      "sort": 11
+    },
+    {
+      "id": "SYSTEM_TTS_MinimaxStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "minimax_httpstream",
+      "name": "Minimax流式语音合成",
+      "fields": [
+        {
+          "key": "group_id",
+          "label": "组ID",
+          "type": "string"
+        },
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        },
+        {
+          "key": "model",
+          "label": "模型",
+          "type": "string"
+        },
+        {
+          "key": "voice_id",
+          "label": "音色ID",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "voice_setting",
+          "label": "音色设置",
+          "type": "dict",
+          "dict_name": "voice_setting"
+        },
+        {
+          "key": "pronunciation_dict",
+          "label": "发音字典",
+          "type": "dict",
+          "dict_name": "pronunciation_dict"
+        },
+        {
+          "key": "audio_setting",
+          "label": "音频设置",
+          "type": "dict",
+          "dict_name": "audio_setting"
+        },
+        {
+          "key": "timber_weights",
+          "label": "音色权重",
+          "type": "string"
+        }
+      ],
+      "sort": 18
+    },
+    {
+      "id": "SYSTEM_ASR_Qwen3Flash",
+      "modelType": "ASR",
+      "providerCode": "qwen3_asr_flash",
+      "name": "Qwen3-ASR-Flash语音识别",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "password"
+        },
+        {
+          "key": "base_url",
+          "label": "服务地址",
+          "type": "string"
+        },
+        {
+          "key": "model_name",
+          "label": "模型名称",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 17
+    },
+    {
+      "id": "SYSTEM_TTS_AliBLStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "alibl_stream",
+      "name": "阿里百炼流式语音合成",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "model",
+          "label": "模型",
+          "type": "string"
+        },
+        {
+          "key": "voice",
+          "label": "音色",
+          "type": "string"
+        },
+        {
+          "key": "format",
+          "label": "音频格式",
+          "type": "string"
+        },
+        {
+          "key": "sample_rate",
+          "label": "采样率",
+          "type": "number"
+        },
+        {
+          "key": "volume",
+          "type": "number",
+          "label": "音量"
+        },
+        {
+          "key": "rate",
+          "type": "number",
+          "label": "语速"
+        },
+        {
+          "key": "pitch",
+          "type": "number",
+          "label": "音调"
+        }
+      ],
+      "sort": 19
+    },
+    {
+      "id": "SYSTEM_TTS_XunFeiStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "xunfei_stream",
+      "name": "讯飞流式语音合成",
+      "fields": [
+        {
+          "key": "app_id",
+          "label": "APP_ID",
+          "type": "string"
+        },
+        {
+          "key": "api_secret",
+          "label": "API_Secret",
+          "type": "string"
+        },
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "voice",
+          "label": "音色",
+          "type": "string"
+        },
+        {
+          "key": "format",
+          "label": "音频格式",
+          "type": "string"
+        },
+        {
+          "key": "sample_rate",
+          "label": "采样率",
+          "type": "number"
+        },
+        {
+          "key": "volume",
+          "type": "number",
+          "label": "音量"
+        },
+        {
+          "key": "speed",
+          "type": "number",
+          "label": "语速"
+        },
+        {
+          "key": "pitch",
+          "type": "number",
+          "label": "音调"
+        },
+        {
+          "key": "oral_level",
+          "type": "number",
+          "label": "口语化等级"
+        },
+        {
+          "key": "spark_assist",
+          "type": "number",
+          "label": "是否口语化"
+        },
+        {
+          "key": "stop_split",
+          "type": "number",
+          "label": "服务端拆句"
+        },
+        {
+          "key": "remain",
+          "type": "number",
+          "label": "保留书面语"
+        }
+      ],
+      "sort": 20
+    },
+    {
+      "id": "SYSTEM_ASR_XunfeiStream",
+      "modelType": "ASR",
+      "providerCode": "xunfei_stream",
+      "name": "讯飞流式语音识别",
+      "fields": [
+        {
+          "key": "app_id",
+          "label": "应用ID",
+          "type": "string"
+        },
+        {
+          "key": "api_key",
+          "label": "API_KEY",
+          "type": "password"
+        },
+        {
+          "key": "api_secret",
+          "label": "API_SECRET",
+          "type": "password"
+        },
+        {
+          "key": "domain",
+          "label": "识别领域",
+          "type": "string"
+        },
+        {
+          "key": "language",
+          "label": "识别语言",
+          "type": "string"
+        },
+        {
+          "key": "accent",
+          "label": "方言",
+          "type": "string"
+        },
+        {
+          "key": "dwa",
+          "label": "动态修正",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 18
+    },
+    {
+      "id": "SYSTEM_RAG_ragflow",
+      "modelType": "RAG",
+      "providerCode": "ragflow",
+      "name": "RAGFlow",
+      "fields": [
+        {
+          "key": "base_url",
+          "type": "string",
+          "label": "服务地址"
+        },
+        {
+          "key": "api_key",
+          "type": "string",
+          "label": "API密钥"
+        }
+      ],
+      "sort": 1
+    },
+    {
+      "id": "SYSTEM_ASR_AliyunBLStream",
+      "modelType": "ASR",
+      "providerCode": "aliyunbl_stream",
+      "name": "阿里百炼Paraformer实时语音识别",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "API密钥",
+          "type": "password"
+        },
+        {
+          "key": "model",
+          "label": "模型名称",
+          "type": "string"
+        },
+        {
+          "key": "format",
+          "label": "音频格式",
+          "type": "string"
+        },
+        {
+          "key": "sample_rate",
+          "label": "采样率",
+          "type": "number"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        }
+      ],
+      "sort": 18
+    },
+    {
+      "id": "SYSTEM_ASR_DoubaoStreamASR",
+      "modelType": "ASR",
+      "providerCode": "doubao_stream",
+      "name": "火山引擎语音识别(流式)",
+      "fields": [
+        {
+          "key": "appid",
+          "label": "应用ID",
+          "type": "string"
+        },
+        {
+          "key": "access_token",
+          "label": "访问令牌",
+          "type": "string"
+        },
+        {
+          "key": "cluster",
+          "label": "集群",
+          "type": "string"
+        },
+        {
+          "key": "boosting_table_name",
+          "label": "热词文件名称",
+          "type": "string"
+        },
+        {
+          "key": "correct_table_name",
+          "label": "替换词文件名称",
+          "type": "string"
+        },
+        {
+          "key": "output_dir",
+          "label": "输出目录",
+          "type": "string"
+        },
+        {
+          "key": "end_window_size",
+          "label": "静音判定时长(ms)",
+          "type": "number"
+        },
+        {
+          "key": "enable_multilingual",
+          "label": "是否开启多语种识别模式",
+          "type": "boolean"
+        },
+        {
+          "key": "language",
+          "label": "指定语言编码",
+          "type": "string"
+        }
+      ],
+      "sort": 3
+    },
+    {
+      "id": "SYSTEM_Memory_powermem",
+      "modelType": "Memory",
+      "providerCode": "powermem",
+      "name": "PowerMem记忆",
+      "fields": [
+        {
+          "key": "enable_user_profile",
+          "label": "启用用户画像",
+          "type": "boolean"
+        },
+        {
+          "key": "llm_provider",
+          "label": "LLM提供商",
+          "type": "string"
+        },
+        {
+          "key": "llm_api_key",
+          "label": "LLM API密钥",
+          "type": "string"
+        },
+        {
+          "key": "llm_model",
+          "label": "LLM模型",
+          "type": "string"
+        },
+        {
+          "key": "openai_base_url",
+          "label": "OpenAI基础URL",
+          "type": "string"
+        },
+        {
+          "key": "embedding_provider",
+          "label": "Embedding提供商",
+          "type": "string"
+        },
+        {
+          "key": "embedding_api_key",
+          "label": "Embedding API密钥",
+          "type": "string"
+        },
+        {
+          "key": "embedding_model",
+          "label": "Embedding模型",
+          "type": "string"
+        },
+        {
+          "key": "embedding_openai_base_url",
+          "label": "Embedding OpenAI基础URL",
+          "type": "string"
+        },
+        {
+          "key": "embedding_dims",
+          "label": "Embedding维度",
+          "type": "integer"
+        },
+        {
+          "key": "vector_store",
+          "label": "向量存储配置(JSON)",
+          "type": "dict"
+        }
+      ],
+      "sort": 4
+    },
+    {
+      "id": "SYSTEM_Memory_mem_report_only",
+      "modelType": "Memory",
+      "providerCode": "mem_report_only",
+      "name": "仅上报聊天记录",
+      "fields": [],
+      "sort": 4
+    },
+    {
+      "id": "SYSTEM_PLUGIN_WEB_SEARCH",
+      "modelType": "Plugin",
+      "providerCode": "web_search",
+      "name": "联网搜索",
+      "fields": [
+        {
+          "key": "provider",
+          "type": "string",
+          "label": "搜索源：metaso / tavily",
+          "default": "metaso"
+        },
+        {
+          "key": "description",
+          "type": "string",
+          "label": "工具描述",
+          "default": "联网搜索工具。当用户明确需要联网搜索问题时使用此工具。"
+        },
+        {
+          "key": "max_results",
+          "type": "string",
+          "label": "返回数量",
+          "default": "5"
+        },
+        {
+          "key": "api_key",
+          "type": "string",
+          "label": "apiKey",
+          "default": "mk-XXXX"
+        }
+      ],
+      "sort": 80
+    },
+    {
+      "id": "SYSTEM_PLUGIN_CALL_DEVICE",
+      "modelType": "Plugin",
+      "providerCode": "call_device",
+      "name": "设备呼叫设备",
+      "fields": [],
+      "sort": 85
+    }
+  ],
+  "configs": [
+    {
+      "id": "VAD_SileroVAD",
+      "modelType": "VAD",
+      "providerCode": "silero",
+      "modelCode": "SileroVAD",
+      "modelName": "语音活动检测",
+      "isDefault": true,
+      "isEnabled": true,
+      "configJson": {
+        "type": "silero",
+        "model_dir": "models/snakers4_silero-vad",
+        "threshold": 0.5,
+        "min_silence_duration_ms": 700
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 1
+    },
+    {
+      "id": "ASR_FunASR",
+      "modelType": "ASR",
+      "providerCode": "fun_local",
+      "modelCode": "FunASR",
+      "modelName": "FunASR语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "fun_local",
+        "model_dir": "models/SenseVoiceSmall",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 1
+    },
+    {
+      "id": "ASR_PhoWhisper",
+      "modelType": "ASR",
+      "providerCode": "phowhisper",
+      "modelCode": "PhoWhisper-small",
+      "modelName": "PhoWhisper-small tiếng Việt",
+      "isDefault": true,
+      "isEnabled": true,
+      "configJson": {
+        "type": "phowhisper",
+        "modelPath": "models/phowhisper-small-ct2",
+        "device": "cuda",
+        "computeType": "int8_float16",
+        "cpuThreads": 4,
+        "numWorkers": 1,
+        "sampleRate": 16000,
+        "beamSize": 1,
+        "conditionOnPreviousText": false,
+        "withoutTimestamps": true,
+        "vadFilter": false
+      },
+      "docLink": null,
+      "remark": "Baseline ASR tiếng Việt đã kiểm thử; model được provision ngoài source.",
+      "sort": 0
+    },
+    {
+      "id": "ASR_SherpaASR",
+      "modelType": "ASR",
+      "providerCode": "sherpa_onnx_local",
+      "modelCode": "SherpaASR",
+      "modelName": "Sherpa语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "sherpa_onnx_local",
+        "model_dir": "models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 2
+    },
+    {
+      "id": "ASR_DoubaoASR",
+      "modelType": "ASR",
+      "providerCode": "doubao",
+      "modelCode": "DoubaoASR",
+      "modelName": "豆包语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "doubao",
+        "appid": "",
+        "access_token": "",
+        "cluster": "volcengine_input_common",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 3
+    },
+    {
+      "id": "ASR_TencentASR",
+      "modelType": "ASR",
+      "providerCode": "tencent",
+      "modelCode": "TencentASR",
+      "modelName": "腾讯语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "tencent",
+        "appid": "",
+        "secret_id": "",
+        "secret_key": "",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 4
+    },
+    {
+      "id": "LLM_ChatGLMLLM",
+      "modelType": "LLM",
+      "providerCode": "openai",
+      "modelCode": "ChatGLMLLM",
+      "modelName": "智谱AI",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "model_name": "glm-4-flash",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+        "api_key": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 1
+    },
+    {
+      "id": "LLM_Groq",
+      "modelType": "LLM",
+      "providerCode": "groq",
+      "modelCode": "llama-3.3-70b-versatile",
+      "modelName": "Groq · Llama 3.3 70B",
+      "isDefault": true,
+      "isEnabled": true,
+      "configJson": {
+        "type": "groq",
+        "base_url": "https://api.groq.com/openai/v1",
+        "model_name": "llama-3.3-70b-versatile",
+        "secret_ref": "",
+        "temperature": 0.3,
+        "max_tokens": 2048,
+        "stream": true,
+        "tool_choice": "auto"
+      },
+      "docLink": "https://console.groq.com/docs/openai",
+      "remark": "Model đã benchmark streaming và tool calling; credential chỉ qua secret reference.",
+      "sort": 0
+    },
+    {
+      "id": "LLM_OllamaLLM",
+      "modelType": "LLM",
+      "providerCode": "ollama",
+      "modelCode": "OllamaLLM",
+      "modelName": "Ollama本地模型",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "ollama",
+        "model_name": "qwen2.5",
+        "base_url": "http://localhost:11434"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 2
+    },
+    {
+      "id": "LLM_AliLLM",
+      "modelType": "LLM",
+      "providerCode": "openai",
+      "modelCode": "AliLLM",
+      "modelName": "通义千问",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model_name": "qwen-turbo",
+        "api_key": "",
+        "temperature": 0.7,
+        "max_tokens": 500,
+        "top_p": 1,
+        "top_k": 50,
+        "frequency_penalty": 0
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 3
+    },
+    {
+      "id": "LLM_AliAppLLM",
+      "modelType": "LLM",
+      "providerCode": "AliBL",
+      "modelCode": "AliAppLLM",
+      "modelName": "通义百炼",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "AliBL",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "app_id": "",
+        "api_key": "",
+        "is_no_prompt": true,
+        "ali_memory_id": false
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 4
+    },
+    {
+      "id": "LLM_DoubaoLLM",
+      "modelType": "LLM",
+      "providerCode": "openai",
+      "modelCode": "DoubaoLLM",
+      "modelName": "豆包大模型",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        "model_name": "doubao-pro-32k-functioncall-241028",
+        "api_key": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 5
+    },
+    {
+      "id": "LLM_DeepSeekLLM",
+      "modelType": "LLM",
+      "providerCode": "openai",
+      "modelCode": "DeepSeekLLM",
+      "modelName": "DeepSeek",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "model_name": "deepseek-chat",
+        "base_url": "https://api.deepseek.com",
+        "api_key": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 6
+    },
+    {
+      "id": "LLM_DifyLLM",
+      "modelType": "LLM",
+      "providerCode": "dify",
+      "modelCode": "DifyLLM",
+      "modelName": "Dify",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "dify",
+        "base_url": "https://api.dify.ai/v1",
+        "api_key": "",
+        "mode": "chat-messages"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 7
+    },
+    {
+      "id": "LLM_GeminiLLM",
+      "modelType": "LLM",
+      "providerCode": "gemini",
+      "modelCode": "GeminiLLM",
+      "modelName": "谷歌Gemini",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "gemini",
+        "api_key": "",
+        "model_name": "gemini-2.0-flash",
+        "http_proxy": "",
+        "https_proxy": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 8
+    },
+    {
+      "id": "LLM_CozeLLM",
+      "modelType": "LLM",
+      "providerCode": "coze",
+      "modelCode": "CozeLLM",
+      "modelName": "Coze",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "coze",
+        "bot_id": "",
+        "user_id": "",
+        "personal_access_token": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 9
+    },
+    {
+      "id": "LLM_LMStudioLLM",
+      "modelType": "LLM",
+      "providerCode": "openai",
+      "modelCode": "LMStudioLLM",
+      "modelName": "LM Studio",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "model_name": "deepseek-r1-distill-llama-8b@q4_k_m",
+        "base_url": "http://localhost:1234/v1",
+        "api_key": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 10
+    },
+    {
+      "id": "LLM_FastgptLLM",
+      "modelType": "LLM",
+      "providerCode": "fastgpt",
+      "modelCode": "FastgptLLM",
+      "modelName": "FastGPT",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "fastgpt",
+        "base_url": "https://host/api/v1",
+        "api_key": "",
+        "variables": {
+          "k": "v",
+          "k2": "v2"
+        }
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 11
+    },
+    {
+      "id": "LLM_XinferenceLLM",
+      "modelType": "LLM",
+      "providerCode": "xinference",
+      "modelCode": "XinferenceLLM",
+      "modelName": "Xinference大模型",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "xinference",
+        "model_name": "qwen2.5:72b-AWQ",
+        "base_url": "http://localhost:9997"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 12
+    },
+    {
+      "id": "LLM_XinferenceSmallLLM",
+      "modelType": "LLM",
+      "providerCode": "xinference",
+      "modelCode": "XinferenceSmallLLM",
+      "modelName": "Xinference小模型",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "xinference",
+        "model_name": "qwen2.5:3b-AWQ",
+        "base_url": "http://localhost:9997"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 13
+    },
+    {
+      "id": "TTS_EdgeTTS",
+      "modelType": "TTS",
+      "providerCode": "edge",
+      "modelCode": "EdgeTTS",
+      "modelName": "Edge语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "edge",
+        "voice": "zh-CN-XiaoxiaoNeural",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 1
+    },
+    {
+      "id": "TTS_VieNeu",
+      "modelType": "TTS",
+      "providerCode": "vieneu",
+      "modelCode": "VieNeu-v3-turbo",
+      "modelName": "VieNeu v3 Turbo tiếng Việt",
+      "isDefault": true,
+      "isEnabled": true,
+      "configJson": {
+        "type": "vieneu",
+        "backboneRepo": "VieNeu-TTS-v3-turbo",
+        "mode": "v3turbo",
+        "device": "cpu",
+        "dtype": "int8",
+        "sampleRate": 24000,
+        "sourceSampleRate": 48000,
+        "prewarm": true,
+        "voiceId": "minh_duc"
+      },
+      "docLink": null,
+      "remark": "TTS streaming tiếng Việt đã kiểm thử; model lazy/prewarm theo runtime policy.",
+      "sort": 0
+    },
+    {
+      "id": "TTS_DoubaoTTS",
+      "modelType": "TTS",
+      "providerCode": "doubao",
+      "modelCode": "DoubaoTTS",
+      "modelName": "豆包语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "doubao",
+        "api_url": "https://openspeech.bytedance.com/api/v1/tts",
+        "voice": "BV001_streaming",
+        "output_dir": "tmp/",
+        "authorization": "",
+        "appid": "",
+        "access_token": "",
+        "cluster": "volcano_tts"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 2
+    },
+    {
+      "id": "TTS_CosyVoiceSiliconflow",
+      "modelType": "TTS",
+      "providerCode": "siliconflow",
+      "modelCode": "CosyVoiceSiliconflow",
+      "modelName": "硅基流动语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "siliconflow",
+        "model": "FunAudioLLM/CosyVoice2-0.5B",
+        "voice": "FunAudioLLM/CosyVoice2-0.5B:alex",
+        "output_dir": "tmp/",
+        "access_token": "",
+        "response_format": "wav"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 3
+    },
+    {
+      "id": "TTS_CozeCnTTS",
+      "modelType": "TTS",
+      "providerCode": "cozecn",
+      "modelCode": "CozeCnTTS",
+      "modelName": "Coze中文语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "cozecn",
+        "voice": "7426720361733046281",
+        "output_dir": "tmp/",
+        "access_token": "",
+        "response_format": "wav"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 4
+    },
+    {
+      "id": "TTS_FishSpeech",
+      "modelType": "TTS",
+      "providerCode": "fishspeech",
+      "modelCode": "FishSpeech",
+      "modelName": "FishSpeech语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "fishspeech",
+        "output_dir": "tmp/",
+        "response_format": "wav",
+        "reference_id": null,
+        "reference_audio": [
+          "/tmp/test.wav"
+        ],
+        "reference_text": [
+          "你弄来这些吟词宴曲来看，还是这些混话来欺负我。"
+        ],
+        "normalize": true,
+        "max_new_tokens": 1024,
+        "chunk_length": 200,
+        "top_p": 0.7,
+        "repetition_penalty": 1.2,
+        "temperature": 0.7,
+        "streaming": false,
+        "use_memory_cache": "on",
+        "seed": null,
+        "channels": 1,
+        "rate": 44100,
+        "api_key": "",
+        "api_url": "http://127.0.0.1:8080/v1/tts"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 5
+    },
+    {
+      "id": "TTS_GPT_SOVITS_V2",
+      "modelType": "TTS",
+      "providerCode": "gpt_sovits_v2",
+      "modelCode": "GPT_SOVITS_V2",
+      "modelName": "GPT-SoVITS V2",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "gpt_sovits_v2",
+        "url": "http://127.0.0.1:9880/tts",
+        "output_dir": "tmp/",
+        "text_lang": "auto",
+        "ref_audio_path": "caixukun.wav",
+        "prompt_text": "",
+        "prompt_lang": "zh",
+        "top_k": 5,
+        "top_p": 1,
+        "temperature": 1,
+        "text_split_method": "cut0",
+        "batch_size": 1,
+        "batch_threshold": 0.75,
+        "split_bucket": true,
+        "return_fragment": false,
+        "speed_factor": 1,
+        "streaming_mode": false,
+        "seed": -1,
+        "parallel_infer": true,
+        "repetition_penalty": 1.35,
+        "aux_ref_audio_paths": []
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 6
+    },
+    {
+      "id": "TTS_GPT_SOVITS_V3",
+      "modelType": "TTS",
+      "providerCode": "gpt_sovits_v3",
+      "modelCode": "GPT_SOVITS_V3",
+      "modelName": "GPT-SoVITS V3",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "gpt_sovits_v3",
+        "url": "http://127.0.0.1:9880",
+        "output_dir": "tmp/",
+        "text_language": "auto",
+        "refer_wav_path": "caixukun.wav",
+        "prompt_language": "zh",
+        "prompt_text": "",
+        "top_k": 15,
+        "top_p": 1,
+        "temperature": 1,
+        "cut_punc": "",
+        "speed": 1,
+        "inp_refs": [],
+        "sample_steps": 32,
+        "if_sr": false
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 7
+    },
+    {
+      "id": "TTS_AliyunTTS",
+      "modelType": "TTS",
+      "providerCode": "aliyun",
+      "modelCode": "AliyunTTS",
+      "modelName": "阿里云语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "aliyun",
+        "output_dir": "tmp/",
+        "appkey": "",
+        "token": "",
+        "voice": "xiaoyun",
+        "access_key_id": "",
+        "access_key_secret": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 9
+    },
+    {
+      "id": "TTS_TTS302AI",
+      "modelType": "TTS",
+      "providerCode": "doubao",
+      "modelCode": "TTS302AI",
+      "modelName": "302AI语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "doubao",
+        "api_url": "https://api.302ai.cn/doubao/tts_hd",
+        "authorization": "",
+        "voice": "zh_female_wanwanxiaohe_moon_bigtts",
+        "output_dir": "tmp/",
+        "access_token": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 10
+    },
+    {
+      "id": "TTS_OpenAITTS",
+      "modelType": "TTS",
+      "providerCode": "openai",
+      "modelCode": "OpenAITTS",
+      "modelName": "OpenAI语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "api_key": "",
+        "api_url": "https://api.openai.com/v1/audio/speech",
+        "model": "tts-1",
+        "voice": "onyx",
+        "speed": 1,
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 13
+    },
+    {
+      "id": "TTS_CustomTTS",
+      "modelType": "TTS",
+      "providerCode": "custom",
+      "modelCode": "CustomTTS",
+      "modelName": "自定义语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "custom",
+        "url": "http://127.0.0.1:9880/tts",
+        "params": {},
+        "headers": {},
+        "format": "wav",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 14
+    },
+    {
+      "id": "TTS_TencentTTS",
+      "modelType": "TTS",
+      "providerCode": "tencent",
+      "modelCode": "TencentTTS",
+      "modelName": "腾讯语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "tencent",
+        "appid": "",
+        "secret_id": "",
+        "secret_key": "",
+        "region": "ap-guangzhou",
+        "voice": "101001",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 3
+    },
+    {
+      "id": "Memory_nomem",
+      "modelType": "Memory",
+      "providerCode": "nomem",
+      "modelCode": "nomem",
+      "modelName": "无记忆",
+      "isDefault": true,
+      "isEnabled": true,
+      "configJson": {
+        "type": "nomem"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 1
+    },
+    {
+      "id": "Memory_mem_local_short",
+      "modelType": "Memory",
+      "providerCode": "mem_local_short",
+      "modelCode": "mem_local_short",
+      "modelName": "本地短期记忆",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "mem_local_short"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 2
+    },
+    {
+      "id": "Memory_mem0ai",
+      "modelType": "Memory",
+      "providerCode": "mem0ai",
+      "modelCode": "mem0ai",
+      "modelName": "Mem0AI记忆",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "mem0ai",
+        "api_key": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 3
+    },
+    {
+      "id": "Intent_nointent",
+      "modelType": "Intent",
+      "providerCode": "nointent",
+      "modelCode": "nointent",
+      "modelName": "无意图识别",
+      "isDefault": true,
+      "isEnabled": false,
+      "configJson": {
+        "type": "nointent"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 1
+    },
+    {
+      "id": "Intent_intent_llm",
+      "modelType": "Intent",
+      "providerCode": "intent_llm",
+      "modelCode": "intent_llm",
+      "modelName": "LLM意图识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "intent_llm",
+        "llm": "ChatGLMLLM"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 2
+    },
+    {
+      "id": "Intent_function_call",
+      "modelType": "Intent",
+      "providerCode": "function_call",
+      "modelCode": "function_call",
+      "modelName": "函数调用意图识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "function_call",
+        "functions": "change_role;get_weather;get_news;play_music"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 3
+    },
+    {
+      "id": "LLM_VolcesAiGatewayLLM",
+      "modelType": "LLM",
+      "providerCode": "openai",
+      "modelCode": "VolcesAiGatewayTTS",
+      "modelName": "火山引擎边缘大模型网关",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "base_url": "https://ai-gateway.vei.volces.com/v1",
+        "model_name": "doubao-pro-32k-functioncall",
+        "api_key": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 14
+    },
+    {
+      "id": "TTS_VolcesAiGatewayTTS",
+      "modelType": "TTS",
+      "providerCode": "openai",
+      "modelCode": "VolcesAiGatewayTTS",
+      "modelName": "火山引擎边缘大模型网关",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "api_key": "",
+        "api_url": "https://ai-gateway.vei.volces.com/v1/audio/speech",
+        "model": "doubao-tts",
+        "voice": "zh_male_shaonianzixin_moon_bigtts",
+        "speed": 1,
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 15
+    },
+    {
+      "id": "ASR_FunASRServer",
+      "modelType": "ASR",
+      "providerCode": "fun_server",
+      "modelCode": "FunASRServer",
+      "modelName": "FunASR服务语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "fun_server",
+        "host": "127.0.0.1",
+        "port": 10096
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 5
+    },
+    {
+      "id": "ASR_AliyunASR",
+      "modelType": "ASR",
+      "providerCode": "aliyun",
+      "modelCode": "AliyunASR",
+      "modelName": "阿里云语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "aliyun",
+        "appkey": "",
+        "token": "",
+        "access_key_id": "",
+        "access_key_secret": "",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 6
+    },
+    {
+      "id": "ASR_BaiduASR",
+      "modelType": "ASR",
+      "providerCode": "baidu",
+      "modelCode": "BaiduASR",
+      "modelName": "百度语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "baidu",
+        "app_id": "",
+        "api_key": "",
+        "secret_key": "",
+        "dev_pid": 1537,
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 7
+    },
+    {
+      "id": "TTS_HuoshanDoubleStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "huoshan_double_stream",
+      "modelCode": "HuoshanDoubleStreamTTS",
+      "modelName": "火山双流式语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "huoshan_double_stream",
+        "ws_url": "wss://openspeech.bytedance.com/api/v3/tts/bidirection",
+        "appid": "",
+        "access_token": "",
+        "resource_id": "volc.service_type.10029",
+        "speaker": "zh_female_wanwanxiaohe_moon_bigtts"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 16
+    },
+    {
+      "id": "VLLM_ChatGLMVLLM",
+      "modelType": "VLLM",
+      "providerCode": "openai",
+      "modelCode": "ChatGLMVLLM",
+      "modelName": "智谱视觉AI",
+      "isDefault": true,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "model_name": "glm-4v-flash",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+        "api_key": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 1
+    },
+    {
+      "id": "ASR_DoubaoStreamASR",
+      "modelType": "ASR",
+      "providerCode": "doubao_stream",
+      "modelCode": "DoubaoStreamASR",
+      "modelName": "豆包语音识别(流式)",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "doubao_stream",
+        "appid": "",
+        "access_token": "",
+        "cluster": "volcengine_input_common",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 3
+    },
+    {
+      "id": "VLLM_QwenVLVLLM",
+      "modelType": "VLLM",
+      "providerCode": "openai",
+      "modelCode": "QwenVLVLLM",
+      "modelName": "千问视觉模型",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "model_name": "qwen2.5-vl-3b-instruct",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "api_key": ""
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 2
+    },
+    {
+      "id": "ASR_OpenaiASR",
+      "modelType": "ASR",
+      "providerCode": "openai",
+      "modelCode": "OpenaiASR",
+      "modelName": "OpenAI语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "api_key": "",
+        "base_url": "https://api.openai.com/v1/audio/transcriptions",
+        "model_name": "gpt-4o-mini-transcribe",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 9
+    },
+    {
+      "id": "ASR_GroqASR",
+      "modelType": "ASR",
+      "providerCode": "openai",
+      "modelCode": "GroqASR",
+      "modelName": "Groq语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "api_key": "",
+        "base_url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "model_name": "whisper-large-v3-turbo",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 10
+    },
+    {
+      "id": "ASR_AliyunStreamASR",
+      "modelType": "ASR",
+      "providerCode": "aliyun_stream",
+      "modelCode": "AliyunStreamASR",
+      "modelName": "阿里云语音识别(流式)",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "aliyun_stream",
+        "appkey": "",
+        "token": "",
+        "access_key_id": "",
+        "access_key_secret": "",
+        "host": "nls-gateway-cn-shanghai.aliyuncs.com",
+        "max_sentence_silence": 800,
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 8
+    },
+    {
+      "id": "TTS_AliyunStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "aliyun_stream",
+      "modelCode": "AliyunStreamTTS",
+      "modelName": "阿里云语音合成(流式)",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "aliyun_stream",
+        "appkey": "",
+        "token": "",
+        "access_key_id": "",
+        "access_key_secret": "",
+        "host": "nls-gateway-cn-beijing.aliyuncs.com",
+        "voice": "longxiaochun",
+        "format": "pcm",
+        "sample_rate": 16000,
+        "volume": 50,
+        "speech_rate": 0,
+        "pitch_rate": 0,
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 18
+    },
+    {
+      "id": "TTS_IndexStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "index_stream",
+      "modelCode": "IndexStreamTTS",
+      "modelName": "Index-TTS-vLLM流式语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "index_stream",
+        "api_url": "http://127.0.0.1:11996/tts",
+        "voice": "jay_klee",
+        "audio_format": "pcm",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 19
+    },
+    {
+      "id": "TTS_PaddleSpeechTTS",
+      "modelType": "TTS",
+      "providerCode": "paddle_speech",
+      "modelCode": "PaddleSpeechTTS",
+      "modelName": "PaddleSpeechTTS",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "paddle_speech",
+        "protocol": "websocket",
+        "url": "ws://127.0.0.1:8092/paddlespeech/tts/streaming",
+        "spk_id": "0",
+        "sample_rate": 24000,
+        "speed": 1,
+        "volume": 1,
+        "save_path": "./streaming_tts.wav"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 20
+    },
+    {
+      "id": "ASR_VoskASR",
+      "modelType": "ASR",
+      "providerCode": "vosk",
+      "modelCode": "VoskASR",
+      "modelName": "VOSK离线语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "vosk",
+        "model_path": "",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 11
+    },
+    {
+      "id": "TTS_MinimaxStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "minimax_httpstream",
+      "modelCode": "MinimaxStreamTTS",
+      "modelName": "Minimax流式语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "minimax_httpstream",
+        "group_id": "",
+        "api_key": "",
+        "model": "speech-01-turbo",
+        "voice_id": "female-shaonv",
+        "output_dir": "tmp/",
+        "voice_setting": {
+          "speed": 1,
+          "vol": 1,
+          "pitch": 0,
+          "emotion": "happy"
+        },
+        "pronunciation_dict": {
+          "tone": [
+            "处理/(chu3)(li3)",
+            "危险/dangerous"
+          ]
+        },
+        "audio_setting": {
+          "sample_rate": 24000,
+          "bitrate": 128000,
+          "format": "pcm",
+          "channel": 1
+        }
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 21
+    },
+    {
+      "id": "ASR_Qwen3Flash",
+      "modelType": "ASR",
+      "providerCode": "qwen3_asr_flash",
+      "modelCode": "Qwen3-ASR-Flash",
+      "modelName": "通义千问语音识别服务",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "qwen3_asr_flash",
+        "api_key": "",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model_name": "qwen3-asr-flash",
+        "output_dir": "tmp/",
+        "enable_lid": true,
+        "enable_itn": true
+      },
+      "docLink": "https://help.aliyun.com/zh/bailian/",
+      "remark": "支持多语言识别、歌唱识别、噪声拒识功能",
+      "sort": 20
+    },
+    {
+      "id": "TTS_AliBLStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "alibl_stream",
+      "modelCode": "AliBLStreamTTS",
+      "modelName": "阿里百炼流式语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "alibl_stream",
+        "appkey": "",
+        "output_dir": "tmp/",
+        "model": "cosyvoice-v2",
+        "voice": "longcheng_v2",
+        "format": "pcm",
+        "sample_rate": 24000,
+        "volume": 50,
+        "rate": 1,
+        "pitch": 1
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 22
+    },
+    {
+      "id": "TTS_XunFeiStreamTTS",
+      "modelType": "TTS",
+      "providerCode": "xunfei_stream",
+      "modelCode": "XunFeiStreamTTS",
+      "modelName": "讯飞流式语音合成",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "xunfei_stream",
+        "app_id": "",
+        "api_secret": "",
+        "api_key": "",
+        "output_dir": "tmp/",
+        "voice": "x5_lingxiaoxuan_flow",
+        "format": "raw",
+        "sample_rate": 24000,
+        "volume": 50,
+        "speed": 50,
+        "pitch": 50,
+        "oral_level": "mid",
+        "spark_assist": 1,
+        "stop_split": 0,
+        "remain": 0
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 23
+    },
+    {
+      "id": "ASR_XunfeiStream",
+      "modelType": "ASR",
+      "providerCode": "xunfei_stream",
+      "modelCode": "讯飞流式语音识别",
+      "modelName": "讯飞流式语音识别服务",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "xunfei_stream",
+        "app_id": "",
+        "api_key": "",
+        "api_secret": "",
+        "domain": "slm",
+        "language": "zh_cn",
+        "accent": "mandarin",
+        "dwa": "wpgs",
+        "output_dir": "tmp/"
+      },
+      "docLink": "https://www.xfyun.cn/doc/spark/spark_zh_iat.html",
+      "remark": "支持实时流式语音识别，适用于中文普通话及多种方言识别",
+      "sort": 21
+    },
+    {
+      "id": "LLM_XunfeiSparkLLM",
+      "modelType": "LLM",
+      "providerCode": "openai",
+      "modelCode": "讯飞星火认知大模型",
+      "modelName": "讯飞星火认知大模型",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "openai",
+        "model_name": "generalv3.5",
+        "base_url": "https://spark-api-open.xf-yun.com/v1",
+        "api_password": "",
+        "temperature": 0.5,
+        "max_tokens": 2048,
+        "top_p": 1,
+        "frequency_penalty": 0
+      },
+      "docLink": "https://www.xfyun.cn/doc/spark/HTTP%E8%B0%83%E7%94%A8%E6%96%87%E6%A1%A3.html",
+      "remark": "讯飞星火认知大模型，支持多轮对话、文本生成等功能",
+      "sort": 14
+    },
+    {
+      "id": "RAG_RAGFlow",
+      "modelType": "RAG",
+      "providerCode": "ragflow",
+      "modelCode": "ragflow",
+      "modelName": "RAGFlow",
+      "isDefault": true,
+      "isEnabled": true,
+      "configJson": {
+        "type": "ragflow",
+        "base_url": "http://localhost",
+        "api_key": ""
+      },
+      "docLink": "https://github.com/infiniflow/ragflow/blob/main/README_zh.md",
+      "remark": "RAGFlow配置说明： 一、快速部署教程（docker部署） 1.$ sysctl vm.max_map_count 2.$ sysctl -w vm.max_map_count=262144 3.$ git clone https://github.com/infiniflow/ragflow.git 4.docker compose -f docker-compose.yml up -d 5.$ docker logs -f docker-ragflow-cpu-1 6.注冊登录后，点击右上角头像，获得RAGFlow的API KEY和API服务器地址。使用RAGFlow前请在Model Provider中添加模型和设置默认模型。 二、如果您希望关掉注册功能 1.停止服务 docker compose down 2. sed -i ''s/REGISTER_ENABLED=1/REGISTER_ENABLED=0/g'' .env 3.cat .env | grep -i register 4.看到REGISTER_ENABLED=0 重启服务即可。",
+      "sort": 1
+    },
+    {
+      "id": "ASR_AliyunBLStream",
+      "modelType": "ASR",
+      "providerCode": "aliyunbl_stream",
+      "modelCode": "AliyunBLStream",
+      "modelName": "阿里百炼Paraformer实时语音识别",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "aliyunbl_stream",
+        "api_key": "",
+        "model": "paraformer-realtime-v2",
+        "format": "pcm",
+        "sample_rate": 16000,
+        "disfluency_removal_enabled": false,
+        "semantic_punctuation_enabled": false,
+        "max_sentence_silence": 200,
+        "multi_threshold_mode_enabled": false,
+        "punctuation_prediction_enabled": true,
+        "inverse_text_normalization_enabled": true,
+        "output_dir": "tmp/"
+      },
+      "docLink": "https://help.aliyun.com/zh/model-studio/websocket-for-paraformer-real-time-service",
+      "remark": "支持多语言、热词定制、语义断句等高级功能",
+      "sort": 21
+    },
+    {
+      "id": "Memory_powermem",
+      "modelType": "Memory",
+      "providerCode": "powermem",
+      "modelCode": "powermem",
+      "modelName": "PowerMem记忆",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "powermem",
+        "enable_user_profile": true,
+        "llm_provider": "openai",
+        "llm_api_key": "",
+        "llm_model": "qwen-plus",
+        "openai_base_url": "",
+        "embedding_provider": "openai",
+        "embedding_api_key": "",
+        "embedding_model": "text-embedding-v4",
+        "embedding_openai_base_url": "https://api.openai.com/v1",
+        "embedding_dims": "",
+        "vector_store": {
+          "provider": "sqlite",
+          "config": {}
+        }
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 4
+    },
+    {
+      "id": "Memory_mem_report_only",
+      "modelType": "Memory",
+      "providerCode": "mem_report_only",
+      "modelCode": "mem_report_only",
+      "modelName": "仅上报聊天记录",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "mem_report_only"
+      },
+      "docLink": null,
+      "remark": "仅上报聊天记录，不总结记忆",
+      "sort": 3
+    },
+    {
+      "id": "TTS_HSDSTTS_V2",
+      "modelType": "TTS",
+      "providerCode": "huoshan_double_stream",
+      "modelCode": "HuoshanDoubleStreamTTSV2",
+      "modelName": "豆包语音合成模型2.0",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "huoshan_double_stream",
+        "ws_url": "wss://openspeech.bytedance.com/api/v3/tts/bidirection",
+        "appid": "",
+        "access_token": "",
+        "resource_id": "seed-tts-2.0",
+        "speaker": "zh_female_xiaohe_uranus_bigtts",
+        "enable_ws_reuse": true,
+        "audio_params": {
+          "speech_rate": 0,
+          "loudness_rate": 0
+        },
+        "additions": {
+          "aigc_metadata": {},
+          "cache_config": {},
+          "post_process": {
+            "pitch": 0
+          }
+        },
+        "mix_speaker": {}
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 17
+    },
+    {
+      "id": "ASR_DoubaoStreamASRV2",
+      "modelType": "ASR",
+      "providerCode": "doubao_stream",
+      "modelCode": "DoubaoStreamASRV2",
+      "modelName": "豆包语音识别模型2.0",
+      "isDefault": false,
+      "isEnabled": true,
+      "configJson": {
+        "type": "doubao_stream",
+        "appid": "",
+        "access_token": "",
+        "resource_id": "volc.seedasr.sauc.duration",
+        "end_window_size": 200,
+        "enable_multilingual": false,
+        "language": "zh-CN",
+        "output_dir": "tmp/"
+      },
+      "docLink": null,
+      "remark": null,
+      "sort": 6
+    }
+  ],
+  "voices": [
+    {
+      "id": "TTS_VieNeu_0001",
+      "ttsModelId": "TTS_VieNeu",
+      "name": "Minh Đức",
+      "ttsVoice": "minh_duc",
+      "languages": "vi-VN",
+      "voiceDemo": null,
+      "remark": "Voice preset đã dùng trong kiểm thử realtime.",
+      "sort": 1
+    },
+    {
+      "id": "TTS_EdgeTTS0001",
+      "ttsModelId": "TTS_EdgeTTS",
+      "name": "Xiaoxiao",
+      "ttsVoice": "zh-CN-XiaoxiaoNeural",
+      "languages": "zh-CN",
+      "voiceDemo": null,
+      "sort": 1
+    },
+    {
+      "id": "TTS_EdgeTTS0002",
+      "ttsModelId": "TTS_EdgeTTS",
+      "name": "Yunyang",
+      "ttsVoice": "zh-CN-YunyangNeural",
+      "languages": "zh-CN",
+      "voiceDemo": null,
+      "sort": 2
+    }
+  ]
+}

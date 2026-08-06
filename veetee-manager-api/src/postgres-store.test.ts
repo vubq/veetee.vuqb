@@ -127,6 +127,39 @@ test('PostgreSQL provider edits create immutable revisions and reject stale writ
   }
 })
 
+test('PostgreSQL provider status persists, changes ETag and blocks active selections', { skip: !databaseUrlFile }, async () => {
+  const env: Environment = {
+    VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8031, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
+    VEETEE_INITIAL_SNAPSHOT_FILE: resolve(root, '../veetee-server/config/fixtures/m0.json'), VEETEE_PROVIDER_CATALOG_FILE: resolve(root, 'config/provider-catalog.json'),
+    VEETEE_ALLOWED_ORIGINS: 'http://127.0.0.1:8081', VEETEE_AUTH_MODE: 'disabled', VEETEE_OWNER_EMAIL: undefined, VEETEE_OWNER_PASSWORD_HASH: undefined,
+    VEETEE_MACHINE_TOKEN_FILE: undefined, VEETEE_ALLOW_INSECURE_LOCAL_CONFIG: true, VEETEE_LOG_LEVEL: 'silent',
+  }
+  const name = `postgres-status-${Date.now()}`
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const created = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: { installationId: 'veetee.llm.fixture', name, config: { segments: ['PostgreSQL status.'] } } })
+    assert.equal(created.statusCode, 201)
+    const current = created.json() as { id: string; etag: string; enabled: boolean }
+    assert.equal(current.enabled, true)
+    const disabled = await app.inject({ method: 'PATCH', url: `/api/v1/provider-configs/${current.id}/status`, headers: { 'if-match': current.etag }, payload: { enabled: false } })
+    assert.equal(disabled.statusCode, 200)
+    assert.equal(disabled.json().enabled, false)
+
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/provider-configs?kind=llm' })
+    const persisted = listed.json().items.find((item: { id: string }) => item.id === current.id)
+    assert.equal(persisted.enabled, false)
+    const enabled = await app.inject({ method: 'PATCH', url: `/api/v1/provider-configs/${current.id}/status`, headers: { 'if-match': disabled.headers.etag }, payload: { enabled: true } })
+    assert.equal(enabled.statusCode, 200)
+
+    const duplicate = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: { installationId: 'veetee.llm.fixture', name: name.toUpperCase(), config: { segments: ['Duplicate.'] } } })
+    assert.equal(duplicate.statusCode, 409)
+    assert.equal(duplicate.json().code, 'NAME_CONFLICT')
+  } finally {
+    await app.close()
+  }
+})
+
 test('PostgreSQL voice catalog aliases persist with ETag lifecycle', { skip: !databaseUrlFile }, async () => {
   const env: Environment = {
     VEETEE_API_HOST: '127.0.0.1', VEETEE_API_PORT: 8013, VEETEE_DATABASE_MODE: 'postgres', VEETEE_DATABASE_URL_FILE: databaseUrlFile,
@@ -191,6 +224,9 @@ test('PostgreSQL provider selection validates config ownership and kind before w
     const selected = await app.inject({ method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/model-memory/provider`, headers: { 'if-match': assistant.etag }, payload: { kind: 'llm', mode: 'selected', providerConfigId: llm.json().id } })
     assert.equal(selected.statusCode, 200)
     assert.equal(selected.json().selections.find((item: { kind: string }) => item.kind === 'llm').providerConfigId, llm.json().id)
+    const disabled = await app.inject({ method: 'PATCH', url: `/api/v1/provider-configs/${llm.json().id}/status`, headers: { 'if-match': llm.headers.etag }, payload: { enabled: false } })
+    assert.equal(disabled.statusCode, 409)
+    assert.equal(disabled.json().code, 'RESOURCE_IN_USE')
   } finally {
     await app.close()
   }

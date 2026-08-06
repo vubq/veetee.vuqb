@@ -5,9 +5,11 @@ withDefaults(
   defineProps<{
     modelValue?: boolean
     label: string
+    ariaLabel?: string
     disabled?: boolean
+    showLabel?: boolean
   }>(),
-  { modelValue: false },
+  { modelValue: false, showLabel: true },
 )
 
 defineEmits<{ 'update:modelValue': [value: boolean] }>()
@@ -22,11 +24,12 @@ defineEmits<{ 'update:modelValue': [value: boolean] }>()
       class="vt-switch"
       :model-value="modelValue"
       :disabled="disabled"
+      :aria-label="ariaLabel ?? label"
       @update:model-value="$emit('update:modelValue', $event)"
     >
       <SwitchThumb class="vt-switch-thumb" />
     </SwitchRoot>
-    <span>{{ label }}</span>
+    <span v-if="showLabel">{{ label }}</span>
   </label>
 </template>
 
@@ -60,4 +63,3 @@ defineEmits<{ 'update:modelValue': [value: boolean] }>()
 }
 .vt-switch-thumb[data-state='checked'] { transform: translateX(16px); }
 </style>
-

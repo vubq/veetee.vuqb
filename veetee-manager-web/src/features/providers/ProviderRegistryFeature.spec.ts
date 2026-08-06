@@ -27,6 +27,7 @@ const config: ProviderConfigRecord = {
   id: 'config-vieneu',
   installationId: installation.id,
   name: 'VieNeu local',
+  enabled: true,
   revision: 1,
   config: { voice: 'minh-duc' },
   secretRefs: [],

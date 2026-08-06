@@ -2,7 +2,7 @@
 import { Check } from '@lucide/vue'
 import { CheckboxIndicator, CheckboxRoot } from 'reka-ui'
 
-withDefaults(defineProps<{ modelValue?: boolean; label: string; disabled?: boolean }>(), { modelValue: false })
+withDefaults(defineProps<{ modelValue?: boolean; label: string; ariaLabel?: string; disabled?: boolean; showLabel?: boolean }>(), { modelValue: false, showLabel: true })
 defineEmits<{ 'update:modelValue': [value: boolean] }>()
 </script>
 
@@ -15,6 +15,7 @@ defineEmits<{ 'update:modelValue': [value: boolean] }>()
       class="vt-checkbox"
       :model-value="modelValue"
       :disabled="disabled"
+      :aria-label="ariaLabel ?? label"
       @update:model-value="$emit('update:modelValue', $event === true)"
     >
       <CheckboxIndicator class="vt-checkbox-indicator"><Check
@@ -22,7 +23,7 @@ defineEmits<{ 'update:modelValue': [value: boolean] }>()
         :stroke-width="2.5"
       /></CheckboxIndicator>
     </CheckboxRoot>
-    <span>{{ label }}</span>
+    <span v-if="showLabel">{{ label }}</span>
   </label>
 </template>
 
@@ -36,4 +37,3 @@ defineEmits<{ 'update:modelValue': [value: boolean] }>()
 .vt-checkbox[data-disabled] { cursor: not-allowed; background: var(--vt-surface-muted); opacity: 0.6; }
 .vt-checkbox-indicator { display: inline-grid; place-items: center; }
 </style>
-

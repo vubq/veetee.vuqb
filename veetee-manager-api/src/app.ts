@@ -8,7 +8,7 @@ import swagger from '@fastify/swagger'
 import argon2 from 'argon2'
 import { publicBaseUrl, readEnvironment, type Environment } from './config.js'
 import { EncryptedFileSecretStore, type SecretValueStore } from './secret-store.js'
-import { InMemoryStore, loadInitialSnapshot, parseCatalog, type ConversationDetail, type ConversationTurnInput, type ProviderKind, type Store } from './store.js'
+import { InMemoryStore, loadInitialSnapshot, parseCatalog, parseModelRegistry, type ConversationDetail, type ConversationTurnInput, type ModelConfigInput, type ModelProviderInput, type ModelType, type ProviderKind, type Store } from './store.js'
 import { LoginThrottle, normalizeLoginIdentity } from './auth-throttle.js'
 
 type OwnerRequest = FastifyRequest & { ownerId?: string; sessionToken?: string; csrfToken?: string; sessionExpiresAt?: string }
@@ -215,9 +215,9 @@ const providerInstallationResponseSchema = {
   },
 } as const
 const providerConfigResponseSchema = {
-  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'installationId', 'name', 'revision', 'config', 'secretRefs', 'etag', 'updatedAt'],
+  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'installationId', 'name', 'enabled', 'revision', 'config', 'secretRefs', 'etag', 'updatedAt'],
   properties: {
-    id: { type: 'string' }, ownerId: { type: 'string' }, installationId: { type: 'string' }, name: { type: 'string' },
+    id: { type: 'string' }, ownerId: { type: 'string' }, installationId: { type: 'string' }, name: { type: 'string' }, enabled: { type: 'boolean' },
     revision: { type: 'integer' }, config: { type: 'object', additionalProperties: true }, secretRefs: { type: 'array', items: { type: 'string' } },
     etag: { type: 'string' }, updatedAt: { type: 'string' }, archivedAt: { type: ['string', 'null'] },
   },
@@ -227,6 +227,40 @@ const providerProbeResponseSchema = {
   properties: {
     providerConfigId: { type: 'string' }, state: { type: 'string', enum: ['ready', 'unavailable'] }, checkedAt: { type: 'string' }, durationMs: { type: 'number', minimum: 0 },
     checks: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['id', 'state', 'message'], properties: { id: { type: 'string' }, state: { type: 'string', enum: ['passed', 'failed', 'skipped'] }, message: { type: 'string' } } } },
+  },
+} as const
+const modelProviderFieldSchema = {
+  type: 'object', additionalProperties: true, required: ['key', 'label', 'type'],
+  properties: {
+    key: { type: 'string', minLength: 1, maxLength: 120 }, label: { type: 'string', minLength: 1, maxLength: 160 },
+    type: { type: 'string', enum: ['string', 'number', 'boolean', 'password', 'dict', 'array', 'int', 'integer', 'float'] },
+    default: {}, sensitive: { type: 'boolean' }, dictName: { type: 'string', maxLength: 120 },
+  },
+} as const
+const modelProviderResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'modelType', 'providerCode', 'name', 'fields', 'sort', 'revision', 'etag', 'updatedAt'],
+  properties: {
+    id: { type: 'string' }, ownerId: { type: 'string' }, modelType: { type: 'string', enum: ['ASR', 'TTS', 'LLM', 'VLLM', 'Intent', 'Memory', 'VAD', 'Plugin', 'RAG'] }, providerCode: { type: 'string' }, name: { type: 'string' },
+    fields: { type: 'array', items: modelProviderFieldSchema }, sort: { type: 'integer' }, revision: { type: 'integer' }, etag: { type: 'string' }, updatedAt: { type: 'string' },
+  },
+} as const
+const modelConfigResponseSchema = {
+  type: 'object', additionalProperties: false, required: ['id', 'ownerId', 'modelType', 'modelCode', 'modelName', 'providerCode', 'isDefault', 'isEnabled', 'configJson', 'docLink', 'remark', 'sort', 'revision', 'etag', 'updatedAt'],
+  properties: {
+    id: { type: 'string' }, ownerId: { type: 'string' }, modelType: { type: 'string', enum: ['ASR', 'TTS', 'LLM', 'VLLM', 'Intent', 'Memory', 'VAD', 'Plugin', 'RAG'] }, modelCode: { type: 'string' }, modelName: { type: 'string' }, providerCode: { type: 'string' },
+    isDefault: { type: 'boolean' }, isEnabled: { type: 'boolean' }, configJson: { type: 'object', additionalProperties: true }, docLink: { type: ['string', 'null'] }, remark: { type: ['string', 'null'] }, sort: { type: 'integer' }, revision: { type: 'integer' }, etag: { type: 'string' }, updatedAt: { type: 'string' },
+  },
+} as const
+const modelProviderBodySchema = {
+  type: 'object', additionalProperties: false, required: ['modelType', 'providerCode', 'name', 'fields'],
+  properties: {
+    modelType: { type: 'string', enum: ['ASR', 'TTS', 'LLM', 'VLLM', 'Intent', 'Memory', 'VAD', 'Plugin', 'RAG'] }, providerCode: { type: 'string', minLength: 1, maxLength: 80 }, name: { type: 'string', minLength: 1, maxLength: 120 }, fields: { type: 'array', maxItems: 128, items: modelProviderFieldSchema }, sort: { type: 'integer', minimum: 0, maximum: 100000 },
+  },
+} as const
+const modelConfigBodySchema = {
+  type: 'object', additionalProperties: false, required: ['modelType', 'providerCode', 'modelCode', 'modelName', 'configJson'],
+  properties: {
+    id: { type: 'string', minLength: 1, maxLength: 96 }, modelType: { type: 'string', enum: ['ASR', 'TTS', 'LLM', 'VLLM', 'Intent', 'Memory', 'VAD', 'Plugin', 'RAG'] }, providerCode: { type: 'string', minLength: 1, maxLength: 80 }, modelCode: { type: 'string', minLength: 1, maxLength: 96 }, modelName: { type: 'string', minLength: 1, maxLength: 160 }, isDefault: { type: 'boolean' }, isEnabled: { type: 'boolean' }, configJson: { type: 'object', additionalProperties: true }, docLink: { type: ['string', 'null'], maxLength: 2048 }, remark: { type: ['string', 'null'], maxLength: 1000 }, sort: { type: 'integer', minimum: 0, maximum: 100000 },
   },
 } as const
 const assistantResponseSchema = {
@@ -585,10 +619,12 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
        driver can turn a client validation error into a 500. */
     if (env.VEETEE_DATABASE_MODE !== 'postgres') return
     const params = request.params as { id?: unknown } | undefined
-    if (typeof params?.id === 'string' && !uuidPattern.test(params.id)) {
+    const path = request.url.split('?', 1)[0] ?? request.url
+    /* Model catalog IDs intentionally follow the source contract
+       (VAD_SileroVAD, SYSTEM_LLM_openai, …), not UUIDs. */
+    if (typeof params?.id === 'string' && !uuidPattern.test(params.id) && !path.startsWith('/api/v1/models/')) {
       return sendProblemCode(reply, 400, 'VALIDATION_ERROR', 'id must be a UUID')
     }
-    const path = request.url.split('?', 1)[0] ?? request.url
     if (path !== '/api/v1/devices/pair' && path !== '/internal/v1/conversations/turns') return
     const body = request.body as { assistantId?: unknown } | undefined
     if (typeof body?.assistantId === 'string' && !uuidPattern.test(body.assistantId)) {
@@ -699,6 +735,100 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     })
   })
 
+  app.get<{ Querystring: { modelType?: ModelType; name?: string } }>('/api/v1/models/providers', { schema: {
+    querystring: { type: 'object', additionalProperties: false, properties: { modelType: { type: 'string', enum: ['ASR', 'TTS', 'LLM', 'VLLM', 'Intent', 'Memory', 'VAD', 'Plugin', 'RAG'] }, name: { type: 'string', maxLength: 120 } } },
+    response: { 200: listResponse(modelProviderResponseSchema) },
+  } }, async (request) => ({ items: await store.listModelProviders(owner(request), request.query) }))
+  app.post<{ Body: ModelProviderInput }>('/api/v1/models/providers', { schema: { body: modelProviderBodySchema, response: { 201: modelProviderResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.createModelProvider(owner(request), request.body); return reply.code(201).header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.patch<{ Params: { id: string }; Body: Partial<ModelProviderInput> }>('/api/v1/models/providers/:id', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, properties: { modelType: { type: 'string', enum: ['ASR', 'TTS', 'LLM', 'VLLM', 'Intent', 'Memory', 'VAD', 'Plugin', 'RAG'] }, providerCode: { type: 'string', maxLength: 80 }, name: { type: 'string', maxLength: 120 }, fields: { type: 'array', items: modelProviderFieldSchema }, sort: { type: 'integer', minimum: 0 } } }, response: { 200: modelProviderResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.updateModelProvider(owner(request), request.params.id, request.body, typeof request.headers['if-match'] === 'string' ? request.headers['if-match'] : undefined); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.delete<{ Params: { id: string } }>('/api/v1/models/providers/:id', { schema: { params: resourceIdParamsSchema, response: { 204: { type: 'null' } } } }, async (request, reply) => {
+    try { await store.deleteModelProvider(owner(request), request.params.id, typeof request.headers['if-match'] === 'string' ? request.headers['if-match'] : undefined); return reply.code(204).send() } catch (error) { return sendProblem(reply, error) }
+  })
+  app.get<{ Querystring: { modelType?: ModelType; modelName?: string; page?: number; limit?: number } }>('/api/v1/models/configs', { schema: {
+    querystring: { type: 'object', additionalProperties: false, properties: { modelType: { type: 'string', enum: ['ASR', 'TTS', 'LLM', 'VLLM', 'Intent', 'Memory', 'VAD', 'Plugin', 'RAG'] }, modelName: { type: 'string', maxLength: 160 }, page: { type: 'integer', minimum: 1 }, limit: { type: 'integer', minimum: 1, maximum: 100 } } },
+    response: { 200: { type: 'object', additionalProperties: false, required: ['items', 'total', 'page', 'limit'], properties: { items: { type: 'array', items: modelConfigResponseSchema }, total: { type: 'integer' }, page: { type: 'integer' }, limit: { type: 'integer' } } } },
+  } }, async (request) => store.listModelConfigs(owner(request), request.query))
+  app.get<{ Params: { id: string } }>('/api/v1/models/configs/:id', { schema: { params: resourceIdParamsSchema, response: { 200: modelConfigResponseSchema } } }, async (request, reply) => {
+    const value = await store.getModelConfig(owner(request), request.params.id)
+    if (!value) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Model config not found')
+    return reply.header('ETag', value.etag).send(value)
+  })
+  app.post<{ Body: ModelConfigInput }>('/api/v1/models/configs', { schema: { body: modelConfigBodySchema, response: { 201: modelConfigResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.createModelConfig(owner(request), request.body); return reply.code(201).header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.patch<{ Params: { id: string }; Body: Partial<ModelConfigInput> }>('/api/v1/models/configs/:id', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: true }, response: { 200: modelConfigResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.updateModelConfig(owner(request), request.params.id, request.body, typeof request.headers['if-match'] === 'string' ? request.headers['if-match'] : undefined); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.delete<{ Params: { id: string } }>('/api/v1/models/configs/:id', { schema: { params: resourceIdParamsSchema, response: { 204: { type: 'null' } } } }, async (request, reply) => {
+    try { await store.deleteModelConfig(owner(request), request.params.id, typeof request.headers['if-match'] === 'string' ? request.headers['if-match'] : undefined); return reply.code(204).send() } catch (error) { return sendProblem(reply, error) }
+  })
+  app.patch<{ Params: { id: string }; Body: { enabled: boolean } }>('/api/v1/models/configs/:id/status', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, required: ['enabled'], properties: { enabled: { type: 'boolean' } } }, response: { 200: modelConfigResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.setModelEnabled(owner(request), request.params.id, request.body.enabled); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.patch<{ Params: { id: string } }>('/api/v1/models/configs/:id/default', { schema: { params: resourceIdParamsSchema, response: { 200: modelConfigResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.setDefaultModel(owner(request), request.params.id); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+
+  /* Source-compatible aliases. The Veetee client uses the explicit REST
+     resources above; these additive routes keep integrations built around the
+     reference manager API working without changing the runtime protocol. */
+  app.get<{ Querystring: { name?: string; modelType?: ModelType; page?: number; limit?: number } }>('/api/v1/models/provider', { schema: {
+    querystring: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', maxLength: 120 }, modelType: { type: 'string', enum: ['ASR', 'TTS', 'LLM', 'VLLM', 'Intent', 'Memory', 'VAD', 'Plugin', 'RAG'] }, page: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } } },
+    response: { 200: { type: 'object', additionalProperties: false, required: ['items', 'total', 'page', 'limit'], properties: { items: { type: 'array', items: modelProviderResponseSchema }, total: { type: 'integer' }, page: { type: 'integer' }, limit: { type: 'integer' } } } },
+  } }, async (request) => {
+    const all = await store.listModelProviders(owner(request), { modelType: request.query.modelType, name: request.query.name })
+    const page = Math.max(0, Math.trunc(request.query.page ?? 0))
+    const limit = Math.min(100, Math.max(1, Math.trunc(request.query.limit ?? 10)))
+    return { items: all.slice(page * limit, (page + 1) * limit), total: all.length, page, limit }
+  })
+  app.post<{ Body: { modelType: ModelType; providerCode?: string; provideCode?: string; name: string; fields?: unknown; sort?: number } }>('/api/v1/models/provider', { schema: { body: { type: 'object', additionalProperties: true, required: ['modelType', 'name'] }, response: { 201: modelProviderResponseSchema } } }, async (request, reply) => {
+    try {
+      const value = await store.createModelProvider(owner(request), { modelType: request.body.modelType, providerCode: request.body.providerCode ?? request.body.provideCode ?? '', name: request.body.name, fields: parseSourceModelFields(request.body.fields), sort: request.body.sort ?? 0 })
+      return reply.code(201).header('ETag', value.etag).send(value)
+    } catch (error) { return sendProblem(reply, error) }
+  })
+  app.put<{ Body: { id: string; modelType?: ModelType; providerCode?: string; provideCode?: string; name?: string; fields?: unknown; sort?: number } }>('/api/v1/models/provider', { schema: { body: { type: 'object', additionalProperties: true, required: ['id'] }, response: { 200: modelProviderResponseSchema } } }, async (request, reply) => {
+    try {
+      const value = await store.updateModelProvider(owner(request), request.body.id, { ...(request.body.modelType ? { modelType: request.body.modelType } : {}), ...(request.body.providerCode || request.body.provideCode ? { providerCode: request.body.providerCode ?? request.body.provideCode } : {}), ...(request.body.name ? { name: request.body.name } : {}), ...(request.body.fields !== undefined ? { fields: parseSourceModelFields(request.body.fields) } : {}), ...(request.body.sort !== undefined ? { sort: request.body.sort } : {}) })
+      return reply.header('ETag', value.etag).send(value)
+    } catch (error) { return sendProblem(reply, error) }
+  })
+  app.post<{ Body: unknown }>('/api/v1/models/provider/delete', { schema: { body: {} as const, response: { 204: { type: 'null' } } } }, async (request, reply) => {
+    const ids = Array.isArray(request.body) ? request.body : (request.body && typeof request.body === 'object' && Array.isArray((request.body as { ids?: unknown }).ids) ? (request.body as { ids: unknown[] }).ids : [])
+    try {
+      for (const id of ids) if (typeof id === 'string') await store.deleteModelProvider(owner(request), id)
+      return reply.code(204).send()
+    } catch (error) { return sendProblem(reply, error) }
+  })
+  app.get<{ Querystring: { modelType: ModelType; modelName?: string; page?: number; limit?: number } }>('/api/v1/models/list', { schema: {
+    querystring: { type: 'object', additionalProperties: false, required: ['modelType'], properties: { modelType: { type: 'string', enum: ['ASR', 'TTS', 'LLM', 'VLLM', 'Intent', 'Memory', 'VAD', 'Plugin', 'RAG'] }, modelName: { type: 'string', maxLength: 160 }, page: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 } } },
+    response: { 200: { type: 'object', additionalProperties: false, required: ['items', 'total', 'page', 'limit'], properties: { items: { type: 'array', items: modelConfigResponseSchema }, total: { type: 'integer' }, page: { type: 'integer' }, limit: { type: 'integer' } } } },
+  } }, async (request) => {
+    const sourcePage = Math.max(0, Math.trunc(request.query.page ?? 0))
+    const value = await store.listModelConfigs(owner(request), { modelType: request.query.modelType, modelName: request.query.modelName, page: sourcePage + 1, limit: request.query.limit })
+    return { ...value, page: sourcePage }
+  })
+  app.get<{ Params: { id: string } }>('/api/v1/models/:id', { schema: { params: resourceIdParamsSchema, response: { 200: modelConfigResponseSchema } } }, async (request, reply) => {
+    const value = await store.getModelConfig(owner(request), request.params.id)
+    if (!value) return sendProblemCode(reply, 404, 'NOT_FOUND', 'Model config not found')
+    return reply.header('ETag', value.etag).send(value)
+  })
+  app.put<{ Params: { id: string; status: string } }>('/api/v1/models/enable/:id/:status', { schema: { params: { type: 'object', required: ['id', 'status'], properties: { id: { type: 'string' }, status: { type: 'string', enum: ['0', '1', 'true', 'false'] } } }, response: { 200: modelConfigResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.setModelEnabled(owner(request), request.params.id, request.params.status === '1' || request.params.status === 'true'); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.put<{ Params: { id: string } }>('/api/v1/models/default/:id', { schema: { params: resourceIdParamsSchema, response: { 200: modelConfigResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.setDefaultModel(owner(request), request.params.id); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.post<{ Params: { modelType: ModelType; providerCode: string }; Body: ModelConfigInput & { id?: string } }>('/api/v1/models/:modelType/:providerCode', { schema: { params: { type: 'object', required: ['modelType', 'providerCode'], properties: { modelType: { type: 'string' }, providerCode: { type: 'string' } } }, body: { type: 'object', additionalProperties: true, required: ['modelCode', 'modelName', 'configJson'] }, response: { 201: modelConfigResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.createModelConfig(owner(request), { ...request.body, modelType: request.params.modelType, providerCode: request.params.providerCode }); return reply.code(201).header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.put<{ Params: { modelType: ModelType; providerCode: string; id: string }; Body: Partial<ModelConfigInput> }>('/api/v1/models/:modelType/:providerCode/:id', { schema: { params: { type: 'object', required: ['modelType', 'providerCode', 'id'], properties: { modelType: { type: 'string' }, providerCode: { type: 'string' }, id: { type: 'string' } } }, body: { type: 'object', additionalProperties: true }, response: { 200: modelConfigResponseSchema } } }, async (request, reply) => {
+    try { const value = await store.updateModelConfig(owner(request), request.params.id, { ...request.body, modelType: request.params.modelType, providerCode: request.params.providerCode }); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
   app.get('/api/v1/provider-installations', { schema: { response: { 200: listResponse(providerInstallationResponseSchema) } } }, async () => ({ items: await store.listInstallations() }))
   app.get<{ Querystring: { locale?: string; providerConfigId?: string } }>('/api/v1/voices', { schema: {
     querystring: { type: 'object', additionalProperties: false, properties: { locale: { type: 'string', minLength: 2, maxLength: 35 }, providerConfigId: { type: 'string', minLength: 1, maxLength: 128 } } },
@@ -759,6 +889,11 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
     const ifMatch = request.headers['if-match']
     if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
     try { const value = await store.updateProviderConfig(owner(request), request.params.id, request.body, ifMatch); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
+  })
+  app.patch<{ Params: { id: string }; Body: { enabled: boolean } }>('/api/v1/provider-configs/:id/status', { schema: { params: resourceIdParamsSchema, body: { type: 'object', additionalProperties: false, required: ['enabled'], properties: { enabled: { type: 'boolean' } } }, response: { 200: providerConfigResponseSchema } } }, async (request, reply) => {
+    const ifMatch = request.headers['if-match']
+    if (typeof ifMatch !== 'string') return sendProblemCode(reply, 428, 'IF_MATCH_REQUIRED', 'If-Match header is required')
+    try { const value = await store.setProviderConfigEnabled(owner(request), request.params.id, request.body.enabled, ifMatch); return reply.header('ETag', value.etag).send(value) } catch (error) { return sendProblem(reply, error) }
   })
   app.delete<{ Params: { id: string } }>('/api/v1/provider-configs/:id', { schema: { params: resourceIdParamsSchema, response: { 204: { type: 'null' } } } }, async (request, reply) => {
     const ifMatch = request.headers['if-match']
@@ -960,12 +1095,13 @@ export async function buildApp(overrides?: { env?: Environment; store?: Store; a
 
 async function createStore(env: Environment): Promise<Store> {
   const catalog = parseCatalog(JSON.parse(await readFile(env.VEETEE_PROVIDER_CATALOG_FILE, 'utf8')))
+  const modelRegistry = parseModelRegistry(JSON.parse(await readFile(env.VEETEE_MODEL_REGISTRY_FILE ?? './config/model-registry.json', 'utf8')))
   const initial = await loadInitialSnapshot(env.VEETEE_INITIAL_SNAPSHOT_FILE)
   if (env.VEETEE_DATABASE_MODE === 'postgres') {
     const { createPostgresStore } = await import('./postgres-store.js')
-    return createPostgresStore({ catalog, initial, databaseUrlFile: env.VEETEE_DATABASE_URL_FILE, presenceTtlSeconds: env.VEETEE_DEVICE_ONLINE_TTL_SECONDS, tombstoneTtlSeconds: env.VEETEE_RETENTION_TOMBSTONE_SECONDS })
+    return createPostgresStore({ catalog, initial, modelRegistry, databaseUrlFile: env.VEETEE_DATABASE_URL_FILE, presenceTtlSeconds: env.VEETEE_DEVICE_ONLINE_TTL_SECONDS, tombstoneTtlSeconds: env.VEETEE_RETENTION_TOMBSTONE_SECONDS })
   }
-  return new InMemoryStore(catalog, initial, { onlineTtlSeconds: env.VEETEE_DEVICE_ONLINE_TTL_SECONDS, tombstoneTtlSeconds: env.VEETEE_RETENTION_TOMBSTONE_SECONDS })
+  return new InMemoryStore(catalog, initial, { onlineTtlSeconds: env.VEETEE_DEVICE_ONLINE_TTL_SECONDS, tombstoneTtlSeconds: env.VEETEE_RETENTION_TOMBSTONE_SECONDS }, modelRegistry)
 }
 
 function owner(request: FastifyRequest): string { return (request as OwnerRequest).ownerId ?? 'local-owner' }
@@ -1060,6 +1196,19 @@ function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left)
   const rightBuffer = Buffer.from(right)
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer)
+}
+
+function parseSourceModelFields(value: unknown): ModelProviderInput['fields'] {
+  const parsed = typeof value === 'string' ? (() => {
+    try { return JSON.parse(value) as unknown } catch { return [] }
+  })() : value
+  if (!Array.isArray(parsed)) return []
+  return parsed.flatMap((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+    const record = item as Record<string, unknown>
+    if (typeof record.key !== 'string' || typeof record.label !== 'string' || typeof record.type !== 'string') return []
+    return [{ ...structuredClone(record), key: record.key, label: record.label, type: record.type as ModelProviderInput['fields'][number]['type'] }]
+  })
 }
 
 function operationIdFor(method: string, url: string): string {

@@ -79,6 +79,34 @@ test('manager API publishes config through immutable ETag flow', async () => {
   }
 })
 
+test('source model catalog keeps the tested Veetee defaults and dynamic field types', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const expected = [
+      ['ASR', 'ASR_PhoWhisper', 'PhoWhisper-small'],
+      ['LLM', 'LLM_Groq', 'llama-3.3-70b-versatile'],
+      ['TTS', 'TTS_VieNeu', 'VieNeu-v3-turbo'],
+    ] as const
+    for (const [modelType, id, modelCode] of expected) {
+      const response = await app.inject({ method: 'GET', url: `/api/v1/models/list?modelType=${modelType}&page=0&limit=100` })
+      assert.equal(response.statusCode, 200)
+      const values = response.json().items as Array<{ id: string; modelCode: string; isDefault: boolean }>
+      const selected = values.find((value) => value.id === id)
+      assert.ok(selected)
+      assert.equal(selected.modelCode, modelCode)
+      assert.equal(selected.isDefault, true)
+    }
+    const providers = await app.inject({ method: 'GET', url: '/api/v1/models/provider?modelType=ASR&page=0&limit=100' })
+    assert.equal(providers.statusCode, 200)
+    const pho = (providers.json().items as Array<{ providerCode: string; fields: Array<{ key: string; type: string }> }>).find((value) => value.providerCode === 'phowhisper')
+    assert.ok(pho?.fields.some((field) => field.key === 'computeType' && field.type === 'string'))
+    assert.ok(pho?.fields.some((field) => field.key === 'cpuThreads' && field.type === 'integer'))
+  } finally {
+    await app.close()
+  }
+})
+
 test('role config OpenAPI response documents known policy fields while keeping additive extensions', async () => {
   const app = await buildApp({ env })
   await app.ready()
@@ -357,9 +385,59 @@ test('provider archive is blocked while an assistant is using the config', async
       payload: { kind: 'llm', mode: 'selected', providerConfigId: created.json().id },
     })
     assert.equal(selected.statusCode, 200)
+    const disabled = await app.inject({ method: 'PATCH', url: `/api/v1/provider-configs/${created.json().id}/status`, headers: { 'if-match': created.headers.etag }, payload: { enabled: false } })
+    assert.equal(disabled.statusCode, 409)
+    assert.equal(disabled.json().code, 'RESOURCE_IN_USE')
     const archived = await app.inject({ method: 'DELETE', url: `/api/v1/provider-configs/${created.json().id}`, headers: { 'if-match': created.headers.etag } })
     assert.equal(archived.statusCode, 409)
     assert.equal(archived.json().code, 'RESOURCE_IN_USE')
+  } finally {
+    await app.close()
+  }
+})
+
+test('provider status is user-controlled, ETag guarded and visible in model choices', async () => {
+  const app = await buildApp({ env })
+  await app.ready()
+  try {
+    const name = `Status lifecycle ${Date.now()}`
+    const created = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'veetee.llm.fixture', name, config: { segments: ['Một câu trả lời mẫu.'] },
+    } })
+    assert.equal(created.statusCode, 201)
+    const value = created.json() as { id: string; name: string; enabled: boolean; etag: string }
+    assert.equal(value.name, name)
+    assert.equal(value.enabled, true)
+    assert.equal(created.headers.etag, value.etag)
+
+    const disabled = await app.inject({ method: 'PATCH', url: `/api/v1/provider-configs/${value.id}/status`, headers: { 'if-match': value.etag }, payload: { enabled: false } })
+    assert.equal(disabled.statusCode, 200)
+    assert.equal(disabled.json().enabled, false)
+    assert.notEqual(disabled.headers.etag, value.etag)
+
+    const choices = await app.inject({ method: 'GET', url: '/api/v1/assistants' })
+    const assistant = choices.json().items[0] as { id: string; etag: string }
+    const workspace = await app.inject({ method: 'GET', url: `/api/v1/assistants/${assistant.id}/model-memory` })
+    const disabledChoice = workspace.json().availableConfigs.find((item: { id: string }) => item.id === value.id)
+    assert.equal(disabledChoice.availability, 'disabled')
+    const rejectedSelection = await app.inject({
+      method: 'PATCH', url: `/api/v1/assistants/${assistant.id}/model-memory/provider`, headers: { 'if-match': assistant.etag },
+      payload: { kind: 'llm', mode: 'selected', providerConfigId: value.id },
+    })
+    assert.equal(rejectedSelection.statusCode, 422)
+    assert.equal(rejectedSelection.json().code, 'CONFIG_INVALID')
+
+    const staleEnable = await app.inject({ method: 'PATCH', url: `/api/v1/provider-configs/${value.id}/status`, headers: { 'if-match': value.etag }, payload: { enabled: true } })
+    assert.equal(staleEnable.statusCode, 409)
+    const enabled = await app.inject({ method: 'PATCH', url: `/api/v1/provider-configs/${value.id}/status`, headers: { 'if-match': disabled.headers.etag }, payload: { enabled: true } })
+    assert.equal(enabled.statusCode, 200)
+    assert.equal(enabled.json().enabled, true)
+
+    const duplicate = await app.inject({ method: 'POST', url: '/api/v1/provider-configs', payload: {
+      installationId: 'veetee.llm.fixture', name: name.toLocaleUpperCase('vi'), config: { segments: ['Trùng tên.'] },
+    } })
+    assert.equal(duplicate.statusCode, 409)
+    assert.equal(duplicate.json().code, 'NAME_CONFLICT')
   } finally {
     await app.close()
   }

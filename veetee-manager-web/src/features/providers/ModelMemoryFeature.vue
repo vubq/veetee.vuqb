@@ -66,6 +66,10 @@ function selectionValue(kind: ProviderKind) {
   return selection?.mode === 'selected' ? selection.providerConfigId : '__disabled__'
 }
 
+function selectionFor(kind: ProviderKind) {
+  return resource.value?.value.selections.find((item) => item.kind === kind)
+}
+
 function optionsFor(kind: ProviderKind): VtSelectOption[] {
   const configs = resource.value?.value.availableConfigs.filter((item) => item.kind === kind) ?? []
   const options: VtSelectOption[] = configs.map((config) => ({
@@ -81,6 +85,30 @@ function optionsFor(kind: ProviderKind): VtSelectOption[] {
 function configFor(kind: ProviderKind) {
   const selected = selectionValue(kind)
   return resource.value?.value.availableConfigs.find((config) => config.id === selected)
+}
+
+function selectionStatus(kind: ProviderKind): 'ready' | 'disabled' | 'unavailable' | 'missing' {
+  const selection = selectionFor(kind)
+  if (selection?.mode !== 'selected') return 'disabled'
+  const config = configFor(kind)
+  if (!config) return 'missing'
+  return config.availability
+}
+
+function selectionStatusLabel(kind: ProviderKind): string {
+  const status = selectionStatus(kind)
+  if (status === 'ready') return 'Sẵn sàng'
+  if (status === 'disabled') return 'Đã tắt'
+  if (status === 'unavailable') return 'Không khả dụng'
+  return 'Thiếu cấu hình'
+}
+
+function selectionStatusTone(kind: ProviderKind): 'online' | 'neutral' | 'warning' | 'error' {
+  const status = selectionStatus(kind)
+  if (status === 'ready') return 'online'
+  if (status === 'unavailable') return 'error'
+  if (status === 'missing') return 'warning'
+  return 'neutral'
 }
 
 async function load() {
@@ -227,8 +255,8 @@ onMounted(load)
               Đang lưu
             </VtBadge><VtStatus
               v-else
-              :tone="configFor(kind)?.availability === 'unavailable' ? 'error' : 'online'"
-              :label="configFor(kind)?.availability === 'unavailable' ? 'Không khả dụng' : selectionValue(kind) === '__disabled__' ? 'Đã tắt' : 'Sẵn sàng'"
+              :tone="selectionStatusTone(kind)"
+              :label="selectionStatusLabel(kind)"
             />
           </div>
           <VtSelect
@@ -239,13 +267,31 @@ onMounted(load)
             @update:model-value="changeProvider(kind, $event)"
           />
           <p
-            v-if="configFor(kind)?.availability === 'unavailable'"
+            v-if="selectionStatus(kind) === 'unavailable'"
             class="provider-error"
           >
             <VtIcon
               :icon="ShieldAlert"
               :size="14"
             /> Lựa chọn hiện tại được giữ nguyên; không tự chuyển sang dịch vụ khác.
+          </p>
+          <p
+            v-else-if="selectionStatus(kind) === 'disabled' && configFor(kind)"
+            class="provider-disabled-hint"
+          >
+            Cấu hình này đã tắt. Bật lại trong
+            <RouterLink to="/providers">
+              Dịch vụ AI
+            </RouterLink> hoặc chọn cấu hình khác.
+          </p>
+          <p
+            v-else-if="selectionStatus(kind) === 'missing'"
+            class="provider-disabled-hint"
+          >
+            Chưa có cấu hình khả dụng cho nhóm này. Hãy tạo một dịch vụ trong
+            <RouterLink to="/providers">
+              Dịch vụ AI
+            </RouterLink>.
           </p>
         </VtCard>
       </div>
@@ -315,6 +361,8 @@ onMounted(load)
 .provider-heading h3 { margin: 0; font-size: 11px; font-weight: 650; }
 .provider-heading p { margin: 2px 0 0; color: var(--vt-text-muted); font-size: 9px; }
 .provider-error { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 0; color: var(--vt-danger); font-size: 9px; line-height: 1.45; }
+.provider-disabled-hint { margin: 8px 0 0; color: var(--vt-text-muted); font-size: 9px; line-height: 1.45; }
+.provider-disabled-hint a { color: var(--vt-primary); font-weight: 600; text-underline-offset: 2px; }
 .memory-list { display: grid; gap: 8px; }
 .memory-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); padding: 9px 10px; }
 .memory-item.disabled { background: var(--vt-surface-muted); }

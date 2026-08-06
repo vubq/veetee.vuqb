@@ -41,6 +41,10 @@ import type {
   ProviderConfigRecord,
   ProviderProbeResult,
   ProviderInstallationView,
+  ModelConfigRecord,
+  ModelProviderField,
+  ModelProviderRecord,
+  ModelType,
   RetentionPolicy,
   RetentionPolicyInput,
   RetentionExpiredProblem,
@@ -365,6 +369,99 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     return this.success(clone(this.state.providerInstallations), request)
   }
 
+  async listModelProviders(query: { modelType?: ModelType; name?: string } = {}): Promise<GatewayResult<ModelProviderRecord[], never>> {
+    const request = await this.begin('read')
+    const term = normalizeSearch(query.name ?? '')
+    const items = this.state.modelProviders.filter((item) => (!query.modelType || item.modelType === query.modelType) && (!term || normalizeSearch(`${item.name} ${item.providerCode} ${item.modelType}`).includes(term)))
+    return this.success(clone(items), request)
+  }
+
+  async createModelProvider(input: { modelType: ModelType; providerCode: string; name: string; fields: ModelProviderField[]; sort?: number }): Promise<GatewayResult<ModelProviderRecord, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const providerCode = input.providerCode.trim()
+    if (!providerCode || !input.name.trim() || this.state.modelProviders.some((item) => item.modelType === input.modelType && item.providerCode.toLowerCase() === providerCode.toLowerCase())) return this.failure(this.validationProblem([{ field: 'providerCode', code: 'DUPLICATE', messageKey: 'problem.validation' }], request.requestId)!, request)
+    const id = `SYSTEM_${input.modelType}_${providerCode}`
+    const item: ModelProviderRecord = { id, ownerId: 'local-owner', modelType: input.modelType, providerCode, name: input.name.trim(), fields: clone(input.fields), sort: input.sort ?? 0, revision: 1, etag: etag(id, 1), updatedAt: this.now() }
+    this.state.modelProviders.push(item)
+    return this.success(clone(item), request)
+  }
+
+  async updateModelProvider(id: string, input: Partial<{ modelType: ModelType; providerCode: string; name: string; fields: ModelProviderField[]; sort: number }>, expectedEtag?: string): Promise<GatewayResult<ModelProviderRecord, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const current = this.state.modelProviders.find((item) => item.id === id)
+    if (!current) return this.failure(this.validationProblem([{ field: 'id', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    if (expectedEtag && expectedEtag !== current.etag) return this.failure(this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)!, request)
+    const next: ModelProviderRecord = { ...current, ...input, name: input.name?.trim() ?? current.name, fields: input.fields ? clone(input.fields) : current.fields, revision: current.revision + 1, etag: etag(id, current.revision + 1), updatedAt: this.now() }
+    this.state.modelProviders = this.state.modelProviders.map((item) => item.id === id ? next : item)
+    return this.success(clone(next), request)
+  }
+
+  async deleteModelProvider(id: string, expectedEtag?: string): Promise<GatewayResult<void, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const current = this.state.modelProviders.find((item) => item.id === id)
+    if (!current) return this.failure(this.validationProblem([{ field: 'id', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    if (expectedEtag && expectedEtag !== current.etag) return this.failure(this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)!, request)
+    if (this.state.modelConfigs.some((item) => item.modelType === current.modelType && item.providerCode === current.providerCode)) return this.failure(this.validationProblem([{ field: 'id', code: 'RESOURCE_IN_USE', messageKey: 'problem.validation' }], request.requestId)!, request)
+    this.state.modelProviders = this.state.modelProviders.filter((item) => item.id !== id)
+    return this.success(undefined, request)
+  }
+
+  async listModelConfigs(query: { modelType?: ModelType; modelName?: string; page?: number; limit?: number } = {}): Promise<GatewayResult<{ items: ModelConfigRecord[]; total: number; page: number; limit: number }, never>> {
+    const request = await this.begin('read')
+    const term = normalizeSearch(query.modelName ?? '')
+    const all = this.state.modelConfigs.filter((item) => (!query.modelType || item.modelType === query.modelType) && (!term || normalizeSearch(`${item.modelName} ${item.modelCode} ${item.providerCode}`).includes(term)))
+    const page = Math.max(1, query.page ?? 1)
+    const limit = Math.min(100, Math.max(1, query.limit ?? 10))
+    return this.success({ items: clone(all.slice((page - 1) * limit, page * limit)), total: all.length, page, limit }, request)
+  }
+
+  async getModelConfig(id: string): Promise<GatewayResult<ModelConfigRecord, ValidationProblem>> {
+    const request = await this.begin('read')
+    const current = this.state.modelConfigs.find((item) => item.id === id)
+    if (!current) return this.failure(this.validationProblem([{ field: 'id', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    return this.success(clone(current), request)
+  }
+
+  async createModelConfig(input: { modelType: ModelType; providerCode: string; id?: string; modelCode: string; modelName: string; isDefault?: boolean; isEnabled?: boolean; configJson: Record<string, unknown>; docLink?: string | null; remark?: string | null; sort?: number }): Promise<GatewayResult<ModelConfigRecord, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const provider = this.state.modelProviders.find((item) => item.modelType === input.modelType && item.providerCode === input.providerCode)
+    if (!provider) return this.failure(this.validationProblem([{ field: 'providerCode', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    const id = input.id?.trim() || `${input.modelType}_${input.modelCode}`
+    if (this.state.modelConfigs.some((item) => item.id === id)) return this.failure(this.validationProblem([{ field: 'id', code: 'DUPLICATE', messageKey: 'problem.validation' }], request.requestId)!, request)
+    if (input.isDefault) this.state.modelConfigs = this.state.modelConfigs.map((item) => item.modelType === input.modelType ? { ...item, isDefault: false } : item)
+    const item: ModelConfigRecord = { id, ownerId: 'local-owner', modelType: input.modelType, providerCode: input.providerCode, modelCode: input.modelCode, modelName: input.modelName.trim(), isDefault: input.isDefault ?? false, isEnabled: input.isEnabled !== false, configJson: clone(input.configJson), docLink: input.docLink ?? null, remark: input.remark ?? null, sort: input.sort ?? 0, revision: 1, etag: etag(id, 1), updatedAt: this.now() }
+    this.state.modelConfigs.push(item)
+    return this.success(clone(item), request)
+  }
+
+  async updateModelConfig(id: string, input: Partial<{ modelType: ModelType; providerCode: string; modelCode: string; modelName: string; isDefault: boolean; isEnabled: boolean; configJson: Record<string, unknown>; docLink: string | null; remark: string | null; sort: number }>, expectedEtag?: string): Promise<GatewayResult<ModelConfigRecord, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const current = this.state.modelConfigs.find((item) => item.id === id)
+    if (!current) return this.failure(this.validationProblem([{ field: 'id', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    if (expectedEtag && expectedEtag !== current.etag) return this.failure(this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)!, request)
+    const next: ModelConfigRecord = { ...current, ...input, modelName: input.modelName?.trim() ?? current.modelName, configJson: input.configJson ? clone(input.configJson) : current.configJson, revision: current.revision + 1, etag: etag(id, current.revision + 1), updatedAt: this.now() }
+    if (next.isDefault) this.state.modelConfigs = this.state.modelConfigs.map((item) => item.id !== id && item.modelType === next.modelType ? { ...item, isDefault: false } : item)
+    this.state.modelConfigs = this.state.modelConfigs.map((item) => item.id === id ? next : item)
+    return this.success(clone(next), request)
+  }
+
+  async deleteModelConfig(id: string, expectedEtag?: string): Promise<GatewayResult<void, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const current = this.state.modelConfigs.find((item) => item.id === id)
+    if (!current) return this.failure(this.validationProblem([{ field: 'id', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    if (expectedEtag && expectedEtag !== current.etag) return this.failure(this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)!, request)
+    this.state.modelConfigs = this.state.modelConfigs.filter((item) => item.id !== id)
+    return this.success(undefined, request)
+  }
+
+  async setModelEnabled(id: string, enabled: boolean): Promise<GatewayResult<ModelConfigRecord, ValidationProblem>> {
+    return this.updateModelConfig(id, { isEnabled: enabled })
+  }
+
+  async setDefaultModel(id: string): Promise<GatewayResult<ModelConfigRecord, ValidationProblem>> {
+    return this.updateModelConfig(id, { isDefault: true })
+  }
+
   async listProviderConfigs(kind?: ProviderKind): Promise<GatewayResult<ProviderConfigRecord[], never>> {
     const request = await this.begin('read')
     const items = kind
@@ -422,7 +519,7 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
 
   async createProviderConfig(input: { installationId: string; name: string; config: Record<string, unknown>; secretRefs?: string[] }): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {
     const request = await this.begin('mutation')
-    const value: ProviderConfigRecord = { id: `${input.installationId}-${this.state.providerConfigs.length + 1}`, installationId: input.installationId, name: input.name, revision: 1, config: clone(input.config), secretRefs: input.secretRefs ?? [], etag: '"preview"' }
+    const value: ProviderConfigRecord = { id: `${input.installationId}-${this.state.providerConfigs.length + 1}`, installationId: input.installationId, name: input.name, enabled: true, revision: 1, config: clone(input.config), secretRefs: input.secretRefs ?? [], etag: '"preview"' }
     this.state.providerConfigs.push(value)
     return this.success(value, request)
   }
@@ -438,6 +535,18 @@ export class MockGateway implements ManagerGateway, PreviewControlGateway {
     const next: ProviderConfigRecord = { ...current, name: input.name ?? current.name, config: clone(input.config ?? current.config), secretRefs: input.secretRefs ?? [...current.secretRefs], revision: current.revision + 1, etag: `"preview-provider-${current.revision + 1}"` }
     this.state.providerConfigs = [...this.state.providerConfigs.filter((item) => item.id !== id), next]
     return this.success(next, request)
+  }
+
+  async setProviderConfigEnabled(id: string, enabled: boolean, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem>> {
+    const request = await this.begin('mutation')
+    const current = this.state.providerConfigs.find((item) => item.id === id)
+    if (!current) return this.failure(this.validationProblem([{ field: 'id', code: 'NOT_FOUND', messageKey: 'problem.request.failed' }], request.requestId)!, request)
+    if (current.etag !== expectedEtag) return this.failure(this.validationProblem([{ field: 'etag', code: 'REVISION_CONFLICT', messageKey: 'problem.revision.conflict' }], request.requestId)!, request)
+    const selected = Object.values(this.state.modelMemory).some((workspace) => workspace.value.selections.some((item) => item.mode === 'selected' && item.providerConfigId === id))
+    if (!enabled && selected) return this.failure(this.validationProblem([{ field: 'enabled', code: 'RESOURCE_IN_USE', messageKey: 'problem.validation' }], request.requestId)!, request)
+    const next: ProviderConfigRecord = { ...current, enabled, etag: `"preview-provider-status-${Date.now()}"` }
+    this.state.providerConfigs = [...this.state.providerConfigs.filter((item) => item.id !== id), next]
+    return this.success(clone(next), request)
   }
 
   async deleteProviderConfig(id: string, expectedEtag: string): Promise<GatewayResult<void, ValidationProblem>> {

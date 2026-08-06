@@ -37,6 +37,11 @@ import type {
   VoicePreview,
   VoiceProfile,
   VoiceProfileInput,
+  ModelConfigPage,
+  ModelConfigRecord,
+  ModelProviderField,
+  ModelProviderRecord,
+  ModelType,
 } from '@/domain'
 import type { paths } from '@/api/generated'
 import type { GatewayDependencies, ManagerGateway, PreviewControlGateway, RetentionMutationProblem, SecretMutationProblem } from './manager-gateway'
@@ -70,6 +75,8 @@ type ConversationExportResource = paths['/api/v1/conversations/{id}/export']['ge
 type RetentionDeleteJobResource = paths['/api/v1/conversations/{id}']['delete']['responses'][202]['content']['application/json']
 type RetentionDeleteJobGetResource = paths['/api/v1/retention-delete-jobs/{id}']['get']['responses'][200]['content']['application/json']
 type SecretReferenceResource = paths['/api/v1/secret-references']['get']['responses'][200]['content']['application/json']['items'][number]
+type ModelProviderResource = paths['/api/v1/models/providers']['get']['responses'][200]['content']['application/json']['items'][number]
+type ModelConfigResource = paths['/api/v1/models/configs']['get']['responses'][200]['content']['application/json']['items'][number]
 
 export function createHttpGatewayDependencies(baseUrl: string): GatewayDependencies {
   const gateway = new HttpManagerGateway(baseUrl)
@@ -160,6 +167,72 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
     return this.success(result.data.items.map(providerInstallation))
   }
 
+  async listModelProviders(query: { modelType?: ModelType; name?: string } = {}): Promise<GatewayResult<ModelProviderRecord[], never>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/models/providers', { params: { query } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(result.data.items.map(modelProvider))
+  }
+
+  async createModelProvider(input: { modelType: ModelType; providerCode: string; name: string; fields: ModelProviderField[]; sort?: number }): Promise<GatewayResult<ModelProviderRecord, never>> {
+    const result = await this.execute(() => this.client.POST('/api/v1/models/providers', { body: input }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(modelProvider(result.data))
+  }
+
+  async updateModelProvider(id: string, input: Partial<{ modelType: ModelType; providerCode: string; name: string; fields: ModelProviderField[]; sort: number }>, expectedEtag?: string): Promise<GatewayResult<ModelProviderRecord, never>> {
+    const result = await this.execute(() => this.client.PATCH('/api/v1/models/providers/{id}', { params: { path: { id } }, headers: expectedEtag ? { 'If-Match': expectedEtag } : undefined, body: input }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(modelProvider(result.data))
+  }
+
+  async deleteModelProvider(id: string, expectedEtag?: string): Promise<GatewayResult<void, never>> {
+    const result = await this.execute(() => this.client.DELETE('/api/v1/models/providers/{id}', { params: { path: { id } }, headers: expectedEtag ? { 'If-Match': expectedEtag } : undefined }))
+    if (!result.response.ok) return this.failure(result)
+    return this.success(undefined)
+  }
+
+  async listModelConfigs(query: { modelType?: ModelType; modelName?: string; page?: number; limit?: number } = {}): Promise<GatewayResult<ModelConfigPage, never>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/models/configs', { params: { query } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success({ items: result.data.items.map(modelConfig), total: result.data.total, page: result.data.page, limit: result.data.limit })
+  }
+
+  async getModelConfig(id: string): Promise<GatewayResult<ModelConfigRecord, never>> {
+    const result = await this.execute(() => this.client.GET('/api/v1/models/configs/{id}', { params: { path: { id } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(modelConfig(result.data))
+  }
+
+  async createModelConfig(input: { modelType: ModelType; providerCode: string; id?: string; modelCode: string; modelName: string; isDefault?: boolean; isEnabled?: boolean; configJson: Record<string, unknown>; docLink?: string | null; remark?: string | null; sort?: number }): Promise<GatewayResult<ModelConfigRecord, never>> {
+    const result = await this.execute(() => this.client.POST('/api/v1/models/configs', { body: input }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(modelConfig(result.data))
+  }
+
+  async updateModelConfig(id: string, input: Partial<{ modelType: ModelType; providerCode: string; modelCode: string; modelName: string; isDefault: boolean; isEnabled: boolean; configJson: Record<string, unknown>; docLink: string | null; remark: string | null; sort: number }>, expectedEtag?: string): Promise<GatewayResult<ModelConfigRecord, never>> {
+    const result = await this.execute(() => this.client.PATCH('/api/v1/models/configs/{id}', { params: { path: { id } }, headers: expectedEtag ? { 'If-Match': expectedEtag } : undefined, body: input }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(modelConfig(result.data))
+  }
+
+  async deleteModelConfig(id: string, expectedEtag?: string): Promise<GatewayResult<void, never>> {
+    const result = await this.execute(() => this.client.DELETE('/api/v1/models/configs/{id}', { params: { path: { id } }, headers: expectedEtag ? { 'If-Match': expectedEtag } : undefined }))
+    if (!result.response.ok) return this.failure(result)
+    return this.success(undefined)
+  }
+
+  async setModelEnabled(id: string, enabled: boolean): Promise<GatewayResult<ModelConfigRecord, never>> {
+    const result = await this.execute(() => this.client.PATCH('/api/v1/models/configs/{id}/status', { params: { path: { id } }, body: { enabled } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(modelConfig(result.data))
+  }
+
+  async setDefaultModel(id: string): Promise<GatewayResult<ModelConfigRecord, never>> {
+    const result = await this.execute(() => this.client.PATCH('/api/v1/models/configs/{id}/default', { params: { path: { id } } }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(modelConfig(result.data))
+  }
+
   async listProviderConfigs(kind?: ProviderKind): Promise<GatewayResult<ProviderConfigRecord[], never>> {
     const result = await this.execute(() => this.client.GET('/api/v1/provider-configs', kind ? { params: { query: { kind } } } : undefined))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
@@ -179,6 +252,16 @@ class HttpManagerGateway implements ManagerGateway, PreviewControlGateway {
       params: { path: { id } },
       headers: { 'If-Match': expectedEtag },
       body: payload,
+    }))
+    if (!result.response.ok || result.data === undefined) return this.failure(result)
+    return this.success(providerConfig(result.data))
+  }
+
+  async setProviderConfigEnabled(id: string, enabled: boolean, expectedEtag: string): Promise<GatewayResult<ProviderConfigRecord, ValidationProblem | NotFoundProblem | OfflineProblem | RevisionConflictProblem<ProviderConfigRecord, unknown>>> {
+    const result = await this.execute(() => this.client.PATCH('/api/v1/provider-configs/{id}/status', {
+      params: { path: { id } },
+      headers: { 'If-Match': expectedEtag },
+      body: { enabled },
     }))
     if (!result.response.ok || result.data === undefined) return this.failure(result)
     return this.success(providerConfig(result.data))
@@ -507,7 +590,15 @@ function providerInstallation(value: ProviderInstallationResource): ProviderInst
 }
 
 function providerConfig(value: ProviderConfigResource): ProviderConfigRecord {
-  return { id: value.id, installationId: value.installationId, name: value.name, revision: value.revision, config: value.config, secretRefs: value.secretRefs, etag: value.etag, archivedAt: value.archivedAt }
+  return { id: value.id, installationId: value.installationId, name: value.name, enabled: value.enabled, revision: value.revision, config: value.config, secretRefs: value.secretRefs, etag: value.etag, archivedAt: value.archivedAt }
+}
+
+function modelProvider(value: ModelProviderResource): ModelProviderRecord {
+  return { id: value.id, ownerId: value.ownerId, modelType: value.modelType, providerCode: value.providerCode, name: value.name, fields: value.fields as ModelProviderField[], sort: value.sort, revision: value.revision, etag: value.etag, updatedAt: value.updatedAt }
+}
+
+function modelConfig(value: ModelConfigResource): ModelConfigRecord {
+  return { id: value.id, ownerId: value.ownerId, modelType: value.modelType, modelCode: value.modelCode, modelName: value.modelName, providerCode: value.providerCode, isDefault: value.isDefault, isEnabled: value.isEnabled, configJson: value.configJson, docLink: value.docLink, remark: value.remark, sort: value.sort, revision: value.revision, etag: value.etag, updatedAt: value.updatedAt }
 }
 
 function providerProbe(value: ProviderProbeResource): ProviderProbeResult {

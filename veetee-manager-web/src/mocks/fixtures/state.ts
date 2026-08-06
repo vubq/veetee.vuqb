@@ -8,6 +8,8 @@ import type {
   SecretReference,
   Versioned,
   VoiceProfile,
+  ModelConfigRecord,
+  ModelProviderRecord,
 } from '@/domain'
 
 import {
@@ -17,6 +19,7 @@ import {
 } from './assistants'
 import { createDeviceFixtures } from './devices'
 import { createModelMemoryFixtures, createProviderRegistryFixtures } from './providers'
+import { createModelRegistryFixtures } from './model-registry'
 
 export interface MockState {
   assistants: Record<string, Versioned<AssistantCard>>
@@ -25,6 +28,8 @@ export interface MockState {
   modelMemory: Record<string, Versioned<ModelMemoryWorkspace>>
   providerInstallations: ProviderInstallationView[]
   providerConfigs: ProviderConfigRecord[]
+  modelProviders: ModelProviderRecord[]
+  modelConfigs: ModelConfigRecord[]
   secretReferences: SecretReference[]
   devices: DeviceCard[]
   nextAssistantSequence: number
@@ -33,6 +38,7 @@ export interface MockState {
 
 export function createInitialMockState(): MockState {
   const providerRegistry = createProviderRegistryFixtures()
+  const modelRegistry = createModelRegistryFixtures()
   return {
     assistants: createAssistantCardFixtures(),
     roleConfigs: createRoleConfigFixtures(),
@@ -40,6 +46,8 @@ export function createInitialMockState(): MockState {
     modelMemory: createModelMemoryFixtures(),
     providerInstallations: providerRegistry.installations,
     providerConfigs: providerRegistry.configs,
+    modelProviders: modelRegistry.providers,
+    modelConfigs: modelRegistry.configs,
     secretReferences: [{
       id: 'secret-preview-groq',
       name: 'Groq test key',

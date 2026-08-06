@@ -12,7 +12,7 @@ const installations: ProviderInstallationView[] = [{
   configSchema: {}, supportedLocales: ['*'], capabilities: ['streaming'],
 }]
 const configs: ProviderConfigRecord[] = [{
-  id: 'config-llm', installationId: 'groq.chat', name: 'Trả lời nhanh', revision: 1,
+  id: 'config-llm', installationId: 'groq.chat', name: 'Trả lời nhanh', enabled: true, revision: 1,
   config: {}, secretRefs: [], etag: '"config-1"',
 }]
 

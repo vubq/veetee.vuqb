@@ -1,61 +1,92 @@
-# ADR-033: Tách màn hình catalog, cấu hình provider và voice catalog
+# ADR-033: Dùng hai màn hình control-plane theo model/provider
 
 ## Trạng thái
 
-Accepted
+Accepted — supersedes the previous overview/capability mental model.
 
 ## Context
 
-Màn hình dịch vụ ban đầu đặt sáu nhóm capability, catalog installation, nhiều
-provider config, secret reference và TTS voice profile trong một surface. Cách
-này đúng về API nhưng khó hiểu với người dùng phổ thông và làm lẫn ba vòng đời
-khác nhau. Provider manifest đã có `kind`, capability, locale, protocol và
-schema; Manager Web cần giữ metadata đó ở boundary thay vì suy ra từ tên hiển
-thị.
+Khu vực `/providers` trước đây trộn provider installation, provider config,
+secret reference, voice catalog và các capability riêng vào một màn hình. Người
+dùng phải hiểu một vocabulary nội bộ trước khi cấu hình được model. Source tham
+khảo tách rõ hai công việc:
 
-## Các phương án
+- `ModelConfig.vue` có sidebar theo model type, bảng model, enable/default,
+  duplicate/delete và voice management cho TTS (`references/xiaozhi-esp32-server/main/manager-web/src/views/ModelConfig.vue:25-57`,
+  `:63-237`).
+- `ProviderManagement.vue` quản lý schema provider độc lập với search, category,
+  selection, field inspector và batch action
+  (`references/xiaozhi-esp32-server/main/manager-web/src/views/ProviderManagement.vue:11-77`).
 
-### A — Một trang registry duy nhất
+Người dùng yêu cầu giữ đúng mental model, data seed và database table naming của
+source, nhưng Veetee vẫn cần owner scope, ETag và secret-reference để không làm
+hỏng control-plane hiện có.
 
-Giữ tabs và toàn bộ editor/list/voice ở cùng route. Ít route hơn nhưng context
-dài, khó deep-link và dễ trộn thao tác cấu hình với thao tác quản lý voice.
+## Options
 
-### B — Overview + route theo capability + route voice riêng
+### A — Giữ overview hiện tại
 
-`/providers` chỉ là điểm vào tổng quan. `/providers/:kind` quản lý nhiều config
-của đúng một capability; `/providers/tts/voices` quản lý voice profile. Catalog
-vẫn schema-driven, còn CRUD vẫn gọi cùng API typed hiện có.
+Ít thay đổi nhưng tiếp tục trộn khái niệm, không tương thích với thao tác quen
+thuộc của người dùng source.
 
-### C — Một route cho từng vendor
+### B — Tách `Model Configuration` và `Provider Management`
 
-Dễ tối ưu copy cho từng vendor nhưng làm UI hardcode provider và phá mục tiêu
-thêm provider không sửa web.
+Hai route độc lập, schema-driven, cùng dùng `ai_model_provider` và
+`ai_model_config`; provider/model CRUD không hard-code trong component.
 
-## Quyết định
+### C — Clone nguyên frontend/API source
 
-Chọn **B**. Provider installation response được map thành metadata chuẩn gồm
-`providerFamily`, `protocol`, `supportedLocales`, `capabilities` và cờ voice
-catalog. Metadata chỉ dùng để trình bày/capability gating; schema của manifest
-vẫn là nguồn sinh form. Provider config vẫn CRUD độc lập theo `installationId`,
-TTS voice profile vẫn CRUD độc lập theo `providerConfigId`.
+Khớp giao diện nhanh nhưng kéo theo framework, database assumptions và code
+không thuộc Veetee; cũng làm mất boundary bảo mật của Manager API.
 
-Groq tiếp tục là preset dùng protocol OpenAI-compatible. Field endpoint của
-snapshot cũ được trình bày là `Base URL` và server adapter tiếp tục nhận cả
-`baseUrl` lẫn `endpoint` để không làm hỏng revision đã lưu; không đổi provider
-identity hoặc thêm fallback.
+## Decision
 
-## Hệ quả
+Chọn **B**.
 
-- Người dùng đi từ overview tới đúng nhóm cần thao tác, có deep-link và back link.
-- Voice catalog không còn lẫn vào editor provider; built-in voice và custom voice
-  vẫn hiển thị cùng read model nhưng chỉ custom voice cho phép sửa/xóa.
-- Tăng số route/lazy chunk và cần kiểm thử a11y cho từng route.
-- Provider mới vẫn chỉ cần manifest/schema; nếu không khai báo voice catalog,
-  UI không tự tạo form voice.
+- `/model-config` (giữ alias `/providers`) là màn hình Model Configuration;
+  `/provider-management` là màn hình Provider Management.
+- `ai_model_provider` và `ai_model_config` giữ đúng tên/bộ field nghiệp vụ
+  source: `model_type`, `provider_code`, `model_code`, `model_name`,
+  `is_default`, `is_enabled`, `config_json`, `fields`, `doc_link`, `remark`,
+  `sort` cùng creator/updater/date. DB không thêm `owner_id`, `revision`,
+  `etag`, `updated_at`; API chỉ tính metadata virtual để giữ ETag/client
+  contract của Veetee.
+- Migration `011_replace_model_control_plane_with_source_schema.sql` xóa
+  catalog cũ và tạo lại bảng theo source; lần khởi động tiếp theo seed lại từ
+  `config/model-registry.json`. Seed giữ data source (VAD, ASR, LLM, TTS,
+  Memory, Intent và category mở rộng) đồng thời giữ các lựa chọn đã kiểm thử
+  của Veetee: PhoWhisper-small, Groq `llama-3.3-70b-versatile` và VieNeu v3
+  Turbo đều là default tương ứng; credential vẫn chỉ là secret reference.
+- Secret trong seed luôn rỗng; field nhạy cảm chỉ có metadata `sensitive`, không
+  lưu API key thật.
+- `provider_config` revision tables, WebSocket/audio/session và firmware wire
+  contract không bị thay đổi; đó là runtime compatibility boundary, không phải
+  màn hình catalog mà quyết định này thay thế.
 
-## Kiểm chứng
+## Consequences
 
-- Manager Web typecheck, lint, 97 unit tests và Chromium E2E đều pass.
-- Route overview, capability route và voice route được đưa vào E2E/a11y matrix.
-- Không lưu secret, provider ID nội bộ hoặc raw config bí mật trong UI state ngoài
-  phiên thao tác.
+### Positive
+
+- Người dùng thấy đúng hai workflow quen thuộc: khai báo schema provider rồi
+  tạo model từ schema.
+- Provider mới/model mới chỉ thêm registry data; component không chứa vendor
+  switch hay model-specific branch.
+- API có thêm alias `/models/provider`, `/models/list`, `/models/enable/...` và
+  `/models/default/...` để client source-shaped có thể tích hợp.
+
+### Negative
+
+- Một số metadata Veetee (owner/ETag) không xuất hiện trong source UI nhưng vẫn
+  xuất hiện trong API response.
+- Runtime provider config cũ còn tồn tại để bảo toàn hội thoại; cần tài liệu
+  hóa rõ đây không phải catalog UI.
+- Data migration reset catalog model/provider; người dùng phải nhập lại các
+  model custom sau khi nâng cấp nếu chúng không có trong registry seed.
+
+## Verification
+
+- `veetee-manager-api`: `npm test`, `npm run lint`, `npm run openapi:check`.
+- `veetee-manager-web`: `npm run typecheck`, `npm run lint`, `npm run test:unit`,
+  `npm run build`.
+- Browser smoke: `/model-config`, `/provider-management`, add/edit/duplicate,
+  field inspector, enable/default, delete và TTS voice link.

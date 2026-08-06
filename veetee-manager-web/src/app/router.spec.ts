@@ -29,10 +29,10 @@ describe('router auth boundary', () => {
   it('keeps preview navigation public and updates the document title', async () => {
     const router = createVeeteeRouter(session('preview', false), createMemoryHistory())
 
-    await router.push('/providers')
+    await router.push('/model-config')
 
-    expect(router.currentRoute.value.name).toBe('providers')
-    expect(document.title).toBe('Dịch vụ AI · Veetee')
+    expect(router.currentRoute.value.name).toBe('model-config')
+    expect(document.title).toBe('Model Configuration · Veetee')
   })
 
   it('uses only safe internal redirects after an authenticated login visit', async () => {
@@ -41,7 +41,7 @@ describe('router auth boundary', () => {
     await router.push({ name: 'login', query: { redirect: '//evil.example/path' } })
     expect(router.currentRoute.value.path).toBe('/assistants')
 
-    await router.push({ name: 'login', query: { redirect: '/providers' } })
-    expect(router.currentRoute.value.path).toBe('/providers')
+    await router.push({ name: 'login', query: { redirect: '/model-config' } })
+    expect(router.currentRoute.value.path).toBe('/model-config')
   })
 })

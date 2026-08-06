@@ -9,6 +9,7 @@ const schema = Type.Object({
   VEETEE_DATABASE_URL_FILE: Type.Optional(Type.String()),
   VEETEE_INITIAL_SNAPSHOT_FILE: Type.Optional(Type.String()),
   VEETEE_PROVIDER_CATALOG_FILE: Type.String({ default: './config/provider-catalog.json' }),
+  VEETEE_MODEL_REGISTRY_FILE: Type.Optional(Type.String({ default: './config/model-registry.json' })),
   VEETEE_ALLOWED_ORIGINS: Type.String({ default: 'http://127.0.0.1:8081' }),
   VEETEE_AUTH_MODE: Type.Union([Type.Literal('disabled'), Type.Literal('local')], { default: 'disabled' }),
   VEETEE_OWNER_EMAIL: Type.Optional(Type.String()),

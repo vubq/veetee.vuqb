@@ -1,4 +1,4 @@
-import { boolean, integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { bigint, boolean, integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 
 /**
  * The Manager control-plane schema is isolated from any other application
@@ -33,6 +33,7 @@ export const providerConfigTable = managerSchema.table('provider_config', {
   ownerId: text('owner_id').notNull(),
   installationId: text('installation_id').notNull(),
   name: text('name').notNull(),
+  enabled: boolean('enabled').notNull(),
   currentRevision: integer('current_revision').notNull(),
   currentEtag: text('current_etag').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
@@ -47,6 +48,60 @@ export const providerConfigRevisionTable = managerSchema.table('provider_config_
   secretRefs: jsonb('secret_refs').$type<string[]>().notNull(),
   etag: text('etag').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull(),
+})
+
+/**
+ * Model catalog tables intentionally mirror the reference manager schema.
+ * Runtime provider_config tables above are a separate Veetee control-plane
+ * boundary and are not used as the model catalog.
+ */
+export const modelProviderTable = managerSchema.table('ai_model_provider', {
+  id: text('id').primaryKey(),
+  modelType: text('model_type'),
+  providerCode: text('provider_code'),
+  name: text('name'),
+  fields: jsonb('fields').$type<Record<string, unknown>[] | unknown[] | null>(),
+  sort: integer('sort').default(0),
+  creator: bigint('creator', { mode: 'number' }),
+  createDate: timestamp('create_date', { withTimezone: true, mode: 'date' }),
+  updater: bigint('updater', { mode: 'number' }),
+  updateDate: timestamp('update_date', { withTimezone: true, mode: 'date' }),
+})
+
+export const modelConfigTable = managerSchema.table('ai_model_config', {
+  id: text('id').primaryKey(),
+  modelType: text('model_type'),
+  modelCode: text('model_code'),
+  modelName: text('model_name'),
+  isDefault: integer('is_default').default(0),
+  isEnabled: integer('is_enabled').default(0),
+  configJson: jsonb('config_json').$type<JsonObject | null>(),
+  docLink: text('doc_link'),
+  remark: text('remark'),
+  sort: integer('sort').default(0),
+  updater: bigint('updater', { mode: 'number' }),
+  updateDate: timestamp('update_date', { withTimezone: true, mode: 'date' }),
+  creator: bigint('creator', { mode: 'number' }),
+  createDate: timestamp('create_date', { withTimezone: true, mode: 'date' }),
+})
+
+/** Source-compatible TTS voice catalog. The legacy voice_profile table is
+ * retained for runtime/user-created voices until that API is migrated. */
+export const ttsVoiceTable = managerSchema.table('ai_tts_voice', {
+  id: text('id').primaryKey(),
+  ttsModelId: text('tts_model_id'),
+  name: text('name'),
+  ttsVoice: text('tts_voice'),
+  languages: text('languages'),
+  voiceDemo: text('voice_demo'),
+  remark: text('remark'),
+  referenceAudio: text('reference_audio'),
+  referenceText: text('reference_text'),
+  sort: integer('sort').default(0),
+  creator: bigint('creator', { mode: 'number' }),
+  createDate: timestamp('create_date', { withTimezone: true, mode: 'date' }),
+  updater: bigint('updater', { mode: 'number' }),
+  updateDate: timestamp('update_date', { withTimezone: true, mode: 'date' }),
 })
 
 export const voiceProfileTable = managerSchema.table('voice_profile', {

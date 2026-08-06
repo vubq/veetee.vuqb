@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import ProviderOverviewFeature from '@/features/providers/ProviderOverviewFeature.vue'
+import ProviderManagementFeature from '@/features/providers/ProviderManagementFeature.vue'
 </script>
 
-<template><ProviderOverviewFeature /></template>
+<template><ProviderManagementFeature /></template>
