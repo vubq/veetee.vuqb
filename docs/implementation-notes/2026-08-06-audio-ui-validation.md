@@ -51,6 +51,11 @@ Metrics Voice Server sau lượt cuối: `active_connections=1`,
 `active_turns=0`, `turn_admissions=38`, `turn_releases=38`,
 `protocol_errors=0`, `turn_disconnect_aborts=0`, `last_ttfa_ms=1357`.
 
+Sau playback, serial AEC snapshot có `overrun=0` nhưng `underrun=16000`
+(`produced=764160`, `consumed=759680`, `resets=4`). Không có panic, decode lỗi
+hoặc reboot; chưa tự đổi tuning vì cần phép đo echo-only/voice-onset thực tế để
+phân biệt startup/reference drain với underrun gây méo tiếng.
+
 ## Regression host
 
 - Voice Server: **192 passed**.
