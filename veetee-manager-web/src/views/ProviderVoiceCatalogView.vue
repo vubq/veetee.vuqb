@@ -6,6 +6,7 @@ import { requireInjection } from '@/app/requireInjection'
 import type { ProviderConfigRecord } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import VoiceCatalogPanel from '@/features/providers/VoiceCatalogPanel.vue'
+import AiServicesNav from '@/features/providers/AiServicesNav.vue'
 import VtButton from '@/ui/primitives/VtButton.vue'
 import VtCard from '@/ui/primitives/VtCard.vue'
 import VtIcon from '@/ui/primitives/VtIcon.vue'
@@ -38,15 +39,16 @@ onMounted(() => { void load() })
     class="page-container voice-page"
     :aria-busy="loading"
   >
+    <AiServicesNav />
     <RouterLink
       class="back-link"
-      to="/providers"
+      to="/ai-services"
     >
       <VtIcon
         :icon="ArrowLeft"
         :size="15"
       />
-      <span>Tất cả dịch vụ</span>
+      <span>Tổng quan dịch vụ AI</span>
     </RouterLink>
     <header class="voice-header">
       <div>

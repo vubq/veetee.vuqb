@@ -616,7 +616,9 @@ export class InMemoryStore implements Store {
     const current = this.modelConfigs.get(id)
     if (!current || current.ownerId !== ownerId) throw problem('NOT_FOUND', 'Model config not found', 404)
     this.clearDefault(ownerId, current.modelType, id)
-    return this.updateModelConfig(ownerId, id, { isDefault: true })
+    // A disabled model cannot be a usable default. Keep this behavior aligned
+    // with the PostgreSQL adapter and the source management screen.
+    return this.updateModelConfig(ownerId, id, { isDefault: true, isEnabled: true })
   }
 
   private clearDefault(ownerId: string, modelType: ModelType, exceptId?: string): void {

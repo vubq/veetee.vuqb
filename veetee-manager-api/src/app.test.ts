@@ -84,6 +84,7 @@ test('source model catalog keeps the tested Veetee defaults and dynamic field ty
   await app.ready()
   try {
     const expected = [
+      ['VAD', 'VAD_SileroVAD', 'SileroVAD'],
       ['ASR', 'ASR_PhoWhisper', 'PhoWhisper-small'],
       ['LLM', 'LLM_Groq', 'llama-3.3-70b-versatile'],
       ['TTS', 'TTS_VieNeu', 'VieNeu-v3-turbo'],

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Bot, Component, LayoutGrid, LogOut, Menu, Puzzle, RotateCcw } from '@lucide/vue'
+import { Bot, Component, LayoutGrid, LogOut, Menu, RotateCcw, Sparkles } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -18,16 +18,14 @@ const logoutLoading = ref(false)
 const isAuthenticated = computed(() => authSession.status.value === 'authenticated')
 const mobileItems = computed<VtMenuItem[]>(() => [
   { id: 'assistants', label: 'Trợ lý' },
-  { id: 'model-config', label: 'Model Configuration' },
-  { id: 'provider-management', label: 'Quản lý provider' },
+  { id: 'ai-services', label: 'Dịch vụ AI' },
   ...(!isApiMode ? [{ id: 'components', label: 'Thư viện giao diện' }] : []),
   ...(!isApiMode ? [{ id: 'reset-hint', label: 'Đặt lại dữ liệu ở thanh công cụ', disabled: true, separatorBefore: true }] : []),
 ])
 
 function navigate(id: string) {
   if (id === 'assistants') void router.push('/assistants')
-  if (id === 'model-config') void router.push('/model-config')
-  if (id === 'provider-management') void router.push('/provider-management')
+  if (id === 'ai-services') void router.push('/ai-services')
   if (id === 'components') void router.push('/_preview/components')
 }
 
@@ -71,23 +69,13 @@ async function logout() {
         </RouterLink>
         <RouterLink
           class="nav-link"
-          to="/model-config"
+          to="/ai-services"
         >
           <VtIcon
-            :icon="Puzzle"
+            :icon="Sparkles"
             :size="16"
           />
-          <span>Model Configuration</span>
-        </RouterLink>
-        <RouterLink
-          class="nav-link"
-          to="/provider-management"
-        >
-          <VtIcon
-            :icon="Puzzle"
-            :size="16"
-          />
-          <span>Provider Management</span>
+          <span>Dịch vụ AI</span>
         </RouterLink>
         <RouterLink
           v-if="$router.hasRoute('component-preview')"

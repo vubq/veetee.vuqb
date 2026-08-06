@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ChevronRight, Plus, Search, Settings2, SlidersHorizontal, Trash2 } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { requireInjection } from '@/app/requireInjection'
 import type { ModelConfigRecord, ModelProviderRecord, ModelType } from '@/domain'
@@ -21,14 +21,18 @@ import ModelConfigTable from './ModelConfigTable.vue'
 import { MODEL_TYPE_DESCRIPTIONS, MODEL_TYPE_LABELS, MODEL_TYPE_ORDER } from './model-registry-labels'
 
 const router = useRouter()
+const route = useRoute()
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
 
-const activeType = ref<ModelType>('VAD')
+// The source opens on the primary language-model capability. Users can still
+// switch to every category from the sidebar without changing runtime state.
+const activeType = ref<ModelType>('LLM')
 const providers = ref<ModelProviderRecord[]>([])
 const models = ref<ModelConfigRecord[]>([])
 const total = ref(0)
 const page = ref(1)
 const limit = ref(10)
+const searchInput = ref('')
 const query = ref('')
 const loadingProviders = ref(true)
 const loadingModels = ref(true)
@@ -85,6 +89,16 @@ function selectType(type: ModelType) {
   activeType.value = type
   page.value = 1
   selectedIds.value = []
+}
+
+function applySearch() {
+  query.value = searchInput.value.trim()
+  page.value = 1
+}
+
+function clearSearch() {
+  searchInput.value = ''
+  applySearch()
 }
 
 function toggleAll() {
@@ -181,15 +195,21 @@ async function deleteSelected() {
   notify('Đã xóa model', { tone: 'success', message: `${targets.length} model đã được xóa.` })
 }
 
-function openVoiceManagement() {
-  void router.push('/providers/tts/voices')
+function openVoiceManagement(model: ModelConfigRecord) {
+  void router.push({ path: '/providers/tts/voices', query: { modelId: model.id } })
 }
 
 function previousPage() { if (page.value > 1) { page.value -= 1 } }
 function nextPage() { if (page.value < pageCount.value) { page.value += 1 } }
 
-watch([activeType, query, page, limit], () => { void loadModels() })
+watch([activeType, page, limit], () => { void loadModels() })
 watch(limit, () => { page.value = 1 })
+watch(() => route.query.type, (value) => {
+  if (typeof value === 'string' && MODEL_TYPE_ORDER.includes(value as ModelType)) {
+    activeType.value = value as ModelType
+    page.value = 1
+  }
+}, { immediate: true })
 onMounted(async () => { await loadProviders(); await loadModels() })
 </script>
 
@@ -248,13 +268,30 @@ onMounted(async () => { await loadProviders(); await loadModels() })
         </aside>
         <div class="configuration-main">
           <div class="operation-bar">
-            <div class="search-control">
+            <div class="search-control search-group">
               <VtInput
-                v-model="query"
+                v-model="searchInput"
                 :icon="Search"
                 aria-label="Tìm model"
                 placeholder="Tìm theo model ID, tên hoặc provider…"
+                @keyup.enter="applySearch"
               />
+              <VtButton
+                size="sm"
+                variant="secondary"
+                @click="applySearch"
+              >
+                Tìm
+              </VtButton>
+              <VtButton
+                v-if="query"
+                size="sm"
+                variant="ghost"
+                aria-label="Xóa tìm kiếm model"
+                @click="clearSearch"
+              >
+                Xóa
+              </VtButton>
             </div>
             <VtSelect
               :model-value="String(limit)"
@@ -279,7 +316,28 @@ onMounted(async () => { await loadProviders(); await loadModels() })
               Thử lại
             </VtButton>
           </div>
+          <div
+            v-else-if="!loadingProviders && visibleProviders.length === 0"
+            class="empty-provider-state"
+          >
+            <strong>Chưa có provider cho {{ activeLabel }}</strong>
+            <span>Thêm provider schema trước, sau đó model config sẽ tự sinh field theo schema.</span>
+            <VtButton
+              size="sm"
+              variant="primary"
+              @click="void router.push({ path: '/provider-management', query: { type: activeType } })"
+            >
+              <template #leading>
+                <VtIcon
+                  :icon="Plus"
+                  :size="13"
+                />
+              </template>
+              Thêm provider schema
+            </VtButton>
+          </div>
           <ModelConfigTable
+            v-if="visibleProviders.length > 0 || loadingProviders"
             :items="models"
             :providers="providers"
             :selected-ids="selectedIds"
@@ -382,13 +440,14 @@ onMounted(async () => { await loadProviders(); await loadModels() })
 .category-copy small { color: var(--vt-text-faint); font-size: 8px; }
 .configuration-main { display: grid; min-width: 0; gap: 13px; padding: 14px; }
 .operation-bar { display: flex; min-width: 0; align-items: center; gap: 9px; }
-.search-control { min-width: 220px; flex: 1; }
+.search-control { min-width: 220px; flex: 1; }.search-group { display: flex; min-width: 0; align-items: center; gap: 6px; }.search-group > :first-child { min-width: 0; flex: 1; }
 .operation-bar > :deep(.vt-select-trigger) { width: 150px; }
 .operation-bar .vt-badge { flex: none; }
 .error-state { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid #f1c4c8; border-radius: var(--vt-radius-control); background: var(--vt-danger-soft); color: var(--vt-danger); padding: 10px 12px; font-size: 11px; }
+.empty-provider-state { display: grid; justify-items: start; gap: 5px; border: 1px dashed var(--vt-border-strong); border-radius: var(--vt-radius-section); background: var(--vt-surface-subtle); padding: 18px; }.empty-provider-state strong { color: var(--vt-text); font-size: 12px; }.empty-provider-state span { color: var(--vt-text-muted); font-size: 10px; }.empty-provider-state .vt-button { margin-top: 4px; }
 .table-footer { display: flex; min-height: 54px; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--vt-border); color: var(--vt-text-muted); padding-top: 1px; font-size: 11px; }
 .footer-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .confirm-copy { margin: 0; color: var(--vt-text-soft); font-size: 13px; }
 @media (max-width: 920px) { .configuration-layout { grid-template-columns: 1fr; }.category-sidebar { grid-template-columns: repeat(3, minmax(0, 1fr)); border-right: 0; border-bottom: 1px solid var(--vt-border); }.sidebar-label { grid-column: 1 / -1; }.category-item { min-width: 0; } }
-@media (max-width: 650px) { .category-sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }.operation-bar { align-items: stretch; flex-direction: column; }.search-control { min-width: 0; width: 100%; }.operation-bar > :deep(.vt-select-trigger) { width: 100%; }.operation-bar .vt-badge { width: fit-content; }.table-footer { align-items: flex-start; flex-direction: column; padding-block: 10px; }.footer-actions { justify-content: flex-start; } }
+@media (max-width: 650px) { .category-sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }.operation-bar { align-items: stretch; flex-direction: column; }.search-control { min-width: 0; width: 100%; }.search-group { flex-wrap: wrap; }.search-group > :first-child { width: 100%; flex-basis: 100%; }.operation-bar > :deep(.vt-select-trigger) { width: 100%; }.operation-bar .vt-badge { width: fit-content; }.table-footer { align-items: flex-start; flex-direction: column; padding-block: 10px; }.footer-actions { justify-content: flex-start; } }
 </style>

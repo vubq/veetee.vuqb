@@ -9,6 +9,7 @@ const AssistantModelMemoryView = () => import('@/views/AssistantModelMemoryView.
 const AssistantRoleView = () => import('@/views/AssistantRoleView.vue')
 const AssistantDevicesView = () => import('@/views/AssistantDevicesView.vue')
 const AssistantHistoryView = () => import('@/views/AssistantHistoryView.vue')
+const AiServicesOverviewView = () => import('@/views/AiServicesOverviewView.vue')
 const ModelConfigurationView = () => import('@/views/ModelConfigurationView.vue')
 const ModelProviderManagementView = () => import('@/views/ModelProviderManagementView.vue')
 const ProviderVoiceCatalogView = () => import('@/views/ProviderVoiceCatalogView.vue')
@@ -46,6 +47,7 @@ const routes: RouteRecordRaw[] = [
     component: AssistantHistoryView,
     meta: { title: 'Lịch sử hội thoại' },
   },
+  { path: '/ai-services', name: 'ai-services', component: AiServicesOverviewView, meta: { title: 'Dịch vụ AI' } },
   { path: '/providers', redirect: '/model-config' },
   { path: '/model-config', name: 'model-config', component: ModelConfigurationView, meta: { title: 'Model Configuration' } },
   { path: '/provider-management', name: 'provider-management', component: ModelProviderManagementView, meta: { title: 'Provider Management' } },

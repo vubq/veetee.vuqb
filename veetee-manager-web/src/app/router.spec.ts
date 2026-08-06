@@ -29,6 +29,11 @@ describe('router auth boundary', () => {
   it('keeps preview navigation public and updates the document title', async () => {
     const router = createVeeteeRouter(session('preview', false), createMemoryHistory())
 
+    await router.push('/ai-services')
+
+    expect(router.currentRoute.value.name).toBe('ai-services')
+    expect(document.title).toBe('Dịch vụ AI · Veetee')
+
     await router.push('/model-config')
 
     expect(router.currentRoute.value.name).toBe('model-config')

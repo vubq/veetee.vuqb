@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ListFilter, Plus, Search, Settings2, Trash2 } from '@lucide/vue'
+import { ChevronLeft, ChevronRight, ListFilter, Plus, Search, Settings2, Trash2 } from '@lucide/vue'
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import { requireInjection } from '@/app/requireInjection'
 import type { ModelProviderRecord, ModelType } from '@/domain'
@@ -21,12 +22,17 @@ import ModelProviderTable from './ModelProviderTable.vue'
 import { MODEL_TYPE_LABELS, MODEL_TYPE_ORDER, normalizeModelSearch } from './model-registry-labels'
 
 const gateway = requireInjection(managerGatewayKey, 'ManagerGateway')
+const route = useRoute()
+const router = useRouter()
 
 const providers = ref<ModelProviderRecord[]>([])
 const loading = ref(true)
 const loadError = ref('')
+const searchInput = ref('')
 const query = ref('')
 const category = ref<ModelType | 'all'>('all')
+const page = ref(1)
+const pageSize = ref('10')
 const selectedIds = ref<string[]>([])
 const dialogOpen = ref(false)
 const editingProvider = ref<ModelProviderRecord>()
@@ -37,6 +43,12 @@ const deleteTarget = ref<ModelProviderRecord>()
 const deleting = ref(false)
 
 const categoryOptions: VtSelectOption[] = [{ value: 'all', label: 'Tất cả danh mục' }, ...MODEL_TYPE_ORDER.map((value) => ({ value, label: MODEL_TYPE_LABELS[value] }))]
+const pageSizeOptions: VtSelectOption[] = [
+  { value: '10', label: '10 provider / trang' },
+  { value: '20', label: '20 provider / trang' },
+  { value: '50', label: '50 provider / trang' },
+  { value: '100', label: '100 provider / trang' },
+]
 const filteredProviders = computed(() => {
   const term = normalizeModelSearch(query.value)
   return providers.value.filter((provider) => {
@@ -45,13 +57,20 @@ const filteredProviders = computed(() => {
     return byCategory && (!term || haystack.includes(term))
   })
 })
-const allSelected = computed(() => filteredProviders.value.length > 0 && filteredProviders.value.every((provider) => selectedIds.value.includes(provider.id)))
+const pageCount = computed(() => Math.max(1, Math.ceil(filteredProviders.value.length / Number(pageSize.value))))
+const pagedProviders = computed(() => filteredProviders.value.slice((page.value - 1) * Number(pageSize.value), page.value * Number(pageSize.value)))
+const rangeLabel = computed(() => {
+  if (!filteredProviders.value.length) return '0 provider'
+  const start = (page.value - 1) * Number(pageSize.value) + 1
+  return `${start}–${Math.min(page.value * Number(pageSize.value), filteredProviders.value.length)} / ${filteredProviders.value.length} provider`
+})
+const allSelected = computed(() => pagedProviders.value.length > 0 && pagedProviders.value.every((provider) => selectedIds.value.includes(provider.id)))
 const selectedProviders = computed(() => providers.value.filter((provider) => selectedIds.value.includes(provider.id)))
 
 async function load() {
   loading.value = true
   loadError.value = ''
-  const result = await gateway.listModelProviders({ modelType: category.value === 'all' ? undefined : category.value, name: query.value || undefined })
+  const result = await gateway.listModelProviders()
   if (!result.ok) {
     loadError.value = 'Không tải được danh sách provider. Kiểm tra máy chủ quản trị rồi thử lại.'
   } else {
@@ -61,10 +80,20 @@ async function load() {
   loading.value = false
 }
 
+function applyFilter() {
+  query.value = searchInput.value.trim()
+  page.value = 1
+}
+
+function clearFilter() {
+  searchInput.value = ''
+  applyFilter()
+}
+
 function toggleAll() {
   selectedIds.value = allSelected.value
-    ? selectedIds.value.filter((id) => !filteredProviders.value.some((provider) => provider.id === id))
-    : [...new Set([...selectedIds.value, ...filteredProviders.value.map((provider) => provider.id)])]
+    ? selectedIds.value.filter((id) => !pagedProviders.value.some((provider) => provider.id === id))
+    : [...new Set([...selectedIds.value, ...pagedProviders.value.map((provider) => provider.id)])]
 }
 
 function toggle(id: string, selected: boolean) {
@@ -116,6 +145,7 @@ async function deleteProvider(provider: ModelProviderRecord) {
   }
   providers.value = providers.value.filter((item) => item.id !== provider.id)
   selectedIds.value = selectedIds.value.filter((id) => id !== provider.id)
+  page.value = Math.min(page.value, pageCount.value)
   deleteTarget.value = undefined
   notify('Đã xóa provider', { tone: 'success', message: provider.name })
 }
@@ -132,10 +162,17 @@ async function deleteSelected() {
   }
   providers.value = providers.value.filter((provider) => !targets.some((target) => target.id === provider.id))
   selectedIds.value = []
+  page.value = Math.min(page.value, pageCount.value)
   notify('Đã xóa provider', { tone: 'success', message: `${targets.length} provider đã được xóa.` })
 }
 
-watch([query, category], () => { void load() })
+function previousPage() { if (page.value > 1) page.value -= 1 }
+function nextPage() { if (page.value < pageCount.value) page.value += 1 }
+
+watch([category, pageSize], () => { page.value = 1 })
+watch(() => route.query.type, (value) => {
+  if (typeof value === 'string' && MODEL_TYPE_ORDER.includes(value as ModelType)) category.value = value as ModelType
+}, { immediate: true })
 onMounted(load)
 </script>
 
@@ -157,7 +194,7 @@ onMounted(load)
         </VtButton>
         <VtButton
           variant="primary"
-          @click="$router.push('/model-config')"
+          @click="router.push('/model-config')"
         >
           Model Configuration
         </VtButton>
@@ -166,13 +203,29 @@ onMounted(load)
 
     <VtCard class="management-card">
       <div class="operation-bar">
-        <div class="search-control">
+        <div class="search-control search-group">
           <VtInput
-            v-model="query"
+            v-model="searchInput"
             :icon="Search"
             aria-label="Tìm provider"
             placeholder="Tìm theo tên hoặc mã provider…"
+            @keyup.enter="applyFilter"
           />
+          <VtButton
+            size="sm"
+            @click="applyFilter"
+          >
+            Tìm
+          </VtButton>
+          <VtButton
+            v-if="query"
+            size="sm"
+            variant="ghost"
+            aria-label="Xóa tìm kiếm provider"
+            @click="clearFilter"
+          >
+            Xóa
+          </VtButton>
         </div>
         <div class="category-control">
           <VtSelect
@@ -181,8 +234,13 @@ onMounted(load)
             :options="categoryOptions"
           />
         </div>
+        <VtSelect
+          v-model="pageSize"
+          label="Số provider mỗi trang"
+          :options="pageSizeOptions"
+        />
         <VtBadge tone="neutral">
-          <ListFilter :size="13" />{{ filteredProviders.length }} kết quả
+          <ListFilter :size="13" />{{ rangeLabel }}
         </VtBadge>
       </div>
 
@@ -199,7 +257,7 @@ onMounted(load)
         </VtButton>
       </div>
       <ModelProviderTable
-        :items="filteredProviders"
+        :items="pagedProviders"
         :selected-ids="selectedIds"
         :all-selected="allSelected"
         :loading="loading"
@@ -225,6 +283,22 @@ onMounted(load)
                 :size="14"
               />
             </template>Xóa đã chọn
+          </VtButton>
+          <VtButton
+            size="sm"
+            :disabled="page <= 1"
+            aria-label="Trang provider trước"
+            @click="previousPage"
+          >
+            <ChevronLeft :size="14" /> Trước
+          </VtButton>
+          <VtButton
+            size="sm"
+            :disabled="page >= pageCount"
+            aria-label="Trang provider sau"
+            @click="nextPage"
+          >
+            Sau <ChevronRight :size="14" />
           </VtButton>
         </div>
       </footer>
@@ -271,12 +345,16 @@ onMounted(load)
 .provider-management { display: grid; gap: 15px; }
 .management-card { display: grid; gap: 13px; padding: 0; }
 .operation-bar { display: flex; min-width: 0; align-items: center; gap: 9px; padding: 14px 15px 0; }
-.search-control { width: min(380px, 100%); }
-.category-control { width: min(270px, 100%); }
+.search-control { width: min(420px, 100%); }
+.search-group { display: flex; align-items: center; gap: 6px; }
+.search-group > :first-child { min-width: 0; flex: 1; }
+.category-control { width: min(230px, 100%); }
+.operation-bar > :deep(.vt-select-trigger) { width: 190px; }
 .operation-bar .vt-badge { margin-left: auto; }
 .error-state { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid #f1c4c8; border-radius: var(--vt-radius-control); background: var(--vt-danger-soft); color: var(--vt-danger); padding: 10px 12px; font-size: 11px; }
 .table-footer { display: flex; min-height: 54px; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--vt-border); color: var(--vt-text-muted); padding: 0 15px; font-size: 11px; }
 .footer-actions { display: flex; gap: 8px; }
 .confirm-copy { margin: 0; color: var(--vt-text-soft); font-size: 13px; }
-@media (max-width: 720px) { .operation-bar { align-items: stretch; flex-direction: column; }.search-control, .category-control { width: 100%; }.operation-bar .vt-badge { width: fit-content; margin-left: 0; }.table-footer { align-items: flex-start; flex-direction: column; padding-block: 12px; } }
+@media (max-width: 900px) { .operation-bar { align-items: stretch; flex-wrap: wrap; }.search-control { width: 100%; }.category-control { width: min(260px, 100%); }.operation-bar > :deep(.vt-select-trigger) { width: 100%; }.operation-bar .vt-badge { margin-left: auto; } }
+@media (max-width: 720px) { .operation-bar { flex-direction: column; }.search-control, .category-control { width: 100%; }.search-group { flex-wrap: wrap; }.search-group > :first-child { flex-basis: 100%; width: 100%; }.operation-bar .vt-badge { width: fit-content; margin-left: 0; }.table-footer { align-items: flex-start; flex-direction: column; padding-block: 12px; } }
 </style>

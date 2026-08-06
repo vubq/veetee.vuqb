@@ -11,6 +11,7 @@ describe('source-aligned model registry preview', () => {
 
     expect(registry.providers).toHaveLength(63)
     expect(registry.configs).toHaveLength(67)
+    expect(defaults.get('VAD')).toMatchObject({ id: 'VAD_SileroVAD', modelCode: 'SileroVAD', providerCode: 'silero', isEnabled: true })
     expect(defaults.get('ASR')).toMatchObject({ id: 'ASR_PhoWhisper', modelCode: 'PhoWhisper-small', providerCode: 'phowhisper', isEnabled: true })
     expect(defaults.get('LLM')).toMatchObject({ id: 'LLM_Groq', modelCode: 'llama-3.3-70b-versatile', providerCode: 'groq', isEnabled: true })
     expect(defaults.get('TTS')).toMatchObject({ id: 'TTS_VieNeu', modelCode: 'VieNeu-v3-turbo', providerCode: 'vieneu', isEnabled: true })
