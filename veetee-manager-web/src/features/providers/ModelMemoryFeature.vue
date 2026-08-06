@@ -3,7 +3,7 @@ import { BrainCircuit, Database, ShieldAlert } from '@lucide/vue'
 import { computed, nextTick, onMounted, ref } from 'vue'
 
 import { requireInjection } from '@/app/requireInjection'
-import { PROVIDER_KINDS, type ModelMemoryWorkspace, type ModelType, type ProviderKind, type RevisionConflictProblem, type UpdateProviderSelectionInput, type Versioned } from '@/domain'
+import { PROVIDER_KINDS, type ModelMemoryWorkspace, type ModelTtsVoice, type ModelType, type ProviderKind, type RevisionConflictProblem, type RoleConfigDraft, type UpdateProviderSelectionInput, type Versioned } from '@/domain'
 import { managerGatewayKey } from '@/gateways'
 import FormSection from '@/ui/patterns/FormSection.vue'
 import PreviewScenarioToolbar from '@/ui/patterns/PreviewScenarioToolbar.vue'
@@ -33,6 +33,10 @@ const copying = ref(false)
 const loadState = ref<'loading' | 'ready' | 'error' | 'offline'>('loading')
 const loadError = ref('')
 const stateHeading = ref<HTMLElement | null>(null)
+const ttsVoices = ref<ModelTtsVoice[]>([])
+const selectedTtsVoice = ref('')
+const ttsVoiceLoading = ref(false)
+const ttsVoiceSaving = ref(false)
 let loadGeneration = 0
 
 function cloneWorkspace(workspace: ModelMemoryWorkspace): ModelMemoryWorkspace {
@@ -79,8 +83,10 @@ function optionsFor(kind: ProviderKind): VtSelectOption[] {
   const configs = resource.value?.value.availableConfigs.filter((item) => item.kind === kind) ?? []
   const options: VtSelectOption[] = configs.map((config) => ({
     value: config.id,
-    label: config.model ? localizedModelName({ modelType: modelTypeForKind(kind), modelCode: config.model.code, modelName: config.model.name }) : config.name,
-    description: `${config.name} · ${config.model?.code ?? localizedProviderName({ modelType: modelTypeForKind(kind), providerCode: config.model?.providerCode ?? config.providerName, name: config.providerName })} · hỗ trợ ${config.supportedLocales.map(localeLabel).join(', ')}`,
+    label: config.model
+      ? `${localizedModelName({ modelType: modelTypeForKind(kind), modelCode: config.model.code, modelName: config.model.name })} · ${config.name}`
+      : config.name,
+    description: `${config.model?.code ?? localizedProviderName({ modelType: modelTypeForKind(kind), providerCode: config.model?.providerCode ?? config.providerName, name: config.providerName })} · hỗ trợ ${config.supportedLocales.map(localeLabel).join(', ')}`,
     disabled: config.availability !== 'ready',
   }))
   if (kind === 'intent' || kind === 'memory') options.unshift({ value: '__disabled__', label: 'Tắt', description: 'Không dùng dịch vụ cho loại này' })
@@ -126,6 +132,79 @@ function selectionStatusTone(kind: ProviderKind): 'online' | 'neutral' | 'warnin
   return 'neutral'
 }
 
+function selectedTtsConfig(workspace = resource.value?.value): ModelMemoryWorkspace['availableConfigs'][number] | undefined {
+  if (!workspace) return undefined
+  const selection = workspace.selections.find((item) => item.kind === 'tts' && item.mode === 'selected')
+  return selection?.providerConfigId ? workspace.availableConfigs.find((config) => config.id === selection.providerConfigId) : undefined
+}
+
+function roleVoiceId(value: unknown): string {
+  if (!value || typeof value !== 'object') return ''
+  const speech = (value as { speech?: unknown }).speech
+  if (!speech || typeof speech !== 'object') return ''
+  const voiceId = (speech as { voiceId?: unknown }).voiceId
+  return typeof voiceId === 'string' ? voiceId : ''
+}
+
+async function loadTtsVoices(workspace = resource.value?.value): Promise<void> {
+  const config = selectedTtsConfig(workspace)
+  if (!config?.model?.id || typeof gateway.listModelTtsVoices !== 'function') {
+    ttsVoices.value = []
+    selectedTtsVoice.value = ''
+    return
+  }
+  ttsVoiceLoading.value = true
+  try {
+    const [voiceResult, roleResult] = await Promise.all([
+      gateway.listModelTtsVoices(config.model.id, { page: 1, limit: 100 }),
+      typeof gateway.getRoleConfig === 'function' ? gateway.getRoleConfig(props.assistantId) : Promise.resolve(undefined),
+    ])
+    if (!voiceResult.ok) {
+      ttsVoices.value = []
+      selectedTtsVoice.value = ''
+      return
+    }
+    ttsVoices.value = voiceResult.data.items
+    const persistedVoice = roleResult?.ok ? roleVoiceId(roleResult.data.value) : ''
+    const availableVoice = ttsVoices.value.find((voice) => voice.ttsVoice === persistedVoice || voice.id === persistedVoice || voice.name === persistedVoice)
+    // An assistant may still reference a voice from the previous TTS model.
+    // Keep that draft untouched until the user explicitly chooses a new voice,
+    // but show the first catalog voice instead of an empty trigger when the
+    // persisted code is not part of the selected model.
+    selectedTtsVoice.value = availableVoice?.ttsVoice ?? ttsVoices.value[0]?.ttsVoice ?? persistedVoice ?? ''
+  } finally {
+    ttsVoiceLoading.value = false
+  }
+}
+
+async function saveTtsVoice(value: string): Promise<void> {
+  if (!value || ttsVoiceSaving.value || typeof gateway.getRoleConfig !== 'function' || typeof gateway.saveRoleConfig !== 'function') return
+  ttsVoiceSaving.value = true
+  try {
+    const current = await gateway.getRoleConfig(props.assistantId)
+    if (!current.ok) {
+      notify('Không thể đọc cấu hình giọng', { tone: 'error', message: 'Hãy tải lại trang rồi thử lại.', assertive: true })
+      return
+    }
+    const source = structuredClone(current.data.value)
+    const { assistantId: _assistantId, ...draft } = source
+    void _assistantId
+    const next: RoleConfigDraft = { ...draft, speech: { ...draft.speech, voiceId: value } }
+    const result = await gateway.saveRoleConfig(props.assistantId, next, current.data.etag)
+    if (!result.ok) {
+      notify('Không thể lưu giọng nói', { tone: 'error', message: result.problem.type === 'revision-conflict' ? 'Cấu hình vừa thay đổi ở nơi khác; hãy tải lại.' : 'Hãy kiểm tra kết nối rồi thử lại.', assertive: true })
+      return
+    }
+    selectedTtsVoice.value = value
+    notify('Đã lưu giọng nói', { tone: 'success', message: 'Giọng này sẽ được dùng cho câu trả lời của trợ lý.' })
+    // Provider selection and role config share one assistant revision. Refresh
+    // the workspace so the next mutation always sends the current ETag.
+    await load()
+  } finally {
+    ttsVoiceSaving.value = false
+  }
+}
+
 async function load() {
   const generation = ++loadGeneration
   loading.value = true
@@ -144,6 +223,7 @@ async function load() {
     }
     resource.value = result.data
     emit('revision', result.data.revision)
+    await loadTtsVoices(result.data.value)
     loadState.value = 'ready'
   } catch {
     if (generation !== loadGeneration) return
@@ -171,7 +251,12 @@ async function changeProvider(kind: ProviderKind, value: string) {
   const input: UpdateProviderSelectionInput = value === '__disabled__' ? { kind, mode: 'disabled' } : { kind, mode: 'selected', providerConfigId: value }
   const result = await gateway.updateProviderSelection(props.assistantId, input, resource.value.etag)
   mutatingKind.value = undefined
-  if (result.ok) { applyResult(result.data); notify(`Đã cập nhật ${kindInfo[kind].label}`, { tone: 'success', message: 'Veetee không tự chuyển sang dịch vụ khác.' }); return }
+  if (result.ok) {
+    applyResult(result.data)
+    if (kind === 'tts') await loadTtsVoices(result.data.value)
+    notify(`Đã cập nhật ${kindInfo[kind].label}`, { tone: 'success', message: 'Veetee không tự chuyển sang dịch vụ khác.' })
+    return
+  }
   if (result.problem.type === 'revision-conflict') { conflict.value = result.problem; return }
   const message = result.problem.type === 'provider-unavailable' ? 'Dịch vụ này chưa sẵn sàng; lựa chọn cũ được giữ nguyên.' : result.problem.type === 'offline' ? 'Đang ngoại tuyến; thay đổi đã bị chặn.' : 'Lựa chọn chưa hợp lệ.'
   notify('Không thể đổi dịch vụ', { tone: 'error', message, assertive: true })
@@ -204,6 +289,11 @@ async function copyAndReload() {
 }
 
 const memoryItems = computed(() => resource.value?.value.memoryItems ?? [])
+const ttsVoiceOptions = computed<VtSelectOption[]>(() => ttsVoices.value.map((voice) => ({
+  value: voice.ttsVoice,
+  label: voice.name,
+  description: `${voice.ttsVoice} · ${voice.languages}`,
+})))
 onMounted(load)
 </script>
 
@@ -251,7 +341,7 @@ onMounted(load)
   >
     <FormSection
       title="Dịch vụ đang dùng"
-      description="Mỗi nhóm chỉ chọn một dịch vụ; Veetee không tự chuyển sang dịch vụ khác."
+      description="Mỗi nhóm chọn một cấu hình runtime đã tạo. Muốn dùng model khác, tạo cấu hình mới trong Dịch vụ AI rồi quay lại chọn; Veetee không tự chuyển dịch vụ."
     >
       <div class="provider-grid">
         <VtCard
@@ -307,6 +397,42 @@ onMounted(load)
             >
               Mặc định
             </VtBadge>
+          </div>
+          <div
+            v-if="kind === 'tts' && modelFor(kind)"
+            class="tts-voice-picker"
+          >
+            <VtSelect
+              :model-value="selectedTtsVoice"
+              label="Giọng đọc của model TTS"
+              :options="ttsVoiceOptions"
+              :placeholder="ttsVoiceLoading ? 'Đang tải giọng…' : 'Chọn giọng đọc'"
+              :disabled="ttsVoiceLoading || ttsVoiceSaving || !ttsVoiceOptions.length"
+              @update:model-value="saveTtsVoice"
+            />
+            <span
+              v-if="ttsVoiceSaving"
+              class="tts-voice-state"
+            >Đang lưu giọng…</span>
+            <span
+              v-else-if="!ttsVoiceLoading && !ttsVoiceOptions.length"
+              class="tts-voice-state"
+            >Model này chưa có voice catalog. Hãy thêm voice ở thư viện.</span>
+            <RouterLink
+              v-if="modelFor(kind)?.id"
+              class="tts-voice-link"
+              :to="{ path: '/providers/tts/voices', query: { modelId: modelFor(kind)?.id } }"
+            >
+              Quản lý thư viện giọng
+            </RouterLink>
+          </div>
+          <div class="provider-config-link">
+            <RouterLink :to="`/providers/${kind}`">
+              Đổi hoặc thêm cấu hình {{ kindInfo[kind].label.toLocaleLowerCase('vi') }}
+            </RouterLink>
+            <RouterLink :to="{ path: '/model-config', query: { type: modelTypeForKind(kind) } }">
+              Quản lý danh mục model
+            </RouterLink>
           </div>
           <p
             v-if="selectionStatus(kind) === 'unavailable'"
@@ -410,6 +536,13 @@ onMounted(load)
 .provider-model-value, .provider-model-link { min-width: 0; overflow: hidden; color: var(--vt-text-soft); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .provider-model-link { color: var(--vt-primary); text-decoration: none; text-underline-offset: 2px; }
 .provider-model-link:hover { text-decoration: underline; }
+.tts-voice-picker { display: grid; gap: 5px; margin-top: 10px; border-top: 1px solid var(--vt-border); padding-top: 9px; }
+.tts-voice-picker :deep(.vt-select-trigger) { min-height: 34px; font-size: 11px; }
+.tts-voice-state { color: var(--vt-text-muted); font-size: 9px; line-height: 1.4; }
+.tts-voice-link, .provider-config-link a { color: var(--vt-primary); font-size: 9px; text-decoration: none; text-underline-offset: 2px; }
+.tts-voice-link:hover, .provider-config-link a:hover { text-decoration: underline; }
+.provider-config-link { display: grid; gap: 3px; margin-top: 9px; }
+.provider-config-link a { color: var(--vt-text-muted); }
 .memory-list { display: grid; gap: 8px; }
 .memory-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid var(--vt-border); border-radius: var(--vt-radius-control); background: var(--vt-surface-subtle); padding: 9px 10px; }
 .memory-item.disabled { background: var(--vt-surface-muted); }

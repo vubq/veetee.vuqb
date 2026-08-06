@@ -137,10 +137,20 @@ test('provider unavailable không fallback và conflict giữ draft', async ({ p
 
 test('trợ lý hiển thị model catalog và mở đúng thư viện voice của TTS', async ({ page }) => {
   await page.goto(`/assistants/${assistantId}/config/model-memory`)
-  await expect(page.getByText('Groq · Llama 3.3 70B', { exact: true })).toBeVisible()
+  await expect(page.getByText('Groq · Llama 3.3 70B · llama-3.3-70b-versatile', { exact: true })).toBeVisible()
   await expect(page.getByText('VieNeu v3 Turbo tiếng Việt · VieNeu-v3-turbo', { exact: true })).toBeVisible()
   const ttsLink = page.getByRole('link', { name: /VieNeu v3 Turbo tiếng Việt/ })
   await expect(ttsLink).toHaveAttribute('href', /modelId=TTS_VieNeu/)
+
+  const ttsVoice = page.getByRole('combobox', { name: 'Giọng đọc của model TTS' })
+  await expect(ttsVoice).toContainText('Minh Đức')
+  await ttsVoice.click()
+  await expect(page.getByRole('option', { name: /Minh Đức minh_duc/ })).toBeVisible()
+  await page.getByRole('option', { name: /Minh Đức minh_duc/ }).click()
+  await expect(page.getByText('Đã lưu giọng nói', { exact: true })).toBeVisible()
+
+  await expect(page.getByRole('link', { name: 'Đổi hoặc thêm cấu hình bộ não trả lời' })).toHaveAttribute('href', '/providers/llm')
+  await expect(page.locator('a[href="/model-config?type=LLM"]')).toHaveCount(1)
 })
 
 test('provider registry sinh form từ schema và lưu revision', async ({ page }) => {

@@ -6,6 +6,7 @@ import { managerGatewayKey, previewControlGatewayKey, type ManagerGateway, type 
 import { i18n } from '@/i18n'
 import { createModelMemoryFixtures } from '@/mocks/fixtures/providers'
 import { ASSISTANT_IDS } from '@/mocks/fixtures/assistants'
+import { createMockGatewayDependencies } from '@/mocks/mock-gateway'
 
 import ModelMemoryFeature from './ModelMemoryFeature.vue'
 
@@ -107,4 +108,22 @@ describe('ModelMemoryFeature read states', () => {
     expect(view.getByRole('combobox', { name: 'Dịch vụ Giọng nói' })).toBeTruthy()
     expect(view.getByText('Bộ nhớ hội thoại')).toBeTruthy()
   })
+
+  it('renders the selected TTS voice from the model voice catalog in the preview gateway', async () => {
+    const dependencies = createMockGatewayDependencies({ delayMs: 0, sleep: async () => undefined })
+    const view = render(ModelMemoryFeature, {
+      props: { assistantId },
+      global: {
+        plugins: [i18n],
+        provide: {
+          [managerGatewayKey as symbol]: dependencies.managerGateway,
+          [previewControlGatewayKey as symbol]: dependencies.previewControlGateway,
+        },
+      },
+    })
+
+    const voiceSelect = await view.findByRole('combobox', { name: 'Giọng đọc của model TTS' })
+    expect(voiceSelect.textContent).toContain('Minh Đức')
+  })
+
 })

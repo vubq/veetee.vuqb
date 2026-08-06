@@ -13,6 +13,21 @@
 
 ## Thay đổi đã thực hiện
 
+### Follow-up: chọn model runtime và voice ngay trong trợ lý
+
+- Card `Mô hình & bộ nhớ` nay ghép tên model với tên cấu hình runtime trong
+  dropdown, tránh trường hợp nhiều config hiển thị giống nhau.
+- Link “Đổi hoặc thêm cấu hình” được sửa từ màn hình schema provider sang
+  `/providers/:kind`, nơi tạo provider config có credential/model thực tế; link
+  “Quản lý danh mục model” mở `/model-config?type=...` để quản lý catalog riêng.
+  Hai lớp này không bị tự động nhập làm một vì catalog không chứa credential.
+- Card TTS gọi `GET /api/v1/models/{modelId}/voices`, hiển thị voice preset ngay
+  trong cấu hình trợ lý và lưu mã `ttsVoice` vào `role.speech.voiceId`. Nếu role
+  còn voice của model cũ, UI chọn voice đầu tiên của model mới làm trạng thái
+  hiển thị nhưng chỉ ghi dữ liệu khi người dùng xác nhận lựa chọn.
+- Preview fixture được kiểm tra với voice `Minh Đức (minh_duc)`; đường dẫn tạo
+  provider và quản lý catalog đã được kiểm tra bằng Chromium.
+
 - Thêm `ModelTtsVoice` domain/store và CRUD model-scoped trong InMemory +
   PostgreSQL.
 - Thêm routes:
@@ -52,7 +67,7 @@
   truyền DSN**.
 - Manager API với `VEETEE_TEST_DATABASE_URL_FILE=../secrets/manager-test.database-url`:
   **58/58 pass**, gồm PostgreSQL model TTS voice CRUD.
-- Manager Web: **119/119 unit pass**, typecheck/lint/build pass.
+- Manager Web: **120/120 unit pass**, **21/21 Chromium E2E**, typecheck/lint/build pass.
 - Chromium E2E: **21/21 pass**, gồm model metadata link và TTS voice CRUD/search.
 - Voice Server regression: **194 passed**, Ruff và compileall pass; runtime
   readiness đang ở revision 13 và publication xác nhận `speech.voiceId =

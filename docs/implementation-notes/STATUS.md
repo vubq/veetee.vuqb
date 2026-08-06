@@ -1,5 +1,23 @@
 # Trạng thái thực thi hiện tại
 
+## Trợ lý chọn model và giọng TTS — 2026-08-06
+
+- Đã sửa card `Mô hình & bộ nhớ`: nhãn lựa chọn hiển thị cả model và tên cấu
+  hình runtime để phân biệt nhiều cấu hình cùng một model.
+- CTA trong từng capability nay đi đúng luồng runtime `/providers/:kind` để
+  tạo/chỉnh cấu hình mới, đồng thời có link tới danh mục model
+  `/model-config?type=...`; danh mục model toàn cục không tự biến thành provider
+  runtime vì provider vẫn cần credential/config riêng.
+- Card TTS có selector voice theo đúng `model.id`, tải từ model-scoped voice
+  catalog và lưu mã `ttsVoice` vào `role.speech.voiceId` qua ETag. Khi role còn
+  giữ voice của model cũ, UI vẫn hiển thị voice đầu tiên của model mới để người
+  dùng chọn rõ ràng; không tự ghi đè role cho tới khi người dùng chọn.
+- Preview mock đã được kiểm tra với `Minh Đức`; chọn voice hiện thông báo lưu và
+  reload workspace không làm mất provider selection.
+- Verification sau thay đổi: Manager Web **120/120 unit**, **21/21 Chromium
+  E2E**, typecheck/lint/build pass; API voice catalog production đã được đọc
+  lại bằng `GET /api/v1/models/TTS_VieNeu/voices`.
+
 ## Chuẩn hóa tiếng Việt cho catalog và database — 2026-08-06
 
 - Đã chuyển toàn bộ tên provider/model, nhãn field, ghi chú và giá trị hiển thị
