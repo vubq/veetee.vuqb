@@ -399,7 +399,6 @@ esp_err_t vt_display_init(vt_display_t *display, const vt_display_config_t *conf
     if (error == ESP_OK) error = esp_lcd_panel_reset(display->panel);
     if (error == ESP_OK) error = esp_lcd_panel_init(display->panel);
     if (error == ESP_OK) error = esp_lcd_panel_invert_color(display->panel, config->invert_color);
-    if (error == ESP_OK) error = esp_lcd_panel_set_gap(display->panel, config->offset_x, config->offset_y);
     if (error == ESP_OK) error = esp_lcd_panel_swap_xy(display->panel, config->swap_xy);
     if (error == ESP_OK) error = esp_lcd_panel_mirror(display->panel, config->mirror_x, config->mirror_y);
     if (error == ESP_OK) error = esp_lcd_panel_disp_on_off(display->panel, true);
@@ -446,7 +445,24 @@ esp_err_t vt_display_init(vt_display_t *display, const vt_display_config_t *conf
         release_panel(display);
         return ESP_ERR_TIMEOUT;
     }
+    /* Keep the panel's native coordinate space and let LVGL apply the
+       controller gap.  This mirrors the board's reference LVGL path and
+       avoids applying the same offset twice when a driver already accounts
+       for its visible 240x280 window. */
+    if (config->offset_x != 0 || config->offset_y != 0) {
+        lv_display_set_offset(display->lv_display, config->offset_x, config->offset_y);
+    }
     error = create_ui(display);
+    if (error == ESP_OK) {
+        lv_font_glyph_dsc_t ascii_glyph = {0};
+        lv_font_glyph_dsc_t vietnamese_glyph = {0};
+        const bool ascii_ok = lv_font_get_glyph_dsc(&veetee_font_vietnamese_16, &ascii_glyph, 'V', 'E');
+        const bool vietnamese_ok = lv_font_get_glyph_dsc(&veetee_font_vietnamese_16, &vietnamese_glyph, 0x0110U, 'a');
+        ESP_LOGI(TAG, "text resources ready ascii=%d vi=%d adv=%u/%u line16=%u line26=%u", ascii_ok,
+                 vietnamese_ok, (unsigned)ascii_glyph.adv_w, (unsigned)vietnamese_glyph.adv_w,
+                 (unsigned)veetee_font_vietnamese_16.line_height,
+                 (unsigned)veetee_font_vietnamese_26.line_height);
+    }
     lvgl_port_unlock();
     if (error != ESP_OK) {
         release_panel(display);
