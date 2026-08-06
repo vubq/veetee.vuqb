@@ -1,5 +1,23 @@
 # Trạng thái thực thi hiện tại
 
+## Manager Web function audit — 2026-08-06
+
+- Đã kiểm tra và sửa lỗi dialog sửa/nhân bản model bị crash do
+  `structuredClone` nhận Vue reactive Proxy; boundary clone nay dùng `toRaw`.
+- Nhãn field schema `model_name` được tách thành “Model gửi tới provider” để
+  không trùng với “Tên model” của catalog. Nút model mặc định hỗ trợ toggle hai
+  chiều và giữ invariant model mặc định đang bật không thể tắt.
+- Bổ sung E2E CRUD model/provider và inspector. Regression hiện tại: Manager Web
+  **119 unit**, **19 Chromium E2E**, typecheck/lint/build pass; Manager API
+  **55/55** với database riêng `veetee_vubq_test`; Voice Server **194 passed**,
+  compileall/Ruff pass.
+- Catalog model/provider và lựa chọn trong trợ lý vẫn được kiểm tra đồng bộ theo
+  boundary hiện hành: catalog/default toàn cục không tự thay runtime
+  `providerConfig` mà trợ lý đang chọn; UI trợ lý hiển thị trạng thái runtime
+  ready/disabled/unavailable/missing đúng theo config đã chọn.
+- Chi tiết và giới hạn được ghi tại
+  [`2026-08-06-manager-web-function-audit.md`](2026-08-06-manager-web-function-audit.md).
+
 ## Manager Web responsive/performance pass — 2026-08-06
 
 - Xác nhận stack hiện tại: Vue 3.5 + Vite 8 + TypeScript + Tailwind CSS 4;

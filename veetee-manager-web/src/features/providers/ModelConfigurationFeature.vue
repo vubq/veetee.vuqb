@@ -171,14 +171,15 @@ async function setEnabled(model: ModelConfigRecord, enabled: boolean) {
 }
 
 async function setDefault(model: ModelConfigRecord) {
-  if (model.isDefault) return
-  const result = await gateway.setDefaultModel(model.id)
+  const result = model.isDefault
+    ? await gateway.updateModelConfig(model.id, { isDefault: false }, model.etag)
+    : await gateway.setDefaultModel(model.id)
   if (!result.ok) {
-    notify('Không đặt được model mặc định', { tone: 'error', message: 'Thử tải lại danh sách rồi thực hiện lại.' })
+    notify(model.isDefault ? 'Không bỏ được model mặc định' : 'Không đặt được model mặc định', { tone: 'error', message: 'Thử tải lại danh sách rồi thực hiện lại.' })
     return
   }
   await loadModels()
-  notify('Đã đặt model mặc định', { tone: 'success', message: localizedModelName(model) })
+  notify(model.isDefault ? 'Đã bỏ model mặc định' : 'Đã đặt model mặc định', { tone: 'success', message: localizedModelName(model) })
 }
 
 function openDelete(model: ModelConfigRecord) {
@@ -190,7 +191,7 @@ async function deleteModel(model: ModelConfigRecord) {
   const result = await gateway.deleteModelConfig(model.id, model.etag)
   deleting.value = false
   if (!result.ok) {
-    notify('Không xóa được model', { tone: 'error', message: 'Model mặc định hoặc model đang được runtime tham chiếu.' })
+    notify('Không xóa được model', { tone: 'error', message: 'Model đang được runtime tham chiếu hoặc dữ liệu đã thay đổi.' })
     return
   }
   deleteTarget.value = undefined

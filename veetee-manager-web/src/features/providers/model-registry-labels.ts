@@ -90,7 +90,10 @@ const FIELD_KEY_LABELS: Record<string, string> = {
   apiKey: 'Khóa API',
   secret_ref: 'Tham chiếu bí mật',
   secretRefs: 'Tham chiếu bí mật',
-  model_name: 'Tên model',
+  // Provider schemas use `model_name` for the wire-level identifier while the
+  // catalog has its own human-facing model name field. Keep the labels
+  // distinct so the add/edit dialog is unambiguous (and accessible).
+  model_name: 'Model gửi tới provider',
   model: 'Model',
   modelId: 'ID model',
   model_id: 'ID model',

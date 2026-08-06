@@ -23,4 +23,9 @@ describe('Vietnamese model registry presentation', () => {
     expect(localizedFieldLabel(field)).toBe('URL cơ sở')
     expect(field.key).toBe('base_url')
   })
+
+  it('keeps the provider wire model field distinct from the catalog model name', () => {
+    expect(localizedFieldLabel({ key: 'model_name', label: 'Model name' })).toBe('Model gửi tới provider')
+    expect(localizedFieldLabel({ key: 'model', label: 'Model' })).toBe('Model')
+  })
 })

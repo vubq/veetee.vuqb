@@ -148,6 +148,96 @@ test('provider registry sinh form từ schema và lưu revision', async ({ page 
   await expect(page.getByText('Đã lưu cấu hình dịch vụ', { exact: true })).toBeVisible()
 })
 
+test('model dialog phân biệt tên hiển thị và model gửi tới provider', async ({ page }) => {
+  await page.goto('/model-config')
+  const currentDefault = page.getByRole('button', { name: /Bỏ model mặc định/ }).first()
+  await expect(currentDefault).toBeEnabled()
+  await currentDefault.click()
+  await expect(page.getByText('Đã bỏ model mặc định', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /Đặt làm model mặc định/ }).first().click()
+  await expect(page.getByText('Đã đặt model mặc định', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Thêm model' }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Thêm model' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('textbox', { name: 'Tên model' })).toHaveCount(1)
+  await expect(dialog.getByRole('textbox', { name: 'Model gửi tới provider' })).toHaveCount(1)
+})
+
+test('model catalog CRUD giữ được tìm kiếm và thao tác sau phân trang', async ({ page }) => {
+  await page.goto('/model-config')
+  await page.getByRole('button', { name: 'Thêm model' }).click()
+  let dialog = page.getByRole('dialog', { name: 'Thêm model' })
+  await dialog.locator('#model-code').fill('audit-model')
+  await dialog.locator('#model-name').fill('Mô hình kiểm tra')
+  await dialog.getByRole('button', { name: 'Thêm model' }).click()
+  await expect(page.getByText('Đã thêm model', { exact: true })).toBeVisible()
+
+  const search = page.getByRole('textbox', { name: 'Tìm model' })
+  await search.fill('audit-model')
+  await page.getByRole('button', { name: 'Tìm', exact: true }).click()
+  await expect(page.locator('tbody tr').getByText('Mô hình kiểm tra', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: /Sửa Mô hình kiểm tra/ }).click()
+  dialog = page.getByRole('dialog', { name: 'Sửa model' })
+  await dialog.locator('#model-name').fill('Mô hình đã sửa')
+  await dialog.getByRole('button', { name: 'Lưu thay đổi' }).click()
+  await expect(page.getByText('Đã cập nhật model', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: /Nhân bản Mô hình đã sửa/ }).click()
+  dialog = page.getByRole('dialog', { name: 'Nhân bản model' })
+  await dialog.locator('#model-code').fill('audit-model-copy')
+  await dialog.locator('#model-name').fill('Mô hình bản sao')
+  await dialog.getByRole('button', { name: 'Thêm model' }).click()
+  await expect(page.getByText('Đã thêm model', { exact: true })).toBeVisible()
+
+  await search.fill('audit-model-copy')
+  await page.getByRole('button', { name: 'Tìm', exact: true }).click()
+  await page.getByRole('button', { name: /Xóa Mô hình bản sao/ }).click()
+  await page.getByRole('dialog', { name: 'Xóa model?' }).getByRole('button', { name: 'Xóa model' }).click()
+  await expect(page.getByText('Đã xóa model', { exact: true })).toBeVisible()
+
+  await search.fill('audit-model')
+  await page.getByRole('button', { name: 'Tìm', exact: true }).click()
+  await page.getByRole('button', { name: /Xóa Mô hình đã sửa/ }).click()
+  await page.getByRole('dialog', { name: 'Xóa model?' }).getByRole('button', { name: 'Xóa model' }).click()
+  await expect(page.getByText('Đã xóa model', { exact: true })).toBeVisible()
+  await expect(page.getByText('Mô hình đã sửa', { exact: true })).toHaveCount(0)
+})
+
+test('provider schema CRUD và inspector giữ đúng trường động', async ({ page }) => {
+  await page.goto('/provider-management')
+  await page.getByRole('button', { name: 'Thêm provider' }).click()
+  let dialog = page.getByRole('dialog', { name: 'Thêm provider' })
+  await dialog.locator('#provider-code').fill('audit-provider')
+  await dialog.locator('#provider-name').fill('Provider kiểm tra')
+  await dialog.getByRole('button', { name: 'Thêm trường' }).click()
+  await dialog.getByRole('textbox', { name: 'Key trường 1' }).fill('model')
+  await dialog.getByRole('textbox', { name: 'Nhãn trường 1' }).fill('Model')
+  await dialog.getByRole('button', { name: 'Thêm provider' }).click()
+  await expect(page.getByText('Đã thêm provider', { exact: true })).toBeVisible()
+
+  const search = page.getByRole('textbox', { name: 'Tìm provider' })
+  await search.fill('audit-provider')
+  await page.getByRole('button', { name: 'Tìm', exact: true }).click()
+  await expect(page.locator('tbody tr').getByText('Provider kiểm tra', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '1 trường' }).click()
+  const inspector = page.getByRole('dialog', { name: /Trường cấu hình/ })
+  await expect(inspector).toContainText('Model')
+  await inspector.getByRole('button', { name: 'Đóng', exact: true }).click()
+
+  await page.getByRole('button', { name: /Sửa Provider kiểm tra/ }).click()
+  dialog = page.getByRole('dialog', { name: 'Sửa provider' })
+  await dialog.locator('#provider-name').fill('Provider đã sửa')
+  await dialog.getByRole('button', { name: 'Lưu thay đổi' }).click()
+  await expect(page.getByText('Đã cập nhật provider', { exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: /Xóa Provider đã sửa/ }).click()
+  await page.getByRole('dialog', { name: 'Xóa provider?' }).getByRole('button', { name: 'Xóa provider' }).click()
+  await expect(page.getByText('Đã xóa provider', { exact: true })).toBeVisible()
+  await expect(page.getByText('Provider đã sửa', { exact: true })).toHaveCount(0)
+})
+
 test('khóa kết nối giữ nguyên chiều rộng ở mọi viewport', async ({ page }) => {
   for (const viewport of [
     { width: 1440, height: 900 },

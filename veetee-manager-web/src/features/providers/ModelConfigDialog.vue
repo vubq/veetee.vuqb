@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 
 import type { ModelConfigRecord, ModelProviderField, ModelProviderRecord, ModelType } from '@/domain'
 import VtButton from '@/ui/primitives/VtButton.vue'
@@ -61,7 +61,7 @@ watch(() => draft.value.providerCode, () => {
   const provider = selectedProvider.value
   if (!provider) return
   for (const field of provider.fields) {
-    if (!(field.key in draft.value.config) && field.default !== undefined) draft.value.config[field.key] = structuredClone(field.default)
+    if (!(field.key in draft.value.config) && field.default !== undefined) draft.value.config[field.key] = cloneConfigValue(field.default)
   }
 })
 
@@ -69,8 +69,14 @@ function emptyDraft(): ConfigDraft {
   return { id: '', modelCode: '', modelName: '', providerCode: '', isDefault: false, isEnabled: true, docLink: '', remark: '', sort: '0', config: {}, advancedText: '{}' }
 }
 
+function cloneConfigValue<T>(value: T): T {
+  return structuredClone(toRaw(value))
+}
+
 function fromModel(model: ModelConfigRecord, duplicate: boolean): ConfigDraft {
-  const config = structuredClone(model.configJson)
+  // Model records come from a deep Vue ref. Clone the raw payload rather than
+  // the reactive Proxy; structuredClone intentionally rejects Proxy objects.
+  const config = cloneConfigValue(model.configJson)
   return {
     id: duplicate ? '' : model.id,
     modelCode: duplicate ? `${model.modelCode}_copy` : model.modelCode,

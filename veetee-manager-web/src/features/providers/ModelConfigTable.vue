@@ -129,10 +129,10 @@ function voiceValue(model: ModelConfigRecord): string {
                     class="default-toggle"
                     :class="{ active: model.isDefault }"
                     :aria-pressed="model.isDefault"
-                    :aria-label="`${model.isDefault ? 'Bỏ mặc định' : 'Đặt mặc định'} ${localizedModelName(model)}`"
+                    :aria-label="`${model.isDefault ? 'Bỏ model mặc định' : 'Đặt làm model mặc định'} ${localizedModelName(model)}`"
                     @click="emit('default', model)"
                   >
-                    <span class="default-dot" />{{ model.isDefault ? 'Mặc định' : 'Đặt mặc định' }}
+                    <span class="default-dot" />{{ model.isDefault ? 'Mặc định' : 'Đặt làm mặc định' }}
                   </button>
                 </td>
                 <td v-if="activeType === 'TTS'">
@@ -241,10 +241,10 @@ function voiceValue(model: ModelConfigRecord): string {
               class="default-toggle"
               :class="{ active: model.isDefault }"
               :aria-pressed="model.isDefault"
-              :aria-label="`${model.isDefault ? 'Bỏ mặc định' : 'Đặt mặc định'} ${localizedModelName(model)}`"
+              :aria-label="`${model.isDefault ? 'Bỏ model mặc định' : 'Đặt làm model mặc định'} ${localizedModelName(model)}`"
               @click="emit('default', model)"
             >
-              <span class="default-dot" />{{ model.isDefault ? 'Mặc định' : 'Đặt mặc định' }}
+              <span class="default-dot" />{{ model.isDefault ? 'Mặc định' : 'Đặt làm mặc định' }}
             </button>
             <div class="row-actions">
               <VtIconButton
