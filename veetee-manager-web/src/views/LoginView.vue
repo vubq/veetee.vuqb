@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { Mail, LockKeyhole, LogIn } from '@lucide/vue'
+import { Mail, LockKeyhole } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
 import { authSession } from '@/auth/auth-session'
+import VtBrandMark from '@/components/brand/VtBrandMark.vue'
 import VtButton from '@/ui/primitives/VtButton.vue'
 import VtCard from '@/ui/primitives/VtCard.vue'
 import VtFormField from '@/ui/primitives/VtFormField.vue'
-import VtIcon from '@/ui/primitives/VtIcon.vue'
 import VtInput from '@/ui/primitives/VtInput.vue'
 
 const route = useRoute()
@@ -58,10 +58,7 @@ async function submit() {
   >
     <section class="login-shell">
       <div class="login-brand">
-        <span class="brand-mark"><VtIcon
-          :icon="LogIn"
-          :size="19"
-        /></span>
+        <VtBrandMark size="md" />
         <div><strong>Veetee</strong><span>Manager</span></div>
       </div>
       <VtCard class="login-card">
@@ -153,7 +150,6 @@ async function submit() {
 .login-brand > div { display: flex; align-items: baseline; gap: 5px; }
 .login-brand strong { font-size: 15px; }
 .login-brand span:not(.brand-mark) { color: var(--vt-text-muted); font-size: 10px; }
-.brand-mark { display: inline-grid; width: 32px; height: 32px; place-items: center; border: 1px solid #bfd2ff; border-radius: 8px; background: var(--vt-primary-soft); color: var(--vt-primary); }
 .login-card { padding: 24px; }
 .login-heading h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
 .login-heading p:not(.eyebrow) { margin: 6px 0 0; color: var(--vt-text-muted); font-size: 12px; line-height: 1.55; }

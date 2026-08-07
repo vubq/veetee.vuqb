@@ -1,5 +1,22 @@
 # Trạng thái thực thi hiện tại
 
+## Manager Web shadcn-vue redesign — 2026-08-07
+
+- Manager Web đã chuyển nền UI sang component local theo shadcn-vue + Reka UI:
+  `src/components/ui/*`, `components.json` và `src/lib/utils.ts` dùng
+  `cn()` (`clsx` + `tailwind-merge`) cùng `class-variance-authority`.
+- Các primitive tương thích `Vt*` được giữ để không đổi feature/gateway, nhưng
+  render qua component shadcn mới cho button, input, select, textarea, card,
+  badge, checkbox, switch, dialog, tabs, accordion, menu, tooltip và skeleton.
+  Không thêm control HTML rời rạc trong feature.
+- App shell, boot shell, login, page header và brand mark dùng logo hai mắt
+  (không có miệng), font Be Vietnam Pro local; layout đã kiểm tra desktop và
+  mobile bằng Chromium, select dài hiển thị ellipsis/label ngắn trong trigger.
+- Verification sau lát cắt: Manager Web **120/120 unit**, **21/21 Chromium
+  E2E**, typecheck/lint/build pass. Hai regression do migration component
+  (focus mã ghép nối và accessible name option giọng) đã được sửa và chạy lại
+  targeted E2E pass.
+
 ## Firmware Pure Face OS — 2026-08-06
 
 - Đã triển khai bản UI đã duyệt: full-bleed, không card/vòng border lớn,

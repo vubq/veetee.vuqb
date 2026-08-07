@@ -1,4 +1,8 @@
+
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
 
 /* Pinned @fontsource/be-vietnam-pro@5.3.0; only WOFF2 Latin + Vietnamese. */
 @font-face {
@@ -88,6 +92,29 @@
   font-family: "Be Vietnam Pro", "Noto Sans", "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+
+  /* shadcn-vue semantic tokens. Keep these semantic so a future dark theme
+     can swap the palette without changing any component class. */
+  --background: #f7fafc;
+  --foreground: #1f2937;
+  --card: #ffffff;
+  --card-foreground: #1f2937;
+  --popover: #ffffff;
+  --popover-foreground: #1f2937;
+  --primary: #2b63ee;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2f6;
+  --secondary-foreground: #334155;
+  --muted: #f1f5f8;
+  --muted-foreground: #5f6b7a;
+  --accent: #edf3ff;
+  --accent-foreground: #1d54cf;
+  --destructive: #c23643;
+  --destructive-foreground: #ffffff;
+  --border: #d5dfe9;
+  --input: #d5dfe9;
+  --ring: rgba(47, 107, 255, 0.45);
+  --radius: 0.5rem;
 
   --vt-page: #f7fafc;
   --vt-surface: #ffffff;
@@ -249,5 +276,41 @@ a[href] {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
   }
 }
